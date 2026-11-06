@@ -77,6 +77,6 @@ export const processLoader: PluginLoader = {
         );
       return null;
     }
-    return { plugin: processPlugin(name, kind, folder, manifest.entry!, manifest.args) };
+    return { plugin: await processPlugin(name, kind, folder, manifest.entry!, manifest.args) };
   },
 };

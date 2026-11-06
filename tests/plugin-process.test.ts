@@ -141,6 +141,56 @@ else {
   assert.ok(ticks > 3, `等插件的时候事件循环停了（只跳了 ${ticks} 次）：这一个调用又变成同步的了`);
 });
 
+test("事件插件第一次被取的时候也不占着中台：describe 等的时候事件循环照旧转", async () => {
+  // 第一次取这个插件就是这个插件的程序第一次跑，而第一次是最慢的那一次（它可能要起自己的运行时）。那一句
+  // describe 要是同步问的，中台整个——连 /healthz 一起——在它答话之前一动不动，最坏一直到 30 秒的调用上限。
+  plugin(
+    "slow-describe",
+    `
+import { readFileSync } from "node:fs";
+const request = JSON.parse(readFileSync(0, "utf8"));
+if (request.call === "describe") {
+  await new Promise((done) => setTimeout(done, 400));
+  console.log(JSON.stringify({ ok: true, value: { calls: ["translate"] } }));
+} else console.log(JSON.stringify({ ok: true, value: [{ id: "e", type: "t" }] }));
+`,
+  );
+  let ticks = 0;
+  const beat = setInterval(() => ticks++, 20);
+  let translate: (input: unknown) => Promise<unknown>;
+  try {
+    translate = await loadPlugin("slow-describe", "source");
+  } finally {
+    clearInterval(beat);
+  }
+  assert.ok(ticks > 3, `问 describe 的时候事件循环停了（只跳了 ${ticks} 次）：这一句又变成同步的了`);
+  assert.deepEqual(await translate({ headers: {}, body: "{}", secret: "" }), [{ id: "e", type: "t" }]);
+});
+
+test("两个 webhook 同时撞上第一次加载：describe 还是只问一次", async () => {
+  // 记着的是「正在做成」而不是「做成的东西」。否则第一个还在等 describe 的时候第二个进来，缓存里什么都没有，
+  // 于是又起一个进程去问同一句话——一个请求两个进程，而且两次答复谁赢说不准。
+  const folder = plugin(
+    "raced-source",
+    `
+import { appendFileSync, readFileSync } from "node:fs";
+appendFileSync("ran.log", "x\\n");
+const request = JSON.parse(readFileSync(0, "utf8"));
+if (request.call === "describe") {
+  await new Promise((done) => setTimeout(done, 200));
+  console.log(JSON.stringify({ ok: true, value: { calls: ["translate"] } }));
+} else console.log(JSON.stringify({ ok: true, value: [{ id: "e", type: "t" }] }));
+`,
+  );
+  const [first, second] = await Promise.all([
+    loadPlugin("raced-source", "source"),
+    loadPlugin("raced-source", "source"),
+  ]);
+  assert.equal(first, second, "两边拿到的不是同一个插件");
+  const runs = readFileSync(join(folder, "ran.log"), "utf8").trimEnd().split("\n").length;
+  assert.equal(runs, 1, `describe 跑了 ${runs} 次：同时来的两个 webhook 各起了一个进程`);
+});
+
 test("答不出一行 JSON、或者什么都不答，都说得明明白白", async () => {
   plugin("mute", "");
   await assert.rejects(() => loadPlugin("mute", "agent"), /什么都没答/);

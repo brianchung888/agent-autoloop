@@ -11,8 +11,9 @@
 // output, and the program exits. That is what makes a program in any language able to be one of these — it reads a
 // line, prints a line, and is over — and it is what the kinds this covers can afford, being pure translations with
 // nothing to keep between calls. An agent's four calls block, because `Adapter` (worker/agents.ts) is read
-// synchronously where it is used; a source plugin's one call does not, because the webhook that reaches it
-// (host/server.ts `adaptWebhook`) is already `async` — so waiting on another program is not the hub standing still. A channel is
+// synchronously where it is used; a source plugin's calls — `translate` and the `describe` that precedes it — do not,
+// because the webhook that reaches them (host/server.ts `adaptWebhook`) is already `async` and so is `loadPlugin`
+// (host/plugins.ts) — so waiting on another program is not the hub standing still. A channel is
 // not: it is a loop that lives as long as the hub does, so it is not in this (计划第四章 2.6, D8). A channel in another
 // language already has a way in that costs it nothing — the hub's own HTTP protocol (host/channels.ts:1-2).
 //
@@ -147,13 +148,35 @@ function askLater(name: string, folder: string, argv: string[], request: Record<
   }).then((ran) => answerOf(name, request, program!, ran));
 }
 
-/** What the plugin answers `describe` with, which is the one call every one of them has to have. */
-function describe(name: string, folder: string, argv: string[]) {
-  const value = ask(name, folder, argv, { call: "describe" }) as Described | null;
+/** What the plugin said it has, read out of its answer to `describe`. */
+function declared(value: Described | null) {
   const calls = Array.isArray(value?.calls)
     ? value.calls.filter((call): call is string => typeof call === "string")
     : [];
   return new Set(calls);
+}
+
+/**
+ * What the plugin answers `describe` with, which is the one call every one of them has to have.
+ *
+ * This one blocks, and is only for an agent plugin: its four calls block anyway (`ask` above), so there is nothing
+ * here for the hub to gain. A source plugin's `describe` goes the other way — `describeLater`.
+ */
+function describe(name: string, folder: string, argv: string[]) {
+  return declared(ask(name, folder, argv, { call: "describe" }) as Described | null);
+}
+
+/**
+ * The same question, without the hub standing still for the answer. This is the first run of a source plugin's
+ * program, and the first one is the slow one: the plugin may be starting a runtime of its own, and until it has
+ * answered, a blocking ask has the hub — the whole of it, `/healthz` included — waiting up to the call timeout.
+ *
+ * It can be this way because of who asks. A source plugin is reached from a webhook (host/server.ts `adaptWebhook`),
+ * which is already `async` and awaits what comes back, and `loadPlugin` (host/plugins.ts) is `async` too — so the one
+ * thing that waits here is the request that happened to be first.
+ */
+function describeLater(name: string, folder: string, argv: string[]) {
+  return askLater(name, folder, argv, { call: "describe" }).then((value) => declared(value as Described | null));
 }
 
 /**
@@ -164,12 +187,16 @@ function describe(name: string, folder: string, argv: string[]) {
  * blocking the hub. So it is made once, and that is also what makes it behave as a source plugin does: a plugin
  * changed under a running hub takes effect when the hub is next started, not halfway through.
  */
-const made = new Map<string, unknown>();
+const made = new Map<string, Promise<unknown>>();
 
 /**
  * The plugin, as the shape its kind is read as. `entry` and `args` come from the manifest, already known to stay
  * inside the plugin's own folder; `describe` is asked here, which is where a process plugin first runs — the same
  * moment a source plugin would first be imported and run, and as with an import, only the first time.
+ *
+ * What is kept is the making of it rather than the made thing, which is what "only the first time" means when the
+ * making is awaited: a second webhook arriving while the first is still waiting on `describe` joins that wait instead
+ * of starting the program again.
  */
 export function processPlugin(
   name: string,
@@ -177,17 +204,27 @@ export function processPlugin(
   folder: string,
   entry: string,
   args: readonly string[],
-): unknown {
+): Promise<unknown> {
   const key = `${name}/${kind}`;
-  if (made.has(key)) return made.get(key);
+  const already = made.get(key);
+  if (already) return already;
+  const making = make(name, kind, folder, entry, args);
+  made.set(key, making);
   // Only what came out whole is kept. A plugin that threw — no entry, nothing answered, a channel — is asked again
   // next time, so a person who fixes it does not have to restart the hub to find out.
-  const plugin = make(name, kind, folder, entry, args);
-  made.set(key, plugin);
-  return plugin;
+  making.catch(() => {
+    if (made.get(key) === making) made.delete(key);
+  });
+  return making;
 }
 
-function make(name: string, kind: PluginKind, folder: string, entry: string, args: readonly string[]): unknown {
+async function make(
+  name: string,
+  kind: PluginKind,
+  folder: string,
+  entry: string,
+  args: readonly string[],
+): Promise<unknown> {
   if (kind === "channel")
     throw new Error(
       `${name} 是通道插件，现在还不能用 runtime: "process"：通道是和中台一样长命的循环，不是一次一答的翻译。` +
@@ -195,11 +232,16 @@ function make(name: string, kind: PluginKind, folder: string, entry: string, arg
     );
   if (!existsSync(entry)) throw new Error(`${name} 的 plugin.json 指的程序不在：${entry}`);
   const argv = [entry, ...args];
-  const has = describe(name, folder, argv);
   // Which call this is, last: the webhook's own headers and body are spread in here, and a request that arrives with
   // a `call` of its own would otherwise choose which of the plugin's calls runs.
-  if (kind === "source")
+  if (kind === "source") {
+    // Asked, and what it says is read for the same reason an agent's is — a plugin that cannot answer this one is
+    // not a plugin, and saying so here is what keeps it out of the cache. A source plugin has only `translate`, so
+    // nothing is chosen by the answer; the waiting is what matters, and it is not the hub's.
+    await describeLater(name, folder, argv);
     return async (input: unknown) => askLater(name, folder, argv, { ...(input as object), call: "translate" });
+  }
+  const has = describe(name, folder, argv);
   const adapter: Record<string, unknown> = {
     command: (turn: unknown) => ask(name, folder, argv, { call: "command", turn }),
     read: (stdout: string, code: number | null, stderr: string) =>
