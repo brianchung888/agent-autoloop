@@ -872,6 +872,21 @@ async function runPlugin(args: string[]) {
 }
 
 async function update() {
+  // A packaged build has no checkout to pull. Downloading the next one is how it is upgraded — saying so is the whole
+  // of it, because telling someone their upgrade worked when nothing moved is worse than telling them to download.
+  // (计划 plan-c 3.7，二进位的自我更新，另案；INSTALL.md 的「单一二进位」一节讲的就是这几步。)
+  if (!fromSource()) {
+    return console.log(
+      [
+        `这是单一二进位的版本（${versionLine()}）。它的升级方式是重新下载：`,
+        "  1. 到 https://github.com/KKKKhazix/agent-autoloop/releases 取你这个平台的那一个，和它旁边的 .sha256",
+        "  2. 对一遍校验和（Windows：certutil -hashfile <文件> SHA256；macOS / Linux：shasum -a 256 <文件>）",
+        `  3. 往 ${path.join(HOME, "stop")} 写一个空文件，等中台收尾（Windows 上别直接杀进程）`,
+        "  4. 把那个可执行文件换掉，再启动一次",
+        "本机的规则、密钥和记录都不动：它们在数据目录里，不在这个文件里。",
+      ].join("\n"),
+    );
+  }
   const { updateCode } = await import("./update.ts");
   const { changed, to } = updateCode(ROOT);
   const version = to ? `（${to}）` : "";

@@ -30,6 +30,8 @@ curl -fsSL https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/insta
 
 The installer and `agent-autoloop update` both install the newest [release](https://github.com/KKKKhazix/agent-autoloop/releases), which has passed every check.
 
+> **No Node on the machine?** Every release also carries a single-file executable, one per platform, each with a `.sha256` beside it: download it, check the sum, run `agent-autoloop init`. Nothing else is needed. What it costs: about 96 MB to download (there is a whole Node inside it), a SmartScreen warning on Windows because it is not signed, re-downloading to upgrade, and third-party `.ts` plugins having to declare `runtime: "process"`. The source install stays the default; both share one data directory and you can move between them. See [INSTALL](INSTALL.md#单一二进位这台电脑上没有-node).
+
 Then run a real loop with your own agent — ask, exit while it waits, make the call, resume:
 
 ```bash

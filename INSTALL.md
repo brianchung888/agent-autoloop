@@ -42,7 +42,42 @@ AGENT_AUTOLOOP_REPO=/path/to/agent-autoloop sh /path/to/agent-autoloop/install.s
 
 安装器和中台启动时都会把数据目录设为 `0700`，包括已有目录，阻止其他系统用户读取数据库、事件和运行输出。Windows 没有 `0700`，改用 `icacls` 把数据目录的权限锁到当前用户（去掉继承，只留你自己，子目录和文件跟着继承），`master.key` 另外单独锁一次；锁不上（网络盘、FAT32、域策略）不会拦着启动，但 `agent-autoloop doctor` 会多出一条“文件权限降级”，这时同机的其他用户可能读得到数据。升级后同步重启中台与接单程序；新版 `status` 使用中台提供的费用汇总。
 
-升级时若投影格式有变化，会自动从旧日志逐条重建，历史多时首次启动需要等待；之后正常启动直接复用投影。原日志和已有卡片链接保留，不需要手动迁移。
+升级时若投影格式有变化，会自动从旧日志逐条重建，历史多时首次启动需要等待；之后正常启动直接复用投影。原日志和已有卡片链接保留，不需要手动迁移。源码安装和下面的单一二进位之间互换不算格式变化，不会触发重建。
+
+## 单一二进位（这台电脑上没有 Node）
+
+还有一条不需要装 Node 的路：每个 Release 附一个单文件可执行程序，三个平台各一个，旁边各有一份 `.sha256`。源码安装仍然是默认方式，这条是额外的管道——它换掉的只有「先装 Node 24」这一件事，别的都一样。
+
+| | 源码安装 | 单一二进位 |
+|---|---|---|
+| 前置 | Node.js 24+、Git | 没有 |
+| 下载体积 | 约 1.5 MB | 约 96 MB（里面就是一整个 Node） |
+| 怎么升级 | `agent-autoloop update` | 重新下载（见下） |
+| 第三方 `.ts` 插件 | 可以 | 不行，要带 `runtime: "process"`（见[插件说明](docs/plugins.md#源码插件在打包版下的限制)） |
+| 数据、规则、密钥 | 都在 `~/.agent-autoloop` | 一样，而且两种装法可以互换 |
+
+拿到那个文件之后：先对校验和，再跑 `init`。没有安装脚本可跑，因为没有东西要安装——这个文件就是整个程序，放在哪里都行（PATH 里的某个目录最省事）。
+
+```powershell
+# Windows
+certutil -hashfile .gent-autoloop-windows-x64.exe SHA256
+.gent-autoloop-windows-x64.exe init
+```
+
+```bash
+# macOS / Linux
+shasum -a 256 ./agent-autoloop-macos-arm64
+chmod +x ./agent-autoloop-macos-arm64
+./agent-autoloop-macos-arm64 init
+```
+
+**Windows 上会被 SmartScreen 拦。** 这个文件没有签章：注入那一步会破坏 node.exe 原本的 Authenticode 签章，所以产物是「未签章」而不是「签章坏了」。第一次运行会弹「Windows 已保护你的电脑」，要点「更多信息 → 仍要运行」；下载时浏览器也可能先说一句。对完 `.sha256` 再放行——那串校验和是唯一可以用来确认这个文件没被换过的东西。给组织内部分发时，自己用组织的证书重签一次最省事。
+
+**升级就是重新下载。** 在二进位里 `agent-autoloop update` 不会去动任何东西，它只会把下面这几步印出来：到 Release 页面取新的那一个、对校验和、往 `AGENT_AUTOLOOP_HOME/stop` 写一个空文件等中台收尾（Windows 上别直接杀进程，也别在中台还在跑的时候覆盖这个 exe——Windows 会直接拒绝）、把文件换掉、再启动一次。规则、密钥和记录都在数据目录里，不在这个文件里，所以换文件不丢任何东西，两种装法之间来回换也不会让投影重建（两种模式算出来的投影格式逐字相同，`tests/sea-format.test.ts` 钉着这一条）。
+
+二进位里 `uninstall` 删的是它自己放进去的东西（常驻、Skill、PATH 上的链接），不删你下载的那个文件——那是你放的。
+
+**还有两处和源码模式不一样。** 内置插件是编进去的，`agent-autoloop add` 装的第三方插件如果是 `.ts`，在二进位里会收到一句「这个打包版跑不了外部的 .ts 文件，在 plugin.json 里写 {"runtime":"process",…}」，照着改就行。另外开发用的随机模拟（`sim/`）在二进位里到不了；`conformance` 到得了，和源码模式一样用。
 
 ## 临时 HOME、CI 或没有服务管理器
 

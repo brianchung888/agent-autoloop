@@ -70,7 +70,7 @@ node --disable-warning=ExperimentalWarning --test --test-name-pattern='agent-aut
 
 ### 源码插件在打包版下的限制
 
-以单一二进位分发的版本里，内置插件是编进去的（`scripts/build-registry.ts` 在建置期产生一张静态清单，不进版本库），但它没有办法跑外部的 `.ts` 文件。所以装在 `~/.agent-autoloop/plugins/` 的第三方插件：`runtime: "source"` 在源码模式下照旧能用，在打包版下会报一句话、叫你改成 `runtime: "process"`；`process` 两边都能用。开发插件时用源码模式最方便，要分发给用打包版的人，就带一份 `process` 入口。
+以单一二进位分发的版本里（[怎么装](../INSTALL.md#单一二进位这台电脑上没有-node)），内置插件是编进去的（`scripts/build-registry.ts` 在建置期产生一张静态清单，不进版本库），但它没有办法跑外部的 `.ts` 文件。所以装在 `~/.agent-autoloop/plugins/` 的第三方插件：`runtime: "source"` 在源码模式下照旧能用，在打包版下会报一句话、叫你改成 `runtime: "process"`；`process` 两边都能用。开发插件时用源码模式最方便，要分发给用打包版的人，就带一份 `process` 入口。
 
 ## Agent 插件
 

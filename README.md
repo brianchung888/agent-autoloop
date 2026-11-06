@@ -30,6 +30,8 @@ curl -fsSL https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/insta
 
 安装和 `agent-autoloop update` 都装最新的 [Release](https://github.com/KKKKhazix/agent-autoloop/releases)，那是通过了全部检查的版本。
 
+> **不想装 Node？** 每个 Release 还附一个单文件可执行程序，三个平台各一个，旁边各有一份 `.sha256`：下载、对校验和、`agent-autoloop init`，没有别的前置。代价是下载约 96 MB（里面就是一整个 Node）、Windows 上没有签章所以 SmartScreen 会先拦一下、升级要重新下载，而且第三方 `.ts` 插件要带 `runtime: "process"`。源码安装仍然是默认方式；两种装法共用同一个数据目录，可以来回换。细节见 [INSTALL 的单一二进位一节](INSTALL.md#单一二进位这台电脑上没有-node)。
+
 装好后用你本机的 Agent 真实走一遍“提问 → 退出等回复 → 拍板 → 接着干完”：
 
 ```bash
@@ -243,7 +245,7 @@ Apple M5 Pro、24 GB、Node 24.21.0。写入逐条提交，事务落盘后才应
 | `skills/agent-autoloop/` | 中台的正式配置与操作手册，安装时也提供给 Agent 使用 |
 | `docs/` | 通信协议、插件开发说明与中英文架构图 |
 | `tests/`、`sim/` | 日常行为测试，以及模拟、穷举、强杀和变异检查 |
-| `scripts/`、`.github/workflows/` | 性能与真机验证、安装冒烟脚本（POSIX 与 Windows 各一份），以及 Linux / macOS / Windows CI |
+| `scripts/`、`.github/workflows/` | 性能与真机验证、安装冒烟脚本（POSIX 与 Windows 各一份）、单一二进位的建置，以及 Linux / macOS / Windows CI 与 Release |
 | 根目录文档与 `install.sh` | 中英文 README、安装说明、安全边界、开发约定、许可证与安装脚本 |
 
 读代码可以从 `bin/agent-autoloop.ts` → `cli/main.ts` 开始，再按功能进入 `host/`、`worker/` 或 `plugins/`；内核设计先看[协议](docs/protocol.md)。同名文件分属不同层：`host/http.ts` 转换 Node 请求，`kernel/http.ts` 定义接口行为；`protocol/rules.ts` 校验输入，`kernel/rules.ts` 定义规则类型和匹配。
