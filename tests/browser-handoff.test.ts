@@ -9,7 +9,10 @@ import { after } from "node:test";
 import { skipOn } from "./helpers.ts";
 
 /** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
-const test = skipOn(["win32"], "这份测试用 #!/bin/sh 写假浏览器入口与假 Agent，Windows 上没有 /bin/sh");
+const test = skipOn(
+  ["win32"],
+  "这份测试的假浏览器入口是个带 shebang（#!<node 路径>）的无后缀文件，Windows 不认 shebang，这样的文件当程序起不来",
+);
 
 const root = mkdtempSync(join(tmpdir(), "autoloop-browser-template-"));
 after(() => rmSync(root, { recursive: true, force: true }));

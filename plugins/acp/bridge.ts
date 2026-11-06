@@ -2,7 +2,7 @@
 // the worker's adapter reads, one JSON object per line.
 import { spawn } from "node:child_process";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { eachLine } from "../../host/lines.ts";
 import { versionName } from "../../host/version.ts";
 import type { Turn } from "../../worker/agents.ts";
@@ -37,7 +37,9 @@ export function permission(turn: Pick<Turn, "access" | "cwd">, params: any) {
     const target = resolved(location.path);
     if (target === null) return false;
     const path = relative(realpathSync(turn.cwd), target);
-    return path !== ".." && !path.startsWith("../") && !isAbsolute(path);
+    // The separator is this platform's own: on Windows what leads out of the folder is `..\`, and a check written
+    // for `../` alone lets every path outside it through. On POSIX `sep` is `/` and this is the same check as before.
+    return path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
   };
   const editsInside =
     turn.access === "edit" && tool.kind === "edit" && tool.locations?.length > 0 && tool.locations.every(inside);
