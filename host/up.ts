@@ -1,7 +1,7 @@
 // Everything this machine does, in one process: the hub, the worker and its channels, whichever config.json says. They
 // speak the same protocol to each other here as they would across the world. A stop leaves agents running: they're
 // detached, and the worker finds them again when it's back.
-import { appendFileSync, existsSync, mkdirSync, rmSync, watch } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, watch } from "node:fs";
 import path from "node:path";
 import { loadChannel } from "./channels.ts";
 import { parseListen, readConfig, type ChannelConfig } from "./config.ts";
@@ -17,12 +17,33 @@ import { createWorker } from "../worker/worker.ts";
  * so on Windows it is written down here instead — the same lines, in the same file launchd would have used.
  */
 const LOG_FILE = process.platform === "win32" ? path.join(HOME, "logs", "up.log") : null;
+/** Where it stops growing. launchd and systemd roll their own; what writes this file has to keep it to a size. */
+const LOG_LIMIT = 8 * 1024 * 1024;
+/** How often it is worth asking how big it is: a hub that never stops would fill a disk one line at a time. */
+const LOOK_EVERY = 200;
+
+/**
+ * One generation back and no more: a hub that has been up for months has nothing to say about last month, and what is
+ * being guarded against is a file nobody ever clears. A rename takes the place of whatever is already there.
+ */
+export function rollLog(file: string, limit = LOG_LIMIT) {
+  try {
+    if (statSync(file).size <= limit) return false;
+    renameSync(file, `${file}.1`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let lines = 0;
 const log = (who: string) => (line: string) => {
   const said = `${new Date().toISOString()} [${who}] ${line}`;
   console.log(said);
   if (LOG_FILE) {
     try {
       appendFileSync(LOG_FILE, `${said}\n`);
+      if (++lines % LOOK_EVERY === 0) rollLog(LOG_FILE);
     } catch {}
   }
 };
