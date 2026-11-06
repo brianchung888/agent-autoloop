@@ -45,6 +45,13 @@ export type Adapter = {
   link?(session: string): string;
   /** Whether it's installed and signed in: what's wrong, in words a person can act on, or nothing. */
   check?(): string | null;
+  /**
+   * A job of its own, run as a child process of this same program: `agent-autoloop internal:plugin <名字> [参数…]`.
+   * For a plugin whose turn is not somebody else's CLI but work it does itself — `command(turn)` then starts this
+   * program again (host/self.ts: selfExecutable) instead of naming one of its own files, which a packaged build has
+   * none of. What it prints is read by `read` exactly as any other program's output is.
+   */
+  main?(argv: string[]): Promise<void>;
 };
 
 const adapters = new Map<string, Adapter>();

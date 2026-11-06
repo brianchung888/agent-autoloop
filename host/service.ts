@@ -14,7 +14,8 @@ import { installTask, removeTask, taskAtLogon, taskEnabled } from "./service-win
 /** Asked each time, not once: a test may be standing in for another platform by the time it is. */
 const windows = () => process.platform === "win32";
 
-const PROGRAM = path.join(import.meta.dirname, "..", "bin", "agent-autoloop.ts");
+// The one spelling of this path, so that a service, a wrapper and a plugin cannot drift apart (host/self.ts).
+import { PROGRAM } from "./self.ts";
 /** Another install on this machine (another AGENT_AUTOLOOP_HOME) has a service of its own. */
 const label = () =>
   HOME === path.join(homedir(), ".agent-autoloop")

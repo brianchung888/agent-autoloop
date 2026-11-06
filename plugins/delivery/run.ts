@@ -1,4 +1,5 @@
-// One delivery run: `node run.ts owner/name`, reading its event from AGENT_AUTOLOOP_CONTEXT and printing a receipt.
+// One delivery run: `agent-autoloop internal:plugin delivery owner/name` (or `node run.ts owner/name`), reading its
+// event from AGENT_AUTOLOOP_CONTEXT and printing a receipt.
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,13 +37,19 @@ export async function run(repo: string, context: any, testLocalHealth = false) {
   }
 }
 
-if (import.meta.main) {
-  const [repo, ...args] = process.argv.slice(2);
+/**
+ * One delivery turn, however this file was reached: `node run.ts owner/name` as before, or
+ * `agent-autoloop internal:plugin delivery owner/name`, which is what the plugin asks for now.
+ */
+export async function main(argv: string[]) {
+  const [repo, ...args] = argv;
   const context = JSON.parse(readFileSync(process.env.AGENT_AUTOLOOP_CONTEXT!, "utf8"));
-  run(repo, context, args.includes("--test-local-health"))
-    .then((text) => console.log(text))
-    .catch((error) => {
-      console.error((error as Error).message);
-      process.exitCode = 1;
-    });
+  try {
+    console.log(await run(repo!, context, args.includes("--test-local-health")));
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exitCode = 1;
+  }
 }
+
+if (import.meta.main) await main(process.argv.slice(2));

@@ -831,6 +831,22 @@ function addPlugin(args: string[]) {
   else console.log('它没有声明 runtime，按源码插件用（runtime: "source"）：中台加载它的时候会执行它。');
 }
 
+/**
+ * A job a plugin does itself, run as a child process of this same program: `internal:plugin <名字> [参数…]`. Not in
+ * `HELP` — nobody types it; a plugin's `command(turn)` puts it in the command line it hands the worker, so that what
+ * starts is this executable and not one of the plugin's own files, which a packaged build has none of.
+ *
+ * It goes through the loader like everything else, so this file still knows no plugin by name.
+ */
+async function runPlugin(args: string[]) {
+  const [name, ...rest] = args;
+  if (!name) return fail("用法：agent-autoloop internal:plugin <插件名字> [参数…]");
+  const { loadPlugin } = await import("../host/plugins.ts");
+  const plugin = await loadPlugin(name, "agent");
+  if (typeof plugin?.main !== "function") fail(`${name} 这个插件没有可以这样跑的活（它没有导出 main）`);
+  await plugin.main(rest);
+}
+
 async function update() {
   const { updateCode } = await import("./update.ts");
   const { changed, to } = updateCode(ROOT);
@@ -850,6 +866,7 @@ async function askAtTerminal(question: string) {
 const [command, ...args] = process.argv.slice(2);
 const commands: Record<string, () => unknown> = {
   mcp: async () => (await import("./mcp.ts")).mcp(),
+  "internal:plugin": () => runPlugin(args),
   add: () => addPlugin(args),
   init: () => init(args),
   join: () => join(args),

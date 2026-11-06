@@ -2,6 +2,7 @@
 // third-party repository wrote for something else of its own stops a plugin that works today from loading; a runtime
 // nobody implements is taken for the default and the wrong thing runs; an `entry` reaches out of the plugin's folder.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -96,4 +97,47 @@ test("内置清单覆盖 plugins/ 下所有的 agent/channel/source，一条都�
 test("没有产生清单的时候，loadPlugin 走的还是原来那条路", async () => {
   const { builtins } = await import("../host/plugin-registry.ts");
   assert.equal(builtins(), null, "源码模式里根本没有这张表");
+});
+
+test("插件要再起一次本程序，用的是同一种写法，不提自己的文件名", async () => {
+  const root = join(import.meta.dirname, "..");
+  const { PROGRAM, selfExecutable } = await import("../host/self.ts");
+  const { stablePath } = await import("../host/node-path.ts");
+  // 源码模式下的三个词，和 host/service.ts 写进服务、worker/worker.ts 包 launcher 用的是同一种：
+  // 这个运行时、关掉那条警告、入口脚本的路径。
+  assert.deepEqual(selfExecutable(), [
+    stablePath(process.execPath),
+    "--disable-warning=ExperimentalWarning",
+    join(root, "bin", "agent-autoloop.ts"),
+  ]);
+  assert.equal(PROGRAM, join(root, "bin", "agent-autoloop.ts"));
+
+  const delivery = (await import("../host/plugins.ts")).loadPlugin("delivery", "agent");
+  const line = (await delivery).command({ command: ["owner/app"] });
+  assert.deepEqual(line, [...selfExecutable(), "internal:plugin", "delivery", "owner/app"]);
+  // 关键是这一句：命令行里不再有插件自己的文件，打包版里根本没有 .ts 可以指。
+  assert.ok(
+    !line.slice(3).some((part: string) => part.endsWith(".ts")),
+    `命令行还指着插件自己的文件：${line.join(" ")}`,
+  );
+  assert.equal(typeof (await delivery).main, "function");
+});
+
+test("internal:plugin 走的是同一个 loader，所以命令行这边照样不认识任何插件", () => {
+  const bin = join(import.meta.dirname, "..", "bin", "agent-autoloop.ts");
+  const run = (...args: string[]) =>
+    spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", bin, "internal:plugin", ...args], {
+      encoding: "utf8",
+      env: { ...process.env, AGENT_AUTOLOOP_HOME: home },
+      timeout: 30_000,
+    });
+  assert.match(run().stderr, /用法：agent-autoloop internal:plugin/);
+  assert.match(run("nobody").stderr, /没有 nobody 的插件（plugins\/nobody\/agent\.ts）/);
+  // 有这个插件、但它没有要自己跑的活：说清楚是哪一种缺。
+  assert.match(run("codex").stderr, /没有可以这样跑的活/);
+  // 而且它没有列进 HELP：没人需要手打它。
+  assert.doesNotMatch(
+    spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", bin, "help"], { encoding: "utf8" }).stdout,
+    /internal:plugin/,
+  );
 });
