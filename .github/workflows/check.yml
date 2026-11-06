@@ -38,6 +38,10 @@ jobs:
         run: npm run format:check
       - if: steps.scope.outputs.scope != 'docs'
         run: npm run typecheck
+      # A plugin added to plugins/ without the built-in list being written again is one the packaged build silently
+      # does not have, while the source build is perfectly fine: the hardest kind of difference to notice.
+      - if: steps.scope.outputs.scope != 'docs'
+        run: npm run build:registry && npm run build:registry -- --check
       - if: steps.scope.outputs.scope == 'normal' || steps.scope.outputs.scope == 'kernel'
         run: npm run test:quick
       - if: steps.scope.outputs.scope == 'kernel'

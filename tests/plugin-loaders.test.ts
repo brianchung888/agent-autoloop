@@ -2,7 +2,7 @@
 // third-party repository wrote for something else of its own stops a plugin that works today from loading; a runtime
 // nobody implements is taken for the default and the wrong thing runs; an `entry` reaches out of the plugin's folder.
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { setup } from "./helpers.ts";
@@ -65,4 +65,35 @@ test("解析顺序没有变：这个安装目录里的同名插件，胜过随�
   assert.equal((await loadPlugin("command", "agent")).marker, 7);
   // 而找不到的那一句话，一个 loader 都没找到才说，用词和改动前一样。
   await assert.rejects(() => loadPlugin("nobody", "agent"), /没有 nobody 的插件（plugins\/nobody\/agent\.ts）/);
+});
+
+test("内置清单覆盖 plugins/ 下所有的 agent/channel/source，一条都不少", async () => {
+  const { render, scan } = await import("../scripts/build-registry.ts");
+  const root = join(import.meta.dirname, "..");
+  // 产生器扫出来的，要和自己读一遍目录得到的完全一样：漏登记的插件在源码模式下毫无异样，只有打包版没有它。
+  const read = readdirSync(join(root, "plugins"), { withFileTypes: true })
+    .filter((item) => item.isDirectory())
+    .flatMap((item) =>
+      ["agent", "channel", "source"]
+        .filter((kind) => existsSync(join(root, "plugins", item.name, `${kind}.ts`)))
+        .map((kind) => `${item.name}/${kind}`),
+    )
+    .sort();
+  assert.deepEqual(
+    scan(root)
+      .map(({ name, kind }) => `${name}/${kind}`)
+      .sort(),
+    read,
+  );
+  assert.equal(read.length, 11, "README 和计划里都说是 11 个内置插件");
+
+  // 写出来的那份模块里，每一条都是字面量 import：bundler 读不懂的东西它跟不上。
+  const written = render(scan(root));
+  for (const key of read) assert.ok(written.includes(`"${key}": () => import("../plugins/${key}.ts"),`), key);
+  assert.equal(written.split("() => import(").length - 1, read.length);
+});
+
+test("没有产生清单的时候，loadPlugin 走的还是原来那条路", async () => {
+  const { builtins } = await import("../host/plugin-registry.ts");
+  assert.equal(builtins(), null, "源码模式里根本没有这张表");
 });

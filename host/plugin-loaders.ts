@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { HOME } from "./home.ts";
+import { builtins, registryKey } from "./plugin-registry.ts";
 import type { Found, PluginLoader } from "./plugins.ts";
 
 /** Where a plugin's entry file would be under a folder of plugin folders. The name is already known to be a name. */
@@ -28,3 +29,16 @@ export const externalLoader = fromFolder("external", () => join(HOME, "plugins")
 
 /** The ones that ship with the engine, in the folder beside it. */
 export const shippedLoader = fromFolder("shipped", () => join(import.meta.dirname, "..", "plugins"));
+
+/**
+ * The ones a packaged build carries instead of a folder. There is no registry in a source-mode install, so this finds
+ * nothing there and the search goes straight on to the folder beside the engine — which is what it always did.
+ */
+export const builtinLoader: PluginLoader = {
+  id: "builtin",
+  async resolve(name, kind): Promise<Found | null> {
+    const open = builtins()?.[registryKey(name, kind)];
+    if (!open) return null;
+    return { plugin: (await open()).default };
+  },
+};
