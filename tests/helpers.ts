@@ -3,7 +3,28 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after } from "node:test";
+import { after, test as runTest } from "node:test";
+
+/**
+ * The `test` of a file that cannot run on the named platforms at all, so that every case in it says it is skipped and why,
+ * rather than failing for a reason that has nothing to do with what it is about.
+ *
+ * Most of this suite writes its stand-ins as `#!/bin/sh` scripts — a fake Agent, a fake `ps`, a fake `launchctl` — and
+ * asks POSIX questions about what they did: a process group, a mode, a symlink's target. None of that can be made to
+ * mean the same thing on Windows, and rewriting eighty-odd files to be platform-neutral would cost more than everything
+ * else Windows support took. So what Windows adds has tests of its own, written for it (tests/platform-*.test.ts), and
+ * the rest say here, in the skip itself, why they are not running. A skip nobody can read is how a suite quietly becomes
+ * nothing: scripts/ci-scope.sh says what each platform's job runs, and the Windows job prints both numbers.
+ */
+export function skipOn(platforms: NodeJS.Platform[], why: string): typeof runTest {
+  if (!platforms.includes(process.platform)) return runTest;
+  const skipping = (name: unknown, second?: unknown, third?: unknown) => {
+    const options = typeof second === "object" && second !== null ? second : {};
+    const body = typeof second === "function" ? second : third;
+    return (runTest as (...args: unknown[]) => unknown)(name, { ...options, skip: why }, body);
+  };
+  return Object.assign(skipping, runTest) as unknown as typeof runTest;
+}
 
 export function setup(name: string, rules = "rules.fixture.json") {
   const directory = mkdtempSync(join(tmpdir(), `agent-autoloop-${name}-`));

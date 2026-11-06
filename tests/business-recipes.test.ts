@@ -7,8 +7,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { skipOn } from "./helpers.ts";
 import { probe, receipt } from "../examples/recipes/website-watch/check.ts";
 import { readMessage, resultFrom } from "../worker/contract.ts";
+
+/** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
+const ONLY_POSIX = { skip: process.platform === "win32" && "这两条用 #!/bin/sh 写假 lark-cli，Windows 上没有 /bin/sh" };
 
 const scratch = mkdtempSync(join(tmpdir(), "agent-autoloop-business-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -125,7 +129,7 @@ console.log(JSON.stringify({ok:true,identity:'user',data}));
   return { dir, run, parsed: resultFrom(readMessage(run.stdout), {}) };
 }
 
-test("Feishu collection uses the reader, filters reports and fields, and consumes all table pages", () => {
+test("Feishu collection uses the reader, filters reports and fields, and consumes all table pages", ONLY_POSIX, () => {
   const { dir, run, parsed } = collect();
   assert.equal(run.status, 0, run.stderr);
   assert.equal(parsed.problem, undefined);
@@ -148,7 +152,7 @@ test("Feishu collection uses the reader, filters reports and fields, and consume
   assert.equal(snapshot.id, parsed.result.events![0].id);
 });
 
-test("Feishu authorization failure asks once and never publishes the old snapshot or CLI details", () => {
+test("Feishu authorization failure asks once and never publishes the old snapshot or CLI details", ONLY_POSIX, () => {
   const { dir, run, parsed } = collect("auth");
   assert.equal(run.status, 0, run.stderr);
   assert.equal(parsed.problem, undefined);

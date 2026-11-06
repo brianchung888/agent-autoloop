@@ -4,7 +4,10 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { test } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(["win32"], "这份测试用 #!/bin/sh 写假 Agent 接 webhook，Windows 上没有 /bin/sh");
 import webhook from "../plugins/webhook/channel.ts";
 import { payload } from "../plugins/webhook/templates.ts";
 test("templates reject text beyond vendor limits instead of losing the answer link", () => {

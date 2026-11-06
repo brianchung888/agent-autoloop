@@ -7,7 +7,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试用 /bin/sh 的 exec 让 up.pid 里留下自己的进程号，Windows 上没有 /bin/sh；同一件事由 tests/platform-service.test.ts 覆盖",
+);
 
 const bin = join(import.meta.dirname, "..", "bin", "agent-autoloop.ts");
 const program = ["--disable-warning=ExperimentalWarning", bin];

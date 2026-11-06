@@ -11,7 +11,11 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { skipOn } from "./helpers.ts";
 import { readMessage, resultFrom } from "../worker/contract.ts";
+
+/** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
+const ONLY_POSIX = { skip: process.platform === "win32" && "这两条用 #!/bin/sh 写假 gh，Windows 上没有 /bin/sh" };
 
 const ROOT = join(import.meta.dirname, "..");
 const RECIPES = join(ROOT, "examples", "recipes");
@@ -168,32 +172,40 @@ function watch(args: string[]) {
   return { said: done.stdout, asked: readFileSync(join(dir, "log"), "utf8"), issues };
 }
 
-test("github-issues: what the watcher prints goes through the worker whole, and the rules let it in", () => {
-  const { said, issues } = watch(["owner/repo"]);
-  const { result, problem } = resultFrom(readMessage(said), {});
-  assert.equal(problem, undefined);
-  assert.equal(result.outcome, "done");
-  const events = result.events!;
-  assert.equal(events[0].id, "issue-12");
-  assert.equal(events[0].subject, "#12");
-  assert.equal(events[0].summary, issues[0].title);
-  assert.equal(events[0].detail, issues[0].body, "the body has to reach an Agent that can't go and read it");
-  assert.equal(events[0].link, issues[0].url);
-  assert.equal(events[1].detail, "");
-  assert.equal([...events[2].detail].length, 4000);
-  const rules = readRules("github-issues").rules;
-  const watcher = rules.find((rule: { emits?: unknown }) => rule.emits);
-  const handler = rules.find((rule: { skill?: string }) => rule.skill);
-  for (const { type } of events) {
-    assert.ok(watcher.emits.types.includes(type));
-    assert.ok(handler.when.types.includes(type));
-  }
-  assert.equal(handler.when.source, watcher.emits.source);
-});
+test(
+  "github-issues: what the watcher prints goes through the worker whole, and the rules let it in",
+  ONLY_POSIX,
+  () => {
+    const { said, issues } = watch(["owner/repo"]);
+    const { result, problem } = resultFrom(readMessage(said), {});
+    assert.equal(problem, undefined);
+    assert.equal(result.outcome, "done");
+    const events = result.events!;
+    assert.equal(events[0].id, "issue-12");
+    assert.equal(events[0].subject, "#12");
+    assert.equal(events[0].summary, issues[0].title);
+    assert.equal(events[0].detail, issues[0].body, "the body has to reach an Agent that can't go and read it");
+    assert.equal(events[0].link, issues[0].url);
+    assert.equal(events[1].detail, "");
+    assert.equal([...events[2].detail].length, 4000);
+    const rules = readRules("github-issues").rules;
+    const watcher = rules.find((rule: { emits?: unknown }) => rule.emits);
+    const handler = rules.find((rule: { skill?: string }) => rule.skill);
+    for (const { type } of events) {
+      assert.ok(watcher.emits.types.includes(type));
+      assert.ok(handler.when.types.includes(type));
+    }
+    assert.equal(handler.when.source, watcher.emits.source);
+  },
+);
 
-test("github-issues: the watcher's search is optional, and the rules use it to leave old issues alone", () => {
-  assert.doesNotMatch(watch(["owner/repo"]).asked, /--search/);
-  assert.match(watch(["owner/repo", "created:>=2026-11-04"]).asked, /--search created:>=2026-11-04/);
-  const { agents } = readRules("github-issues");
-  assert.ok(agents.watcher.command.some((part: string) => part.startsWith("created:>=")));
-});
+test(
+  "github-issues: the watcher's search is optional, and the rules use it to leave old issues alone",
+  ONLY_POSIX,
+  () => {
+    assert.doesNotMatch(watch(["owner/repo"]).asked, /--search/);
+    assert.match(watch(["owner/repo", "created:>=2026-11-04"]).asked, /--search created:>=2026-11-04/);
+    const { agents } = readRules("github-issues");
+    assert.ok(agents.watcher.command.some((part: string) => part.startsWith("created:>=")));
+  },
+);

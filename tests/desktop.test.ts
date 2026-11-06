@@ -11,7 +11,14 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试用 #!/bin/sh 写假 osascript / notify-send；Windows 上桌面通道一律跳过，没有可替换的通知程序",
+);
 import { setup } from "./helpers.ts";
 import type { Card } from "../host/channels.ts";
 

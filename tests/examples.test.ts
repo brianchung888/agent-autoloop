@@ -5,7 +5,11 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { test, after } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(["win32"], "这份测试用 #!/bin/sh 跑例子里的脚本，Windows 上没有 /bin/sh");
 import { setup } from "./helpers.ts";
 import { conformance } from "../protocol/conformance.ts";
 const home = setup("examples");

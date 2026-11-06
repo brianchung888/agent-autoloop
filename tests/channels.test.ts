@@ -14,7 +14,14 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试用 #!/bin/sh 写假 lark-cli，并按 POSIX 的可执行位挑程序，Windows 上没有对应语义",
+);
 import feishu, { render } from "../plugins/feishu/channel.ts";
 import webhook from "../plugins/webhook/channel.ts";
 import github from "../plugins/github/source.ts";

@@ -8,6 +8,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { after, test } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
+const ONLY_POSIX = {
+  skip: process.platform === "win32" && "这一条按 POSIX 路径摆规则文件并查错误里的路径写法，Windows 上路径形状不同",
+};
 
 const root = join(import.meta.dirname, "..");
 const home = mkdtempSync(join(tmpdir(), "agent-autoloop-check-"));
@@ -58,7 +64,7 @@ test("checking a draft next to a hub leaves its log as it was", () => {
   assert.deepEqual(facts(hubHome), before, "no rules fact, no fact at all");
 });
 
-test("without a file it checks the installed rules; a bad or missing file fails and says why", () => {
+test("without a file it checks the installed rules; a bad or missing file fails and says why", ONLY_POSIX, () => {
   const installed = join(home, "installed");
   const plain = cli({ AGENT_AUTOLOOP_HOME: installed }, "check");
   assert.equal(plain.status, 1);

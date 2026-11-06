@@ -19,7 +19,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试建本地 git 仓库并用 #!/bin/sh 跑 install.sh 的选版逻辑；Windows 的同一套逻辑在 install.ps1 里，由 scripts/install-smoke.ps1 真机验证",
+);
 import { updateCode } from "../cli/update.ts";
 import { releaseOf } from "../host/version.ts";
 

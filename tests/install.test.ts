@@ -25,7 +25,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试跑的是 install.sh（POSIX sh、ln -sf、chmod）；Windows 的等价物是 install.ps1，由 scripts/install-smoke.ps1 真机验证",
+);
 
 const repo = join(import.meta.dirname, "..");
 const script = join(repo, "install.sh");

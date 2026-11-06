@@ -5,7 +5,13 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { test } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试用 #!/bin/sh 写假 Agent 并按 POSIX 模式位检查清理结果，Windows 上没有 /bin/sh",
+);
 import { setup } from "./helpers.ts";
 
 const home = setup("worker-tidy");

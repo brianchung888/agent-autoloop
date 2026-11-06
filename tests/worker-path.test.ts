@@ -4,7 +4,14 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试验证 PATH 里以 : 分隔的查找与登录 shell 的 PATH，Windows 上分隔符与查找规则都不同",
+);
 
 const scratch = mkdtempSync(join(tmpdir(), "agent-autoloop-worker-path-"));
 const home = join(scratch, "quote' $(touch path-injected)");

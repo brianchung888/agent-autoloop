@@ -9,7 +9,14 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试用 #!/bin/sh 摆 Homebrew 的 Cellar/opt 目录结构，Windows 上既没有 /bin/sh 也没有 Homebrew",
+);
 import { stablePath } from "../host/node-path.ts";
 import acp from "../plugins/acp/agent.ts";
 import delivery from "../plugins/delivery/agent.ts";

@@ -24,6 +24,13 @@ import acp from "../plugins/acp/agent.ts";
 import { bridge, permission } from "../plugins/acp/bridge.ts";
 import { versionName } from "../host/version.ts";
 import { acpAgent } from "./helpers.ts";
+
+/** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
+const ONLY_POSIX = {
+  skip:
+    process.platform === "win32" &&
+    "ACP 的权限判定要摆一棵真实的目录树并用 POSIX symlink 做逃逸检查；Windows 上要特权才建得了符号链接",
+};
 const home = mkdtempSync(join(tmpdir(), "agent-autoloop-acp-"));
 after(() => rmSync(home, { recursive: true, force: true }));
 const fake = join(home, "fake.mjs");
@@ -329,7 +336,7 @@ test("ACP doesn't make up a session for a turn that failed before it had one", a
   assert.deepEqual(JSON.parse(bad.out.trim()), { finished: true, error: "ACP 没有返回会话编号" });
 });
 
-test("ACP chooses only a one-time permission and respects structured kinds and resolved paths", () => {
+test("ACP chooses only a one-time permission and respects structured kinds and resolved paths", ONLY_POSIX, () => {
   const options = [
     { optionId: "always", kind: "allow_always" },
     { optionId: "once", kind: "allow_once" },
@@ -349,7 +356,7 @@ test("ACP chooses only a one-time permission and respects structured kinds and r
   assert.equal(ask("full", { kind: "other" }).optionId, "once");
 });
 
-test("ACP doesn't take a link that goes nowhere for a new file in the folder", () => {
+test("ACP doesn't take a link that goes nowhere for a new file in the folder", ONLY_POSIX, () => {
   const options = [
     { optionId: "once", kind: "allow_once" },
     { optionId: "no", kind: "reject_once" },
@@ -389,84 +396,92 @@ test("ACP doesn't take a link that goes nowhere for a new file in the folder", (
   assert.equal(edit(join(work, "new-folder", "new-file.txt")), "once", "in a new folder too");
   assert.equal(edit(join(work, "dangling"), "full"), "once", "full doesn't look at paths");
 });
-test("ACP judges a permission on all that's been said of the tool call, the request's own fields first", async () => {
-  const inside = join(home, "inside.txt");
-  const outside = join(tmpdir(), "outside.txt");
-  const call = (toolCallId: string, fields: object) => ({
-    sessionUpdate: "tool_call",
-    toolCallId,
-    title: "工具",
-    ...fields,
-  });
-  const change = (toolCallId: string, fields: object) => ({ sessionUpdate: "tool_call_update", toolCallId, ...fields });
-  const location = (path: string) => ({ locations: [{ path }] });
-  for (const [why, access, updates, request, expected] of [
-    ["only the id", "read", [call("t", { kind: "read" })], { toolCallId: "t" }, "allow"],
-    ["kind from a search", "read", [call("t", { kind: "search" })], { toolCallId: "t" }, "allow"],
-    ["execute stays execute", "read", [call("t", { kind: "execute" })], { toolCallId: "t" }, "reject"],
-    ["another call's kind", "read", [call("t", { kind: "read" })], { toolCallId: "other" }, "reject"],
-    ["edit inside", "edit", [call("t", { kind: "edit", ...location(inside) })], { toolCallId: "t" }, "allow"],
-    ["edit outside", "edit", [call("t", { kind: "edit", ...location(outside) })], { toolCallId: "t" }, "reject"],
-    [
-      "kind and place in two messages",
-      "edit",
-      [call("t", { kind: "edit" }), change("t", location(inside))],
-      { toolCallId: "t" },
-      "allow",
-    ],
-    [
-      "an update moves it out",
-      "edit",
-      [call("t", { kind: "edit", ...location(inside) }), change("t", location(outside))],
-      { toolCallId: "t" },
-      "reject",
-    ],
-    [
-      "an update changes the kind",
-      "read",
-      [call("t", { kind: "read" }), change("t", { kind: "execute" })],
-      { toolCallId: "t" },
-      "reject",
-    ],
-    [
-      "the request's own kind first",
-      "read",
-      [call("t", { kind: "read" })],
-      { toolCallId: "t", kind: "execute" },
-      "reject",
-    ],
-    [
-      "the request's own place first",
-      "edit",
-      [call("t", { kind: "edit", ...location(inside) })],
-      { toolCallId: "t", ...location(outside) },
-      "reject",
-    ],
-    [
-      "empty fields change nothing",
-      "edit",
-      [call("t", { kind: "edit", ...location(inside) }), change("t", { kind: null, locations: null })],
-      { toolCallId: "t", kind: null, locations: null },
-      "allow",
-    ],
-    ["nothing known", "read", [], { toolCallId: "t" }, "reject"],
-  ] as const) {
-    const result = await launch(
-      `permission-${why.replaceAll(/\W/g, "-")}`,
-      `on['session/prompt'] = async (m) => {
+test(
+  "ACP judges a permission on all that's been said of the tool call, the request's own fields first",
+  ONLY_POSIX,
+  async () => {
+    const inside = join(home, "inside.txt");
+    const outside = join(tmpdir(), "outside.txt");
+    const call = (toolCallId: string, fields: object) => ({
+      sessionUpdate: "tool_call",
+      toolCallId,
+      title: "工具",
+      ...fields,
+    });
+    const change = (toolCallId: string, fields: object) => ({
+      sessionUpdate: "tool_call_update",
+      toolCallId,
+      ...fields,
+    });
+    const location = (path: string) => ({ locations: [{ path }] });
+    for (const [why, access, updates, request, expected] of [
+      ["only the id", "read", [call("t", { kind: "read" })], { toolCallId: "t" }, "allow"],
+      ["kind from a search", "read", [call("t", { kind: "search" })], { toolCallId: "t" }, "allow"],
+      ["execute stays execute", "read", [call("t", { kind: "execute" })], { toolCallId: "t" }, "reject"],
+      ["another call's kind", "read", [call("t", { kind: "read" })], { toolCallId: "other" }, "reject"],
+      ["edit inside", "edit", [call("t", { kind: "edit", ...location(inside) })], { toolCallId: "t" }, "allow"],
+      ["edit outside", "edit", [call("t", { kind: "edit", ...location(outside) })], { toolCallId: "t" }, "reject"],
+      [
+        "kind and place in two messages",
+        "edit",
+        [call("t", { kind: "edit" }), change("t", location(inside))],
+        { toolCallId: "t" },
+        "allow",
+      ],
+      [
+        "an update moves it out",
+        "edit",
+        [call("t", { kind: "edit", ...location(inside) }), change("t", location(outside))],
+        { toolCallId: "t" },
+        "reject",
+      ],
+      [
+        "an update changes the kind",
+        "read",
+        [call("t", { kind: "read" }), change("t", { kind: "execute" })],
+        { toolCallId: "t" },
+        "reject",
+      ],
+      [
+        "the request's own kind first",
+        "read",
+        [call("t", { kind: "read" })],
+        { toolCallId: "t", kind: "execute" },
+        "reject",
+      ],
+      [
+        "the request's own place first",
+        "edit",
+        [call("t", { kind: "edit", ...location(inside) })],
+        { toolCallId: "t", ...location(outside) },
+        "reject",
+      ],
+      [
+        "empty fields change nothing",
+        "edit",
+        [call("t", { kind: "edit", ...location(inside) }), change("t", { kind: null, locations: null })],
+        { toolCallId: "t", kind: null, locations: null },
+        "allow",
+      ],
+      ["nothing known", "read", [], { toolCallId: "t" }, "reject"],
+    ] as const) {
+      const result = await launch(
+        `permission-${why.replaceAll(/\W/g, "-")}`,
+        `on['session/prompt'] = async (m) => {
         for (const change of ${JSON.stringify(updates)}) update(change);
         const { outcome } = await ask(${JSON.stringify(request)});
         say(outcome.optionId);
         send({ id: m.id, result: { stopReason: 'end_turn' } });
       };`,
-      null,
-      undefined,
-      access,
-    );
-    assert.equal(result.code, 0, result.err);
-    assert.equal(acp.read(result.out, result.code, result.err).text, expected, why);
-  }
-});
+        null,
+        undefined,
+        access,
+      );
+      assert.equal(result.code, 0, result.err);
+      assert.equal(acp.read(result.out, result.code, result.err).text, expected, why);
+    }
+  },
+);
 
 test("ACP remembers what a permission request itself said of the tool call", async () => {
   const result = await launch(

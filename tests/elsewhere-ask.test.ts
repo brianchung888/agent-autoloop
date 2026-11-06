@@ -10,7 +10,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, test } from "node:test";
+import { after, before } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(["win32"], "这份测试用 #!/bin/sh 写假 Agent，Windows 上没有 /bin/sh");
 import { at, setup } from "./helpers.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "agent-autoloop-elsewhere-ask-"));

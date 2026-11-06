@@ -22,7 +22,11 @@ import {
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(["win32"], "这份测试用 #!/bin/sh 写假 Agent 跑完整循环，Windows 上没有 /bin/sh");
 
 const home = mkdtempSync(join(tmpdir(), "agent-autoloop-loop-"));
 const bin = join(import.meta.dirname, "..", "bin", "agent-autoloop.ts");

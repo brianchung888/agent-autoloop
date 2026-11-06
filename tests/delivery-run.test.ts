@@ -8,7 +8,11 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(["win32"], "这份测试用 #!/bin/sh 写假 git、假 gh 和假 Agent，Windows 上没有 /bin/sh");
 import { createIO } from "../plugins/delivery/github.ts";
 import { poll } from "../plugins/delivery/poll.ts";
 import { run } from "../plugins/delivery/run.ts";

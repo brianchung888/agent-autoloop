@@ -13,7 +13,11 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(["win32"], "这份测试照 docs/plugins.md 的教程逐条跑 sh 命令，Windows 上没有 /bin/sh");
 import helloAgent from "../examples/plugins/hello-agent/agent.ts";
 import helloChannel from "../examples/plugins/hello-channel/channel.ts";
 import helloSource from "../examples/plugins/hello-source/source.ts";

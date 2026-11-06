@@ -28,7 +28,13 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { test } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试用 #!/bin/sh 写假 Agent、假 ps、假 launchctl，并按进程组与 POSIX 模式位断言；Windows 上这些都没有对应语义，进程与启动那一层由 tests/platform-process.test.ts 真机验证",
+);
 import { acpAgent, setup } from "./helpers.ts";
 
 const home = setup("worker");

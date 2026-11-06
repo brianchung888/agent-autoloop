@@ -7,7 +7,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试用 #!/bin/sh 写假 Agent 跑 try，Windows 上没有 /bin/sh；真机的 try 由 scripts/install-smoke.ps1 跑过",
+);
 import { attemptsOf, newFailure } from "../cli/try.ts";
 
 const bin = join(import.meta.dirname, "..", "bin", "agent-autoloop.ts");

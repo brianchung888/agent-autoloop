@@ -25,6 +25,13 @@ import { after, test } from "node:test";
 import { promisify } from "node:util";
 import { at, setup } from "./helpers.ts";
 
+/** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
+const ONLY_POSIX = {
+  skip:
+    process.platform === "win32" &&
+    "这几条按 POSIX 模式位（0600 / 0700）验证备份目录与文件的权限；Windows 上权限是访问控制列表，由 tests/platform-permissions.test.ts 真机验证",
+};
+
 const home = setup("backup");
 const hub = await import("./hub.ts");
 const { backup, restore } = await import("../cli/backup.ts");
@@ -63,7 +70,7 @@ function withWal(into: string) {
   writeFileSync(join(into, "master.key"), `${key}\n`, { mode: 0o600 });
 }
 
-test("a real hub's data, backed up while it runs, comes back whole under its own key", async () => {
+test("a real hub's data, backed up while it runs, comes back whole under its own key", ONLY_POSIX, async () => {
   hub.ingest("app", { id: "1", type: "feedback.new", subject: "#1" }, at(0));
   const target = join(folder(), "snapshot");
   const { files } = await backup(home, target);
@@ -97,7 +104,7 @@ test("a real hub's data, backed up while it runs, comes back whole under its own
   );
 });
 
-test("a backup into an empty folder that's already there makes it private: it holds the keys", async () => {
+test("a backup into an empty folder that's already there makes it private: it holds the keys", ONLY_POSIX, async () => {
   const target = join(folder(), "made-beforehand");
   mkdirSync(target);
   chmodSync(target, 0o755);
@@ -105,7 +112,7 @@ test("a backup into an empty folder that's already there makes it private: it ho
   assert.equal(mode(target), 0o700);
 });
 
-test("a restore keeps what it replaced, and the old WAL doesn't stay beside the new database", async () => {
+test("a restore keeps what it replaced, and the old WAL doesn't stay beside the new database", ONLY_POSIX, async () => {
   const source = folder();
   withWal(source);
   const target = folder();

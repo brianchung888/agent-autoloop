@@ -8,6 +8,14 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
+const ONLY_POSIX = {
+  skip:
+    process.platform === "win32" &&
+    "这几条用假 ps 让进程组“查不到”，Windows 上没有 ps 也没有进程组；同一个三态语义由 tests/platform-process.test.ts 真机验证",
+};
 
 const scratch = mkdtempSync(join(tmpdir(), "agent-autoloop-worker-look-"));
 const home = join(scratch, "home");
@@ -103,7 +111,7 @@ test("a run that is gone with no exit, and a group that can't be looked at, is r
   assert.equal(results.length, 1, "it was held back");
 });
 
-test("a run that failed, and a group that can't be looked at, is reported without waiting", async () => {
+test("a run that failed, and a group that can't be looked at, is reported without waiting", ONLY_POSIX, async () => {
   psCannotRun();
   const results: any[] = [];
   const job = jobFor(17, 0);
@@ -117,7 +125,7 @@ test("a run that failed, and a group that can't be looked at, is reported withou
   assert.match(results[0].error, /退出码 3：boom/);
 });
 
-test("a run that cannot be looked up is not reported as finished", async () => {
+test("a run that cannot be looked up is not reported as finished", ONLY_POSIX, async () => {
   psCannotRun();
   const results: any[] = [];
   const worker = workerThatReports(results, jobFor(11, 30));
@@ -129,7 +137,7 @@ test("a run that cannot be looked up is not reported as finished", async () => {
   process.kill(-JSON.parse(readFileSync(join(home, "worker", "runs", "11-1", "entry.json"), "utf8")).pid, "SIGKILL");
 });
 
-test("a stuck run that cannot be looked up still times out and is reported", async () => {
+test("a stuck run that cannot be looked up still times out and is reported", ONLY_POSIX, async () => {
   psCannotRun();
   const results: any[] = [];
   let moment = Date.now();

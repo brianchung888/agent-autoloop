@@ -6,7 +6,13 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { test } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试用 #!/bin/sh 写假 systemctl 冒充用户级与系统级服务管理器；Windows 上常驻走计划任务，由 tests/platform-service.test.ts 真机验证",
+);
 import { setup } from "./helpers.ts";
 
 const home = setup("service-running");

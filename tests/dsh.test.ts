@@ -12,6 +12,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
+const ONLY_POSIX = { skip: process.platform === "win32" && "这两条用 #!/bin/sh 写假 dsh，Windows 上没有 /bin/sh" };
 
 type Adapter = import("../worker/agents.ts").Adapter;
 
@@ -55,32 +59,36 @@ const turn = {
   folder: "/run",
 };
 
-test("DSH: access is the permission preset every time, nothing waits for approval, and a resumed turn goes on in its session", () => {
-  const policy = ["--approval-policy", "never"];
-  const argv = dsh.command(turn);
-  assert.deepEqual(argv.slice(0, 3), [program, "headless", "--json"]);
-  assert.deepEqual(
-    argv.slice(3),
-    ["--permission-mode", "workspace-write", ...policy, "做这件事"],
-    "a new session takes no id: dsh makes its own and reports it",
-  );
-  for (const [access, preset] of [
-    ["read", "read-only"],
-    ["edit", "workspace-write"],
-    ["full", "danger-full-access"],
-  ] as const) {
-    assert.deepEqual(dsh.command({ ...turn, access }).slice(3, 5), ["--permission-mode", preset]);
-  }
-  const again = dsh.command({ ...turn, access: "read", resume: "session-1" });
-  assert.deepEqual(again.slice(3), [
-    "--permission-mode",
-    "read-only",
-    ...policy,
-    "--session-id",
-    "session-1",
-    "做这件事",
-  ]);
-});
+test(
+  "DSH: access is the permission preset every time, nothing waits for approval, and a resumed turn goes on in its session",
+  ONLY_POSIX,
+  () => {
+    const policy = ["--approval-policy", "never"];
+    const argv = dsh.command(turn);
+    assert.deepEqual(argv.slice(0, 3), [program, "headless", "--json"]);
+    assert.deepEqual(
+      argv.slice(3),
+      ["--permission-mode", "workspace-write", ...policy, "做这件事"],
+      "a new session takes no id: dsh makes its own and reports it",
+    );
+    for (const [access, preset] of [
+      ["read", "read-only"],
+      ["edit", "workspace-write"],
+      ["full", "danger-full-access"],
+    ] as const) {
+      assert.deepEqual(dsh.command({ ...turn, access }).slice(3, 5), ["--permission-mode", preset]);
+    }
+    const again = dsh.command({ ...turn, access: "read", resume: "session-1" });
+    assert.deepEqual(again.slice(3), [
+      "--permission-mode",
+      "read-only",
+      ...policy,
+      "--session-id",
+      "session-1",
+      "做这件事",
+    ]);
+  },
+);
 
 const lines = (...events: object[]) => events.map((event) => JSON.stringify(event)).join("\n");
 const opened = { type: "session", sessionId: "session-1", cwd: "/x" };
@@ -180,7 +188,7 @@ test("DSH: a line of output that's JSON but no event is noise", () => {
   assert.doesNotThrow(() => dsh.read(noise, 0, ""));
 });
 
-test("DSH: check passes when the program runs, and says what to do when it doesn't", () => {
+test("DSH: check passes when the program runs, and says what to do when it doesn't", ONLY_POSIX, () => {
   assert.match(check()!, /^DSH 用不了：运行 dsh headless "hi" 看看（/);
   process.env.DSH_TEST_USABLE = "old";
   try {

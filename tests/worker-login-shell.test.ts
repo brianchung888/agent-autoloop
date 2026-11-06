@@ -5,7 +5,14 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { skipOn } from "./helpers.ts";
+
+/** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
+const test = skipOn(
+  ["darwin", "linux"],
+  "这份测试验证的是登录 shell 那一层（$SHELL -lc）；Windows 上没有登录 shell，worker/launcher.ts 本来就不经过它",
+);
 
 const scratch = mkdtempSync(join(tmpdir(), "agent-autoloop-login-shell-"));
 const home = join(scratch, "quote' $(touch path-injected)");

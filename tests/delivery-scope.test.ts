@@ -7,6 +7,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { skipOn } from "./helpers.ts";
 import { settings, matches, releaseRequired, readMainSettings, liveRelease } from "../plugins/delivery/project.ts";
 const root = mkdtempSync(join(tmpdir(), "agent-autoloop-delivery-scope-"));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -28,6 +29,11 @@ const config = {
   repo: "example/app",
   internal: ["docs/**/*.md"],
   review: { points: "AGENTS.md", status: "agent-review" },
+};
+
+/** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
+const ONLY_POSIX = {
+  skip: process.platform === "win32" && "这一条按 POSIX 的可执行位与符号链接判断文档要不要发布，Windows 上没有对应的位",
 };
 test("the default review status is neutral and projects can override it", () => {
   assert.equal(settings({ ...config, review: { points: "AGENTS.md" } }).review.status, "agent-review");
@@ -53,7 +59,7 @@ test("release scope compares the entire healthy-live range and both sides of ren
   git("mv", "app.ts", "docs/app.md");
   assert.equal(releaseRequired(root, base, commit(), config.internal), true);
 });
-test("executable or symlink documents and unknown history always need release", () => {
+test("executable or symlink documents and unknown history always need release", ONLY_POSIX, () => {
   for (const mode of ["executable", "symlink"]) {
     git("reset", "--hard", base);
     if (mode === "executable") chmodSync(join(root, "docs/a.md"), 0o755);
