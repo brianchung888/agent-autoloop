@@ -28,7 +28,7 @@ import { skipOn } from "./helpers.ts";
 /** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
 const test = skipOn(
   ["win32"],
-  "这份测试按 POSIX symlink 与 ln -sf 验证卸载；Windows 上 PATH 上是 .cmd 包装脚本、Skill 是 junction 或复制，由 scripts/install-smoke.ps1 真机验证",
+  "这份测试按 POSIX symlink 与 ln -sf 验证卸载；Windows 上 PATH 上是 .cmd 包装脚本（scripts/install-smoke.ps1 真机验证），Skill 是 junction 或复制（tests/platform-skill-link.test.ts 真机验证）",
 );
 
 const repo = join(import.meta.dirname, "..");
