@@ -60,7 +60,7 @@ async function adaptWebhook(source: string, headers: Headers, body: string) {
   const translate = await loadPlugin(adapter, "source");
   const secret = process.env[`AGENT_AUTOLOOP_SECRET_${source.toUpperCase().replaceAll("-", "_")}`] ?? "";
   try {
-    const events = translate({ headers: Object.fromEntries(headers), body, secret });
+    const events = await translate({ headers: Object.fromEntries(headers), body, secret });
     return Array.isArray(events) ? events : [];
   } catch {
     throw new AuthError("验签没过");

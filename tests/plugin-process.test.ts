@@ -102,17 +102,43 @@ test("source 是一次纯翻译，返回事件数组", async () => {
     }),
   );
   const translate = await loadPlugin("outside-source", "source");
-  assert.deepEqual(translate({ headers: { "x-sig": "k" }, body: '{"no":7}', secret: "k" }), [
+  // 这一个 call 不阻塞：webhook 那头（host/server.ts 的 adaptWebhook）本来就是 async，等的时候中台照旧转。
+  assert.deepEqual(await translate({ headers: { "x-sig": "k" }, body: '{"no":7}', secret: "k" }), [
     { id: "order-7", type: "shop.order" },
   ]);
   // 插件自己挂了、一句话没留下，那还是一个要抛出去的毛病：host/server.ts 把它变成「验签没过」。
-  assert.throws(() => translate({ headers: {}, body: "{}", secret: "k" }), /插件对 translate 什么都没答/);
+  await assert.rejects(() => translate({ headers: {}, body: "{}", secret: "k" }), /插件对 translate 什么都没答/);
   // 进来的东西选不了这是哪一个 call：webhook 的字段是摊进这个请求里的，`call` 要压在最后。
   assert.deepEqual(
-    translate({ headers: { "x-sig": "k" }, body: '{"no":7}', secret: "k", call: "describe" }),
+    await translate({ headers: { "x-sig": "k" }, body: '{"no":7}', secret: "k", call: "describe" }),
     [{ id: "order-7", type: "shop.order" }],
     "请求自带的 call 盖掉了 translate",
   );
+});
+
+test("事件插件那一个调用不占着中台：等它的时候事件循环照旧转", async () => {
+  // 睡 400 毫秒才答。如果这一个调用是 spawnSync，这 400 毫秒里整个进程一动不动，下面那个计时器一次都不会响。
+  plugin(
+    "slow-source",
+    `
+import { readFileSync } from "node:fs";
+const request = JSON.parse(readFileSync(0, "utf8"));
+if (request.call === "describe") console.log(JSON.stringify({ ok: true, value: { calls: ["translate"] } }));
+else {
+  await new Promise((done) => setTimeout(done, 400));
+  console.log(JSON.stringify({ ok: true, value: [{ id: "slow", type: "t" }] }));
+}
+`,
+  );
+  const translate = await loadPlugin("slow-source", "source");
+  let ticks = 0;
+  const beat = setInterval(() => ticks++, 20);
+  try {
+    assert.deepEqual(await translate({ headers: {}, body: "{}", secret: "" }), [{ id: "slow", type: "t" }]);
+  } finally {
+    clearInterval(beat);
+  }
+  assert.ok(ticks > 3, `等插件的时候事件循环停了（只跳了 ${ticks} 次）：这一个调用又变成同步的了`);
 });
 
 test("答不出一行 JSON、或者什么都不答，都说得明明白白", async () => {
@@ -168,7 +194,7 @@ else console.log(JSON.stringify({ ok: true, value: [{ id: "e", type: "t" }] }));
   assert.equal(await loadPlugin("counted-source", "source"), first);
   assert.equal(runs(), 1, "describe 又跑了一次：每个 webhook 就多起一个进程");
   // 而真的调用照旧一次一个进程：那是协议说的，不是可以省掉的。
-  assert.deepEqual(first({ headers: {}, body: "{}", secret: "" }), [{ id: "e", type: "t" }]);
+  assert.deepEqual(await first({ headers: {}, body: "{}", secret: "" }), [{ id: "e", type: "t" }]);
   assert.equal(runs(), 2);
 });
 

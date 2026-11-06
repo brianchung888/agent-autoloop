@@ -2,11 +2,11 @@
 
 先看 [README 的内置插件目录](../README.md#插件体系四个方向都能自由替换)选择已有实现；需要扩展时，从下面三个可运行的最小模板开始，替换业务部分：
 
-| 模板 | 已经演示了什么 | 你要替换什么 |
-|---|---|---|
-| [Agent 模板](../examples/plugins/hello-agent/agent.ts) | 用 `printf` 模拟执行，读取输出、会话编号和「收下了提示词」 | 新 Agent 的启动命令和输出解析 |
-| [通道模板](../examples/plugins/hello-channel/channel.ts) | 领卡片、写到文件、报告送达；通过命令行回答 | 目标平台的发送、更新和回答回调 |
-| [事件插件模板](../examples/plugins/hello-source/source.ts) | 验证 HMAC-SHA256 签名，把模拟订单转换成事件 | 业务系统的验签方式和字段映射 |
+| 模板                                                       | 已经演示了什么                                             | 你要替换什么                   |
+| ---------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------ |
+| [Agent 模板](../examples/plugins/hello-agent/agent.ts)     | 用 `printf` 模拟执行，读取输出、会话编号和「收下了提示词」 | 新 Agent 的启动命令和输出解析  |
+| [通道模板](../examples/plugins/hello-channel/channel.ts)   | 领卡片、写到文件、报告送达；通过命令行回答                 | 目标平台的发送、更新和回答回调 |
+| [事件插件模板](../examples/plugins/hello-source/source.ts) | 验证 HMAC-SHA256 签名，把模拟订单转换成事件                | 业务系统的验签方式和字段映射   |
 
 事件插件、接单程序、通道和命令行共用同一套 HTTP + JSON 接口。只用 Shell 接协议，可以看 [接单脚本](../examples/worker.sh) 和 [通道脚本](../examples/channel.sh)：设置中台地址与密钥后运行，需要 `curl`、`jq`。它们适合演示短任务；长任务使用内置接单程序的心跳、停止和恢复能力。
 
@@ -26,10 +26,10 @@ node --disable-warning=ExperimentalWarning --test --test-name-pattern='agent-aut
 
 插件目录里可以有一个 `plugin.json`，可选，`runtime` 只有两个值：
 
-| `runtime` | 意思 |
-|---|---|
+| `runtime`        | 意思                                                                                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `source`（默认） | 入口是 `agent.ts` / `channel.ts` / `source.ts`，中台把它 `import` 进自己这个进程。**加载就是执行**：插件顶层干了什么，就在这一刻以中台的身份干了什么 |
-| `process` | 入口是 `entry` 指的一个可执行文件，中台每次调用起它一次，走标准输入输出的逐行 JSON |
+| `process`        | 入口是 `entry` 指的一个可执行文件，中台每次调用起它一次，走标准输入输出的逐行 JSON                                                                   |
 
 没有这个文件、读不出来、不是对象、或者没写 `runtime`，一律当 `source`：第三方仓库本来就可能有一个讲它自己事情的 `plugin.json`，不能让今天能用的插件用不了。写明了 `runtime` 又写错（不是这两个值、`process` 没有 `entry`、`entry` 是绝对路径或走出插件目录）则直接报错。
 
@@ -51,16 +51,16 @@ node --disable-warning=ExperimentalWarning --test --test-name-pattern='agent-aut
 
 调用方式：每次起一个进程，标准输入给一行 JSON 请求，标准输出的**最后一行**是 JSON 答复，然后退出。答复是 `{"ok":true,"value":…}` 或 `{"ok":false,"error":"一句人能照着做的话"}`；中间想打印别的东西可以，只要答复在最后一行。
 
-| 请求 | 对应的函数 | `value` |
-|---|---|---|
-| `{"call":"describe"}` | — | `{"calls":["command","read","link","check"]}`，只用来问它有哪几个 |
-| `{"call":"command","turn":{…}}` | `command(turn)` | 命令参数数组 |
-| `{"call":"read","stdout":"…","code":0,"stderr":"…"}` | `read(stdout, code, stderr)` | `Reading` 对象，运行中 `code` 是 `null` |
-| `{"call":"link","session":"…"}` | `link(session)` | 链接字符串 |
-| `{"call":"check"}` | `check()` | `null` 或一句话 |
-| `{"call":"translate","headers":{},"body":"","secret":""}` | 事件插件的那个函数 | 事件数组 |
+| 请求                                                      | 对应的函数                   | `value`                                                           |
+| --------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------- |
+| `{"call":"describe"}`                                     | —                            | `{"calls":["command","read","link","check"]}`，只用来问它有哪几个 |
+| `{"call":"command","turn":{…}}`                           | `command(turn)`              | 命令参数数组                                                      |
+| `{"call":"read","stdout":"…","code":0,"stderr":"…"}`      | `read(stdout, code, stderr)` | `Reading` 对象，运行中 `code` 是 `null`                           |
+| `{"call":"link","session":"…"}`                           | `link(session)`              | 链接字符串                                                        |
+| `{"call":"check"}`                                        | `check()`                    | `null` 或一句话                                                   |
+| `{"call":"translate","headers":{},"body":"","secret":""}` | 事件插件的那个函数           | 事件数组                                                          |
 
-这些就是全部：协议只是把已有的函数形状搛过进程边界，没有新能力。`describe` 没列出 `link` 或 `check` 的，就没有这两个：中台读的是「有没有」，凭空给一个 `link` 会报一个打不开的会话链接。这些函数在调用处都是同步的，所以一次调用就是程序跑一次：不留状态，也不用守着。
+这些就是全部：协议只是把已有的函数形状搛过进程边界，没有新能力。`describe` 没列出 `link` 或 `check` 的，就没有这两个：中台读的是「有没有」，凭空给一个 `link` 会报一个打不开的会话链接。一次调用就是程序跑一次：不留状态，也不用守着。智能体那四个调用在调用处是同步的（`worker/agents.ts` 的 `Adapter` 就是这个形状），所以它们会阻塞；事件插件那一个调用不阻塞——收 webhook 那头本来就是 `async`，等另一个程序答话的时候中台照旧转。
 
 **通道现在不支持 `process`。** 通道是和中台一样长命的循环，不是一次一答的翻译。用别的语言写通道，直接当独立程序连中台的 HTTP 协议（见下面的通道插件一节和 `examples/channel.sh`），不必经过插件机制。
 
@@ -72,12 +72,12 @@ node --disable-warning=ExperimentalWarning --test --test-name-pattern='agent-aut
 
 从 [hello-agent/agent.ts](../examples/plugins/hello-agent/agent.ts) 开始。它用 `printf` 代替模型，克隆到别处也能运行。收下提示词和结束时各打一行，`read` 从第一行就知道这一轮接上了原会话，第二行是它的最后一条消息。
 
-| 导出对象的方法 | 作用 |
-|---|---|
-| `command(turn)` | 返回命令参数数组；参数不作为 shell 代码执行 |
+| 导出对象的方法               | 作用                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `command(turn)`              | 返回命令参数数组；参数不作为 shell 代码执行                                                              |
 | `read(stdout, code, stderr)` | 返回 `text`、`session`、`usage`、`sessionUsage`、`error`、`finished`、`started`；运行中 `code` 为 `null` |
-| `link(session)` | 可选，打开这个会话的链接。回执写错时，`read` 返回了 `session` 的插件都只重写回执，和有没有链接无关 |
-| `check()` | 可选，能用返回 `null`，否则返回下一步怎么做 |
+| `link(session)`              | 可选，打开这个会话的链接。回执写错时，`read` 返回了 `session` 的插件都只重写回执，和有没有链接无关       |
+| `check()`                    | 可选，能用返回 `null`，否则返回下一步怎么做                                                              |
 
 `turn` 包含 `prompt`、`session`、`resume`、`cwd`、`access`、`model`、`effort`、`command`、`contextFile`、`folder`。`contextFile` 是资料文件，受限 CLI 需要允许读取 `folder`。`read` 要能处理未写完的输出；CLI 真正完成后才返回 `text`。`read` 抛错或什么也不返回时，还在跑的接着跑，结束后这一轮算没跑成，留在原会话重派。
 
@@ -113,12 +113,12 @@ Claude 委托 Codex 的完整规则、Skill 和参数调用脚本见[浏览器�
 
 默认导出异步函数，参数是 `{ hub, options, log, signal }`；`options` 来自 `config.json`，不含中台密钥。
 
-| 调用 | 作用 |
-|---|---|
-| `hub.nextCard(50)` | 长轮询领卡片，没卡片返回 `{ card: null }` |
-| `hub.delivered(id, version, ref)` | 报告送达，保存外部消息编号 |
-| `hub.failed(id, version, error)` | 报告发送失败 |
-| `hub.answer(id, { choice, by, ref })` | 转交回答；核对回答人和原消息 |
+| 调用                                  | 作用                                      |
+| ------------------------------------- | ----------------------------------------- |
+| `hub.nextCard(50)`                    | 长轮询领卡片，没卡片返回 `{ card: null }` |
+| `hub.delivered(id, version, ref)`     | 报告送达，保存外部消息编号                |
+| `hub.failed(id, version, error)`      | 报告发送失败                              |
+| `hub.answer(id, { choice, by, ref })` | 转交回答；核对回答人和原消息              |
 
 `ref` 为空就发新消息，有值就更新原消息；不能更新时只报告。没报告的卡片一分钟后重派。`signal` 中止时退出；函数在此之前返回或抛错，都记日志并在 30 秒后重启，所以它要一直运行。插件和中台在同一个进程里：没接住的错误只记日志，不让中台退出。
 
@@ -152,12 +152,12 @@ Claude 委托 Codex 的完整规则、Skill 和参数调用脚本见[浏览器�
 
 `access` 由插件翻译，不是中台提供的系统沙箱。以下是未额外放宽本机权限时的行为。
 
-| 插件 | `read` | `edit` | `full` |
-|---|---|---|---|
-| Codex | `read-only`：能跑 shell，不能写文件，命令默认不能联网 | `workspace-write`：能跑 shell、写工作目录和临时目录，命令默认不能联网 | `danger-full-access`：能写文件、跑 shell、联网，无审批 |
-| Claude Code | `plan`：能读文件和运行只读命令；其他命令取决于自动审批及本机规则 | `acceptEdits`：再允许目录内文件编辑和常见文件操作；任意 shell 或联网仍需放行 | `bypassPermissions`：跳过工具审批，没有额外系统隔离 |
-| DeepSeek Harness | `read-only`：不能写文件，读文件和联网不受限 | `workspace-write`：命令和文件改动限于工作目录和临时目录，读文件和联网不受限 | `danger-full-access`：不受限制 |
-| ACP | Agent 来问时，同意读和搜索 | 再同意工作目录内的编辑 | 同意它来问的所有操作 |
+| 插件             | `read`                                                           | `edit`                                                                       | `full`                                                 |
+| ---------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Codex            | `read-only`：能跑 shell，不能写文件，命令默认不能联网            | `workspace-write`：能跑 shell、写工作目录和临时目录，命令默认不能联网        | `danger-full-access`：能写文件、跑 shell、联网，无审批 |
+| Claude Code      | `plan`：能读文件和运行只读命令；其他命令取决于自动审批及本机规则 | `acceptEdits`：再允许目录内文件编辑和常见文件操作；任意 shell 或联网仍需放行 | `bypassPermissions`：跳过工具审批，没有额外系统隔离    |
+| DeepSeek Harness | `read-only`：不能写文件，读文件和联网不受限                      | `workspace-write`：命令和文件改动限于工作目录和临时目录，读文件和联网不受限  | `danger-full-access`：不受限制                         |
+| ACP              | Agent 来问时，同意读和搜索                                       | 再同意工作目录内的编辑                                                       | 同意它来问的所有操作                                   |
 
 Codex 的三个档位已用插件命令实跑；DeepSeek Harness 和 Claude Code 分别依据 [DSH 文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/reference/README.md)和[官方权限说明](https://code.claude.com/docs/en/permission-modes)整理，没有调用模型实跑。Codex 的命令网络限制与托管搜索、MCP 不是同一个边界，详见[官方沙箱说明](https://learn.chatgpt.com/docs/agent-approvals-security)。用户的 CLI 配置可能改变上述能力；`read` 也不代表读不到本机密钥。
 

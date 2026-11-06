@@ -7,15 +7,17 @@
 // added, and a plugin that does not say it has `link` or `check` does not get one: the hub reads the absence of those
 // two, so a stand-in that always had them would change what it does.
 //
-// All five of those functions are synchronous where they are called from, so each call is one run of the program: the
-// line goes in on its standard input, the answer comes back on its standard output, and the program exits. That is
-// what makes a program in any language able to be one of these — it reads a line, prints a line, and is over — and it
-// is what the kinds this covers can afford, being pure translations with nothing to keep between calls. A channel is
+// Each call is one run of the program: the line goes in on its standard input, the answer comes back on its standard
+// output, and the program exits. That is what makes a program in any language able to be one of these — it reads a
+// line, prints a line, and is over — and it is what the kinds this covers can afford, being pure translations with
+// nothing to keep between calls. An agent's four calls block, because `Adapter` (worker/agents.ts) is read
+// synchronously where it is used; a source plugin's one call does not, because the webhook that reaches it
+// (host/server.ts `adaptWebhook`) is already `async` — so waiting on another program is not the hub standing still. A channel is
 // not: it is a loop that lives as long as the hub does, so it is not in this (计划第四章 2.6, D8). A channel in another
 // language already has a way in that costs it nothing — the hub's own HTTP protocol (host/channels.ts:1-2).
 //
 // Nothing here goes through a shell. The command line is an array, as everywhere else in this program.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import type { PluginKind } from "./plugins.ts";
 
@@ -26,19 +28,19 @@ const CALL_TIMEOUT = 30_000;
 /** An agent's output is handed to `read` whole, and some of them print a great deal of it. */
 const MOST = 32 * 1024 * 1024;
 
-/** One run of the plugin's program: a line in, a line out. Throws what the plugin said, or what went wrong instead. */
-function ask(name: string, folder: string, argv: string[], request: Record<string, unknown>): unknown {
-  const [program, ...args] = argv;
-  const ran = spawnSync(program!, args, {
-    input: `${JSON.stringify(request)}\n`,
-    encoding: "utf8",
-    timeout: CALL_TIMEOUT,
-    maxBuffer: MOST,
-    windowsHide: true,
-    // Its own folder, so that an argument naming a file of its own is a path the plugin can write down: it cannot
-    // know where it was installed, and the folder it was installed in is the one place it can be sure of.
-    cwd: folder,
-  });
+/** What one run of the plugin's program left behind, however it was started: the same four things either way. */
+type Ran = { error?: Error; signal: string | null; status: number | null; stdout: string; stderr: string };
+
+/** The options both ways of starting it share, so that a call means the same thing whichever one ran it. */
+const where = (folder: string) => ({
+  windowsHide: true,
+  // Its own folder, so that an argument naming a file of its own is a path the plugin can write down: it cannot
+  // know where it was installed, and the folder it was installed in is the one place it can be sure of.
+  cwd: folder,
+});
+
+/** The one line of JSON the plugin's answer is, read out of what the run left behind. Throws what it said instead. */
+function answerOf(name: string, request: Record<string, unknown>, program: string, ran: Ran): unknown {
   if (ran.error) throw new Error(`${name} 插件的程序起不来（${program}）：${ran.error.message}`);
   if (ran.signal) throw new Error(`${name} 插件的程序被 ${ran.signal} 结束了，没有答复 ${request.call}`);
   // The answer is the last line it printed: a program is allowed to say things on the way, and a line of its own is
@@ -63,6 +65,86 @@ function ask(name: string, folder: string, argv: string[], request: Record<strin
     throw new Error(`${name} 插件说：${said}`);
   }
   return answer.value;
+}
+
+/**
+ * One run of the plugin's program: a line in, a line out. Throws what the plugin said, or what went wrong instead.
+ *
+ * This one blocks, because the four calls of an agent plugin are read from where they are called synchronously
+ * (worker/agents.ts): `command`, `read`, `link`, `check` are a `Adapter`'s own shape and are not this file's to change.
+ */
+function ask(name: string, folder: string, argv: string[], request: Record<string, unknown>): unknown {
+  const [program, ...args] = argv;
+  const ran = spawnSync(program!, args, {
+    input: `${JSON.stringify(request)}\n`,
+    encoding: "utf8",
+    timeout: CALL_TIMEOUT,
+    maxBuffer: MOST,
+    ...where(folder),
+  });
+  return answerOf(name, request, program!, {
+    error: ran.error,
+    signal: ran.signal,
+    status: ran.status,
+    stdout: ran.stdout ?? "",
+    stderr: ran.stderr ?? "",
+  });
+}
+
+/**
+ * The same run, without blocking the hub while it happens. A source plugin's one call is reached from a webhook
+ * (host/server.ts `adaptWebhook`), which is already `async` and awaits what the plugin hands back — so the hub's event
+ * loop keeps turning while another program is being waited on, and a slow plugin stops being a stall for everyone.
+ *
+ * It answers exactly what `ask` would: the same timeout, the same ceiling on output, the same `Ran` read by the same
+ * reader. The timeout and the ceiling are spelt out here because `spawn` has neither of its own.
+ */
+function askLater(name: string, folder: string, argv: string[], request: Record<string, unknown>): Promise<unknown> {
+  const [program, ...args] = argv;
+  return new Promise<Ran>((settle) => {
+    const child = spawn(program!, args, { ...where(folder), stdio: ["pipe", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    let said = 0;
+    let done = false;
+    const finish = (ran: Ran) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      settle(ran);
+    };
+    // What `spawnSync` does on each of these, done by hand: a timeout kills it and is reported as a signal, and more
+    // output than the ceiling is an error about the ceiling rather than a truncated answer read as if it were whole.
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish({ signal: "SIGTERM", status: null, stdout: out, stderr: err });
+    }, CALL_TIMEOUT);
+    timer.unref?.();
+    const take = (text: string, into: "out" | "err") => {
+      said += Buffer.byteLength(text);
+      if (said > MOST) {
+        child.kill("SIGKILL");
+        finish({
+          error: new Error("stdout maxBuffer length exceeded"),
+          signal: null,
+          status: null,
+          stdout: "",
+          stderr: err,
+        });
+        return;
+      }
+      if (into === "out") out += text;
+      else err += text;
+    };
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (text: string) => take(text, "out"));
+    child.stderr.on("data", (text: string) => take(text, "err"));
+    child.on("error", (error: Error) => finish({ error, signal: null, status: null, stdout: out, stderr: err }));
+    child.on("close", (status, signal) => finish({ signal, status, stdout: out, stderr: err }));
+    child.stdin.on("error", () => {});
+    child.stdin.end(`${JSON.stringify(request)}\n`);
+  }).then((ran) => answerOf(name, request, program!, ran));
 }
 
 /** What the plugin answers `describe` with, which is the one call every one of them has to have. */
@@ -117,7 +199,7 @@ function make(name: string, kind: PluginKind, folder: string, entry: string, arg
   // Which call this is, last: the webhook's own headers and body are spread in here, and a request that arrives with
   // a `call` of its own would otherwise choose which of the plugin's calls runs.
   if (kind === "source")
-    return (input: unknown) => ask(name, folder, argv, { ...(input as object), call: "translate" });
+    return async (input: unknown) => askLater(name, folder, argv, { ...(input as object), call: "translate" });
   const adapter: Record<string, unknown> = {
     command: (turn: unknown) => ask(name, folder, argv, { call: "command", turn }),
     read: (stdout: string, code: number | null, stderr: string) =>
