@@ -185,3 +185,34 @@ test("号被别人捡走就不是这个 run 了：比对 launch-N.json 记下的
   writeFileSync(record, JSON.stringify({ pid: child.pid, born: "1" }));
   assert.equal(alive(child.pid, "", record), false, "同一个号、另一个时刻，记下的那次不算数");
 });
+
+test("问一个号的创建时刻，用不着列整张进程表，也不扔掉这个 tick 已经问到的", ONLY_WINDOWS, async (t) => {
+  const nobody = 0x7ffffff0;
+  const child = started(SLEEP);
+  t.after(() => terminate(child.pid, true));
+  await until("它起来了", () => running(child.pid!));
+
+  // 整张表要等机器列完，这是 worker 每个 tick 的代价；bornAt 每次 launch 又要再付一次，而且以前还要先把表扔掉。
+  forgetProcesses();
+  const listing = Date.now();
+  assert.notEqual(treeAlive(nobody), true);
+  const whole = Date.now() - listing;
+
+  const one = Date.now();
+  const born = bornAt(child.pid);
+  const asked = Date.now() - one;
+  assert.match(String(born), /^\d+$/, "问得出来");
+  assert.ok(asked < whole, `问一个号要 ${asked}ms，列整张表要 ${whole}ms`);
+
+  // 这个 tick 已经问到的还在：launch 之后再问树，不该让机器把整张表再列一遍。
+  const again = Date.now();
+  assert.notEqual(treeAlive(nobody), true);
+  assert.ok(Date.now() - again < Math.max(whole / 2, 400), "bornAt 把这个 tick 的进程表扔掉了");
+
+  // 而且那张表还多知道了刚问的那个号：它被列出来的时候，这个进程还不存在。
+  const record = join(dir, "launch-born.json");
+  writeFileSync(record, JSON.stringify({ pid: child.pid, born }));
+  assert.equal(alive(child.pid, "", record), true, "就是它");
+  writeFileSync(record, JSON.stringify({ pid: child.pid, born: "1" }));
+  assert.equal(alive(child.pid, "", record), false, "别的时刻就不是它");
+});

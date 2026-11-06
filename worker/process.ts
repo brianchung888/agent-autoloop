@@ -22,6 +22,13 @@ const LAUNCHER_IMAGE = path.basename(process.execPath);
 const PROCESS_TABLE_QUERY =
   "Get-CimInstance -ClassName Win32_Process -Property ProcessId,ParentProcessId,CreationDate |" +
   ' ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.CreationDate.Ticks)" }';
+/**
+ * The moment one process was created, and nothing else. The number is handed in as an environment value and cast by
+ * the query, so this text is a constant: nothing of a caller's ever becomes part of what runs.
+ */
+const ONE_PROCESS_QUERY =
+  'Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $([int]$env:AGENT_AUTOLOOP_PID)"' +
+  " -Property CreationDate | ForEach-Object { $_.CreationDate.Ticks }";
 
 /**
  * tasklist leaves with 0 whether or not anything matched, and says that it found nothing in the console's own language.
@@ -51,9 +58,11 @@ type Table = { live: Set<number>; children: Map<number, number[]>; born: Map<num
  * run it holds within the same tick — while the hub, which shares this process, waits. So it is asked for once and
  * kept for a moment: long enough that a tick pays for one query however many runs are in it, short enough that a loop
  * waiting for something to stop still sees it stop. A tick says outright when what was kept is from before it
- * (forgetProcesses), so every answer inside a tick is one picture of the machine rather than several.
+ * (forgetProcesses), so every answer inside a tick is one picture of the machine rather than several — and what is kept
+ * has to outlast a tick that launches something, because asking the machine when that process came into being takes a
+ * second of its own and a picture thrown away in the middle of a tick is a second query for the same tick.
  */
-const FRESH = 1000;
+const FRESH = 3000;
 let kept: { at: number; table: Table | null } | null = null;
 
 function processTable(): Table | null {
@@ -101,13 +110,40 @@ function readProcessTable(): Table | null {
 /** What the worker wrote down about one launch, where no command line can be read back off the process. */
 export type Launch = { pid?: number; startedAt?: number; marker?: string; born?: string };
 
-/** The moment the process at this number was created, as this machine counts it, for writing down beside a launch. */
+/**
+ * The moment the process at this number was created, as this machine counts it, for writing down beside a launch.
+ *
+ * Asked about one number and no other. Listing the whole table for it costs the best part of three seconds and would
+ * have to throw away what this tick had already kept — a launch is about a process that started this very moment, and
+ * no table from before it knows the number at all — so the same tick would end up listing the machine twice.
+ */
 export function bornAt(pid: number | undefined): string | null {
-  if (!pid || !WINDOWS) return null;
-  // Only ever asked about a process that has just this moment started, which is in no table from before it: what was
-  // kept would answer "nothing by that number", and a launch with nothing written down can never be told apart later.
-  forgetProcesses();
-  return processTable()?.born.get(pid) ?? null;
+  if (!pid || !WINDOWS || !Number.isInteger(pid) || pid <= 0) return null;
+  try {
+    const printed = execFileSync(
+      "powershell",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", ONE_PROCESS_QUERY],
+      {
+        encoding: "utf8",
+        timeout: 30_000,
+        stdio: ["ignore", "pipe", "ignore"],
+        // The number goes in as a value, never into the text of the query: what runs is the constant above, and what
+        // it reads is cast to an integer by the query itself.
+        env: { ...process.env, AGENT_AUTOLOOP_PID: String(pid) },
+      },
+    );
+    const born = printed.trim();
+    if (!/^\d+$/.test(born)) return null;
+    // What this tick had already asked for knows nothing about a number that did not exist when it was asked: the one
+    // thing just learnt is put into it, so the picture stays usable instead of having to be taken again.
+    if (kept?.table) {
+      kept.table.live.add(pid);
+      kept.table.born.set(pid, born);
+    }
+    return born;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -134,7 +170,15 @@ function sameAsRecorded(pid: number, record: string | undefined) {
   // What was shown is remembered against the moment it was shown for, not against the number alone: the same number
   // comes round again, and a yes about the process that held it then is no answer about whatever holds it now.
   if (confirmed.get(pid) === record) return true;
-  const born = processTable()?.born.get(pid);
+  // What was kept may have been taken before this process existed, and this is only ever asked about a number that is
+  // a live process this moment: a picture without it in it was taken too early, and the one thing it would answer —
+  // "nothing by that number" — is the one answer that must not be given here. So such a picture is thrown away once.
+  const early = kept && Date.now() - kept.at < FRESH ? kept : null;
+  let born = processTable()?.born.get(pid);
+  if (born === undefined && early) {
+    forgetProcesses();
+    born = processTable()?.born.get(pid);
+  }
   if (born === undefined) return true;
   if (born !== record) return false;
   if (confirmed.size >= REMEMBER) confirmed.clear();
