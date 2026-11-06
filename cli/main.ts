@@ -612,7 +612,10 @@ async function doctor() {
       say(false, `读不到中台状态：${(error as Error).message}`);
     }
   }
-  if (bad) process.exit(1);
+  // Not process.exit: this has talked to the hub more than once, and ending the process outright while more than one
+  // of those connections is still closing makes libuv abort on Windows (uv/src/win/async.c:76 — the exit code is then
+  // 127 and the report is lost). Nothing is left to do here, so the code is left behind and the loop is let go of.
+  if (bad) process.exitCode = 1;
 }
 
 /** Only reads the file: checking a draft must not open the hub's database or load the draft into it. */

@@ -6,6 +6,10 @@
 # What scripts/install-smoke.sh does, said in the terms this platform has.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+# `doctor` leaves with a code of its own, which is a report and not an error here. On the shells where a native
+# command's exit code is turned into one, that would throw before the report could be read. (Unknown on 5.1, where
+# assigning it is harmless.)
+$PSNativeCommandUseErrorActionPreference = $false
 # Everything this reads back was written by node, which writes UTF-8. Without this the console's own code page decodes
 # it, and every message checked for below arrives as something else.
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -108,6 +112,20 @@ try {
   $status = (Autoloop "status") -join "`n"
   Write-Host $status
   if (-not $status.Contains("最近 7 天 2 轮")) { Fail "status doesn't count the two rounds" }
+
+  # doctor: the one command that talks to the hub more than once and then leaves with a code of its own. Ending the
+  # process outright there makes libuv abort on Windows (uv/src/win/async.c:76), which is exit 127 and no report at
+  # all. And it has to say the one thing this platform cannot do, rather than a green tick for a channel that reaches
+  # nobody: the desktop channel is running here and skipping every card.
+  $checked = (Autoloop "doctor") -join "`n"
+  $itsCode = $LASTEXITCODE
+  Write-Host $checked
+  if ($itsCode -ne 1) {
+    Fail "doctor left with $itsCode; 1 is what it says about the service nobody installed in this smoke test"
+  }
+  if ($checked -match "Assertion failed") { Fail "doctor aborted instead of leaving" }
+  if (-not $checked.Contains("桌面通知不可用")) { Fail "doctor doesn't say that notifications don't arrive here" }
+  if ($checked -match "连不上中台") { Fail "doctor can't reach the hub that is running" }
 
   Autoloop "uninstall" "--yes" | Write-Host
   if (-not (Test-Path (Join-Path $work "hub\config.json"))) { Fail "uninstall deleted the data" }
