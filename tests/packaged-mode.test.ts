@@ -11,11 +11,14 @@
 // recognised by the other.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { pathToFileURL } from "node:url";
+import { assetText } from "../host/assets.ts";
 import { envFile, installMark, taskXml } from "../host/service-win.ts";
+import { placeSkill, skillFolder } from "../host/skill.ts";
 import { unit } from "../host/service.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "agent-autoloop-packaged-"));
@@ -141,4 +144,53 @@ test("再起本程序的那条命令行，在没有入口脚本的树里只有�
   assert.notEqual(done.status, 0);
   // 走到的是同一个 loader，所以说的还是那一句；这里要的是它真的走到了，而不是半路因为路径不对就死了。
   assert.match(done.stderr, /插件名字不正确|没有/);
+});
+
+test("打包版把 SKILL.md 放到这个安装自己的 HOME 下，而不是指一个没有的文件", () => {
+  // PoC 里 doctor 印的是那个 exe 上一层目录下的 skills\agent-autoloop\SKILL.md——那里什么都没有。
+  // 打包版带着 SKILL.md，所以它要先写出来，再把 Agent 的 skills/ 接到写出来的那个地方。
+  const home = join(dir, "skill-home");
+  mkdirSync(home, { recursive: true });
+  const asked = spawnSync(
+    process.execPath,
+    [
+      "--disable-warning=ExperimentalWarning",
+      "--input-type=module",
+      "-e",
+      `const { placeSkill, skillFolder } = await import(${JSON.stringify(pathToFileURL(join(copy, "host", "skill.ts")).href)});
+       console.log(JSON.stringify({ folder: skillFolder(), placed: placeSkill() }));`,
+    ],
+    { encoding: "utf8", timeout: 60_000, env: { ...process.env, AGENT_AUTOLOOP_HOME: home } },
+  );
+  assert.equal(asked.status, 0, asked.stderr);
+  const { folder, placed } = JSON.parse(asked.stdout);
+  assert.equal(folder, join(home, "skills", "agent-autoloop"), "打包版的 skill 该落在这个安装自己的 HOME 下");
+  assert.equal(placed, folder);
+  // 写出来的就是带在里面的那一份，逐字节相同：Agent 读到的和仓库里那一份是同一份。
+  assert.equal(
+    readFileSync(join(folder, "SKILL.md"), "utf8"),
+    readFileSync(join(repo, "skills", "agent-autoloop", "SKILL.md"), "utf8"),
+  );
+
+  // 再放一次不会动它：接好的链接要一直是接好的，文件的时间也不该每次启动都变。
+  const was = statSync(join(folder, "SKILL.md")).mtimeMs;
+  const again = spawnSync(
+    process.execPath,
+    [
+      "--disable-warning=ExperimentalWarning",
+      "--input-type=module",
+      "-e",
+      `const { placeSkill } = await import(${JSON.stringify(pathToFileURL(join(copy, "host", "skill.ts")).href)});
+       placeSkill();`,
+    ],
+    { encoding: "utf8", timeout: 60_000, env: { ...process.env, AGENT_AUTOLOOP_HOME: home } },
+  );
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(statSync(join(folder, "SKILL.md")).mtimeMs, was, "又写了一遍");
+});
+
+test("源码模式下 skill 还是树里那个目录，一个字节都不写", () => {
+  assert.equal(skillFolder(), join(repo, "skills", "agent-autoloop"));
+  assert.equal(placeSkill(), skillFolder());
+  assert.equal(assetText("skills/agent-autoloop/SKILL.md"), readFileSync(join(skillFolder(), "SKILL.md"), "utf8"));
 });

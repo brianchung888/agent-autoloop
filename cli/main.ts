@@ -36,6 +36,7 @@ import {
 } from "../host/service.ts";
 // The one spelling of "how to start this program again" (host/self.ts), so a second one here cannot drift from it.
 import { fromSource, PROGRAM } from "../host/self.ts";
+import { placeSkill } from "../host/skill.ts";
 import { versionLine } from "../host/version.ts";
 import { spendLine } from "./spend.ts";
 import { attemptsOf, newFailure, waitingRetry } from "./try.ts";
@@ -250,7 +251,8 @@ type SkillWay = "link" | "copy";
 function linkSkill() {
   try {
     if (process.env.AGENT_AUTOLOOP_HOME) return;
-    const skill = path.join(ROOT, "skills", "agent-autoloop");
+    // In a packaged build there is no folder in a tree to link to, so this is also what writes one out (host/skill.ts).
+    const skill = placeSkill();
     const ways = readSkillWays();
     for (const agent of [".claude", ".codex"]) {
       if (!existsSync(path.join(homedir(), agent))) continue;
@@ -627,7 +629,9 @@ async function doctor() {
         if (channel.online && trouble) aside(trouble);
         else say(channel.online, `${channel.name}${channel.online ? "在线" : "不在线"}`);
       }
-      const manual = path.join(ROOT, "skills", "agent-autoloop", "SKILL.md");
+      // Named, and really there: a packaged build has it inside itself, and the path it is written out to is the one
+      // worth telling someone to read. Writing it is idempotent and only ever under this install's own HOME.
+      const manual = path.join(placeSkill(), "SKILL.md");
       if (!state.channels.length) {
         aside(`还没接通道：Agent 问你时不会主动告诉你，要自己运行 agent-autoloop status 看。接法见 ${manual}`);
       } else if (state.channels.length === 1 && state.channels[0].id === "desktop") {

@@ -21,7 +21,13 @@ type Sea = { isSea(): boolean; getAsset(name: string, encoding: "utf8"): string 
  * (scripts/build-binary.*) and the list the program reads from: one list, so a file added to one side cannot be
  * missing from the other.
  */
-export const ASSETS = ["kernel/evolve.ts", "kernel/credentials.ts", "protocol/schema.json"] as const;
+export const ASSETS = [
+  "kernel/evolve.ts",
+  "kernel/credentials.ts",
+  "protocol/schema.json",
+  // Not read to run: written back out, so that an Agent's own `skills/` has something to be linked to (host/skill.ts).
+  "skills/agent-autoloop/SKILL.md",
+] as const;
 
 export type Asset = (typeof ASSETS)[number];
 

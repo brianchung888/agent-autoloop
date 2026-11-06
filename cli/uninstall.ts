@@ -4,7 +4,8 @@ import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, unlinkSync }
 import { homedir } from "node:os";
 import path from "node:path";
 import { HOME } from "../host/home.ts";
-import { selfProgram } from "../host/self.ts";
+import { fromSource, selfProgram } from "../host/self.ts";
+import { skillFolder } from "../host/skill.ts";
 import { removeService, stopUp } from "../host/service.ts";
 
 const ROOT = path.join(import.meta.dirname, "..");
@@ -81,7 +82,7 @@ function removeLinks() {
     }
     removeLink(path.join(place, "agent-autoloop"), program);
   }
-  const skill = path.join(ROOT, "skills", "agent-autoloop");
+  const skill = skillFolder();
   // Where a link could not be made the install copied the folder, and said so. A copy leads nowhere, so nothing about
   // the folder itself can say whose it is: what the install wrote down is the only thing that can.
   const ways = skillWays();
@@ -91,6 +92,13 @@ function removeLinks() {
     else removeLink(link, skill);
   }
   rmSync(path.join(HOME, "skill-link.json"), { force: true });
+  // A packaged build wrote the Skill out under this install's HOME, there being no folder in a tree to link to. It is
+  // the program's own material and not anybody's data, so it goes with the program — after the comparisons above,
+  // which read it to tell a copy of ours from one someone has made their own.
+  if (!fromSource()) {
+    rmSync(skill, { recursive: true, force: true });
+    console.log(`删掉了 ${skill}`);
+  }
 }
 
 /** Confirmation is about removing the program; data is never part of this command. */
