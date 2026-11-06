@@ -71,7 +71,7 @@ chmod +x ./agent-autoloop-macos-arm64
 ./agent-autoloop-macos-arm64 init
 ```
 
-**Windows 上会被 SmartScreen 拦。** 这个文件没有签章：注入那一步会破坏 node.exe 原本的 Authenticode 签章，所以产物是「未签章」而不是「签章坏了」。第一次运行会弹「Windows 已保护你的电脑」，要点「更多信息 → 仍要运行」；下载时浏览器也可能先说一句。对完 `.sha256` 再放行——那串校验和是唯一可以用来确认这个文件没被换过的东西。给组织内部分发时，自己用组织的证书重签一次最省事。
+**Windows 上会被 SmartScreen 拦。** 这个文件没有签章：注入那一步会破坏 node.exe 原本的 Authenticode 签章，所以产物是「未签章」而不是「签章坏了」。第一次运行会弹「Windows 已保护你的电脑」，要点「更多信息 → 仍要运行」；下载时浏览器也可能先说一句。对完 `.sha256` 再放行——那串校验和是唯一可以用来确认这个文件没被换过的东西。给组织内部分发时，自己用组织的证书重签一次最省事。要对的是 Release 上那一份 `.sha256`：同一个提交自己再建一次，SHA256 不会和它一样（blob 里带着 V8 的 code cache，由建置那台机器的运行时产生），所以这不是可重现建置，别拿自己重建的那一份去比。
 
 **升级就是重新下载。** 在二进位里 `agent-autoloop update` 不会去动任何东西，它只会把下面这几步印出来：到 Release 页面取新的那一个、对校验和、往 `AGENT_AUTOLOOP_HOME/stop` 写一个空文件等中台收尾（Windows 上别直接杀进程，也别在中台还在跑的时候覆盖这个 exe——Windows 会直接拒绝）、把文件换掉、再启动一次。规则、密钥和记录都在数据目录里，不在这个文件里，所以换文件不丢任何东西，两种装法之间来回换也不会让投影重建（两种模式算出来的投影格式逐字相同，`tests/sea-format.test.ts` 钉着这一条）。
 
@@ -104,6 +104,8 @@ agent-autoloop --version
 agent-autoloop doctor
 agent-autoloop try
 ```
+
+环境里 export 了 `AGENT_AUTOLOOP_COMMIT` 或 `AGENT_AUTOLOOP_RELEASE` 的话，`--version` 说的是那两个值：二进位把自己的版本写成 `||=`，好让部署改得动，和源码模式一个样。报问题之前先 `unset` 这两个，否则说出来的版本不是手上这个文件的。
 
 `try` 会使用用户的模型额度。在非交互终端，它打印问题和 `agent-autoloop answer` 命令后退出；这是正常等待，不是失败。把问题转给用户，按他的选择回答，再运行 `agent-autoloop status`，看到“试跑通过”才算接通。仅为安装验证时，可以选择第二项绿色完成试跑。
 

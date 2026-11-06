@@ -66,7 +66,7 @@ test("入口里没有 top-level await，而且顺序是定好的那三行", () =
 });
 
 test("两个工具是钉住版本的，而且 package.json 一个字没加", () => {
-  // 同一个提交建两次，要是同一个东西。
+  // 同一个提交建两次，要是同两个工具建出来的（不是同一份字节：下面那一条讲这件事）。
   for (const pinned of Object.values(TOOLS)) assert.match(pinned, /@\d+\.\d+\.\d+(-[\w.]+)?$/, pinned);
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.deepEqual(manifest.dependencies ?? {}, {}, "装一个东西才能跑，这个程序就不是那个程序了");
@@ -109,4 +109,18 @@ test("打 tag 就能发：Release 不在就先建，而且同一个 tag 不会�
   // 同一个 tag 来两次，或者一次 tag、一次手动，两条流水线会各自往同一个 Release 上传同一批文件。
   assert.match(workflow, /^concurrency:$/m, "没有 concurrency，两条同样的流水线会撞在一起");
   assert.match(workflow, /group: release-/);
+});
+
+test("校验和不是拿来比两次建置的：这不是可重现建置，两处文字都得说清楚", () => {
+  // useCodeCache 把 V8 的 code cache 放进 blob，那是建置那台机器的运行时产出的，不是源码的函数：同一个提交建两次，
+  // 两个文件不一样。「钉住版本，所以两次建置是同一个东西」这句话读起来像可重现建置，而它不是——照着它拿自己重建的
+  // 那一份去对校验和，得出的是「下载到的文件被换过」这个错结论，而那是这串校验和唯一要回答的问题。
+  assert.equal(seaConfig().useCodeCache, true, "要谈可重现建置得先改掉它，而那是另一件事");
+  const source = readFileSync(join(root, "scripts", "build-binary.ts"), "utf8");
+  assert.match(source, /not a reproducible build/, "建置脚本还在许一个它做不到的承诺");
+  // 下载的人读的是 INSTALL.md，所以那句话也要在那里，连同「export 了那两个变量会盖掉版本」。
+  const install = readFileSync(join(root, "INSTALL.md"), "utf8");
+  assert.match(install, /可重现建置/, "INSTALL.md 没说这不是可重现建置");
+  assert.match(install, /AGENT_AUTOLOOP_COMMIT/, "INSTALL.md 没说 export 了这个会盖掉二进位自己说的版本");
+  assert.match(install, /AGENT_AUTOLOOP_RELEASE/);
 });

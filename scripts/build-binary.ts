@@ -32,7 +32,16 @@ import { OUTPUT, render, scan } from "./build-registry.ts";
 const ROOT = join(import.meta.dirname, "..");
 const BUILD = join(ROOT, "build");
 
-/** Pinned, so that two builds of the same commit are two builds of the same thing. */
+/**
+ * Pinned, so that two builds of the same commit are built by the same two tools: a bundler that changed under this
+ * build would be a change to the program nobody wrote.
+ *
+ * This is not a reproducible build, and the SHA256 printed at the end is not a thing to compare two builds by. The
+ * blob carries V8's code cache (`useCodeCache` below), which is produced by the runtime doing the building and is not
+ * a function of the source alone — the same commit built twice on the same machine gives two files that differ.
+ * What the checksum is for is the one thing it can be for: telling whoever downloaded a binary that it is the file
+ * that was built and attached, byte for byte (INSTALL.md says so to them).
+ */
 export const TOOLS = { esbuild: "esbuild@0.28.2", postject: "postject@1.0.0-alpha.6" };
 
 /** What `node --experimental-sea-config` is handed. Asset names are the paths the repository spells them by. */
@@ -201,7 +210,8 @@ export function build(args: string[] = []) {
   if (process.platform === "darwin") spawnSync("codesign", ["--sign", "-", out], { stdio: "ignore" });
   if (!windows) run("chmod", ["+x", out], "chmod");
 
-  // 6. What a person can check the download against.
+  // 6. What a person can check the download against — that file against this build, and nothing else: two builds of
+  // the same commit do not give the same sum (TOOLS above says why).
   const sum = createHash("sha256").update(readFileSync(out)).digest("hex");
   writeFileSync(`${out}.sha256`, `${sum}  ${basename(out)}\n`);
   console.log(`二进位：${statSync(out).size} 字节 → ${out}`);
