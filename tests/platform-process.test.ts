@@ -226,6 +226,91 @@ test("往下走到底，不是只看一层：孙子也算这一轮留下的", ON
   assert.equal(treeAlive(root.pid, record), false, "组内没有活进程了，这一轮才交得出 cancelled");
 });
 
+test("中间那层也没了以后，孙子还找得着：走到过的后代都记进 launch-N.json", ONLY_WINDOWS, async (t) => {
+  // 上一条是「根没了、中间层还在」。真正漏掉的是中间层随后也走了：Windows 把父号永久留在孙子身上，而那个号这时
+  // 谁都不是——从根往下走只走得到「根的孩子」，中间层已经不在表里，孙子于是一个都找不着。树看起来是空的，被 stop
+  // 的一轮交出 cancelled，活儿还在干。所以每一次走树都把走到的后代连同创建时刻记回 launch-N.json：那一层还看得见
+  // 的时候就写下来，之后它没了，记下的号加上创建时刻仍然验明得出孙子是这一轮的。
+  const kids = join(dir, "both-gone.json");
+  const middle =
+    `const c=require("node:child_process").spawn(process.execPath,["-e","${SLEEP}"],{detached:true,stdio:"ignore"});` +
+    `c.unref();require("node:fs").writeFileSync(${JSON.stringify(kids)},JSON.stringify({middle:process.pid,grand:c.pid}));${SLEEP}`;
+  const root = started(
+    `const c=require("node:child_process").spawn(process.execPath,["-e",${JSON.stringify(middle)}],{detached:true,stdio:"ignore"});c.unref();${SLEEP}`,
+  );
+  const noted = () => (existsSync(kids) ? (JSON.parse(readFileSync(kids, "utf8")) as Record<string, number>) : null);
+  t.after(() => {
+    terminate(root.pid, true);
+    for (const pid of Object.values(noted() ?? {})) terminate(pid, true);
+  });
+  await until("根起来了", () => running(root.pid!));
+  const born = bornAt(root.pid);
+  const record = join(dir, "launch-both-gone.json");
+  writeFileSync(record, JSON.stringify({ pid: root.pid, born }));
+  await until("孙子起来了", () => noted() !== null && running(noted()!.grand!));
+  const { middle: middlePid, grand } = noted()!;
+
+  // 根没了：这一拍走了一次树，走到了中间层和孙子。
+  process.kill(root.pid!);
+  await until("根没了", () => running(root.pid!) === false || null);
+  forgetProcesses();
+  const first = leftBehind(root.pid!, record);
+  assert.ok(Array.isArray(first) && first.includes(middlePid!) && first.includes(grand!), `只走到 ${first}`);
+  const written = JSON.parse(readFileSync(record, "utf8")) as { tree?: Record<string, string> };
+  assert.ok(written.tree, "走到的后代没有记下来：下一拍中间层一没，孙子就再也找不着了");
+  assert.match(String(written.tree[String(middlePid)]), /^\d+$/, "中间层的创建时刻要一起记下，否则验不明它是谁");
+  assert.match(String(written.tree[String(grand)]), /^\d+$/);
+
+  // 中间那层也走了，只杀它一个：这就是 round2 原文说的「根与中间层同死」之后的样子。
+  process.kill(middlePid!);
+  await until("中间层没了", () => running(middlePid!) === false || null);
+  forgetProcesses();
+  const later = leftBehind(root.pid!, record);
+  assert.ok(Array.isArray(later) && later.includes(grand!), `中间层一没就找不着孙子了：${later}`);
+  assert.equal(treeAlive(root.pid, record), true, "孙子还在跑着，这一轮还不能交 cancelled");
+
+  // 而且硬杀真的杀得到它：这才是「确认组内没有活进程后才交 cancelled」成立的那一步。
+  terminate(root.pid, true, record);
+  await until("孙子也走了", () => running(grand!) === false || null);
+  forgetProcesses();
+  assert.equal(treeAlive(root.pid, record), false, "组内没有活进程了，这一轮才交得出 cancelled");
+});
+
+test("记不下来的不认：被回收的号和它的孩子都不算这一轮的", ONLY_WINDOWS, async (t) => {
+  // 记下来的那一层，号被还回去又被别人捡走：创建时刻对不上，它就不是这一轮的后代了。它自己不能算活着，
+  // 它的孩子也不能——否则一棵无关的树会被每个 tick 硬杀一次，而这一轮永远交不出 cancelled。
+  const noted = join(dir, "seed-taken.pid");
+  const holder = started(
+    `const c=require("node:child_process").spawn(process.execPath,["-e","${SLEEP}"],{detached:true,stdio:"ignore"});` +
+      `require("node:fs").writeFileSync(${JSON.stringify(noted)},String(c.pid));c.unref();${SLEEP}`,
+  );
+  t.after(() => {
+    terminate(holder.pid, true);
+    if (existsSync(noted)) terminate(Number(readFileSync(noted, "utf8")), true);
+  });
+  await until("它起来了", () => running(holder.pid!));
+  const born = bornAt(holder.pid);
+  await until("它的孩子起来了", () => existsSync(noted) && running(Number(readFileSync(noted, "utf8"))));
+  const child = Number(readFileSync(noted, "utf8"));
+
+  // 一个谁都不是的根号，加上一条「这个号是这一轮的后代」的记录，但记下的创建时刻是别人的。
+  const record = join(dir, "launch-seed-taken.json");
+  const nobody = 0x7ffffff0;
+  forgetProcesses();
+  writeFileSync(record, JSON.stringify({ pid: nobody, born: "1", tree: { [String(holder.pid)]: "1" } }));
+  const left = leftBehind(nobody, record);
+  assert.ok(Array.isArray(left), `这个号谁都不是，该给号而不是 ${left}`);
+  assert.ok(!left.includes(holder.pid!), "创建时刻对不上，这个号已经是别人的了，不算这一轮的后代");
+  assert.ok(!left.includes(child), "它的孩子比它晚出生，是新持有者自己的");
+
+  // 对得上就认：同一条记录，只把创建时刻写对。
+  forgetProcesses();
+  writeFileSync(record, JSON.stringify({ pid: nobody, born: "1", tree: { [String(holder.pid)]: born } }));
+  const mine = leftBehind(nobody, record);
+  assert.ok(Array.isArray(mine) && mine.includes(holder.pid!), `记下的那一层对得上就该认：${mine}`);
+  assert.ok(mine.includes(child), "它下面的也一起算这一轮的");
+});
+
 test("号被别人捡走就不是这个 run 了：比对 launch-N.json 记下的创建时刻", ONLY_WINDOWS, async (t) => {
   const child = started(SLEEP);
   t.after(() => terminate(child.pid, true));

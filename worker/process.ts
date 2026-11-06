@@ -8,7 +8,7 @@
 // Windows does keep is the parent each process was started by, for ever, even after that parent is gone: the tree can be
 // walked from the whole table of processes, and a table that can't be read means the answer is "could not look".
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const WINDOWS = process.platform === "win32";
@@ -107,8 +107,30 @@ function readProcessTable(): Table | null {
   }
 }
 
-/** What the worker wrote down about one launch, where no command line can be read back off the process. */
-export type Launch = { pid?: number; startedAt?: number; marker?: string; born?: string };
+/**
+ * What the worker wrote down about one launch, where no command line can be read back off the process.
+ *
+ * `tree` is added to afterwards, by whoever walks the run's tree: every descendant that walk reached, against the
+ * moment that descendant came into being. A level of the tree that is gone by the time the table is read can never be
+ * walked through again — Windows keeps its number on whatever hung off it, and that number is by then either nobody's
+ * or somebody else's — so a level seen once is written down while it can still be seen, and what hangs off it stays
+ * reachable after it goes.
+ */
+export type Launch = {
+  pid?: number;
+  startedAt?: number;
+  marker?: string;
+  born?: string;
+  /** `<进程号>` → the moment it came into being, as this machine counts it. */
+  tree?: Record<string, string>;
+};
+
+/**
+ * How many descendants are written down. A run's tree is small; this is only here so that a program starting one
+ * process after another cannot grow the file without end. Past it nothing more is added — what is already written is
+ * what can still be found, and dropping those to make room would lose the levels that are hardest to reach again.
+ */
+const REMEMBER_TREE = 256;
 
 /**
  * The moment the process at this number was created, as this machine counts it, for writing down beside a launch.
@@ -243,7 +265,9 @@ function ticks(value: string | undefined | null): bigint | null {
 function orphans(pid: number, record?: string): true | number[] | null {
   const written = launchRecord(record);
   // A record that names another number is not about this run at all, so it says nothing about what to accept below.
-  const recorded = written && written.pid !== undefined && written.pid !== pid ? undefined : written?.born;
+  const about = !written || written.pid === undefined || written.pid === pid;
+  const recorded = about ? written?.born : undefined;
+  const seedsFromRecord = about ? knownTree(written) : [];
   const self = running(pid);
   if (self === null) return null;
   // Asking about one number costs a tenth of what the whole table costs, and while the run's own process is there —
@@ -265,10 +289,17 @@ function orphans(pid: number, record?: string): true | number[] | null {
   // descendant the picture reaches, so the forced stop has each number of its own to kill rather than trusting
   // `taskkill /T` to walk a tree that may lose a branch between being looked at and being killed.
   //
-  // What no walk can reach is a level that is itself already gone by the time the table is read: what hung off it
-  // carries that number as its parent for ever, and the number is now either nobody's or somebody else's. Nothing on
-  // the machine says it was ever this run's, so it is not claimed — a stranger's tree force-killed every tick would be
-  // the worse of the two mistakes.
+  // A level that is itself already gone by the time the table is read cannot be walked through: what hung off it
+  // carries that number as its parent for ever, and the number is now either nobody's or somebody else's. Nothing the
+  // machine can be asked now says it was ever this run's — so what this walk reaches is written down as it goes
+  // (`tree` in the launch record, below), and those numbers are walked under again next time. A level seen once stays
+  // a way in after it goes, and what hangs off it is still this run's to find and to kill.
+  //
+  // What that leaves is one window: a level that was never seen at all — gone before the first table this run's tree
+  // was walked under was read, which on a run whose own process is still there means gone before any table was read at
+  // all, since nothing walks a tree whose root is alive and is still the one that was launched. What hung off such a
+  // level is not claimed: nothing on the machine, and nothing written down, says it was ever this run's, and a
+  // stranger's tree force-killed every tick would be the worse of the two mistakes. docs/protocol.md says so too.
   const since = ticks(recorded);
   // The number is a live process and is no longer this run's: whatever holds it now came into being after the run
   // did, so nothing this run left behind can be as young as that. Its moment is the upper bound, and without a
@@ -277,28 +308,96 @@ function orphans(pid: number, record?: string): true | number[] | null {
   const until = mine ? null : ticks(table.born.get(pid));
   if (!mine && (since === null || until === null)) return [];
   const found: number[] = [];
-  const seen = new Set<number>([pid]);
-  // The queue grows while it is walked: a child pushed on it is a parent to look under in turn, and `seen` is what
-  // keeps a number out of it twice — Windows can hand a parent number back to one of that parent's own descendants.
-  const queue = [pid];
+  const seen = new Set<number>();
+  // The queue grows while it is walked: a number pushed on it is one to look under in turn, and `seen` is what keeps a
+  // number out of it twice — Windows can hand a parent number back to one of that parent's own descendants.
+  //
+  // `until` travels with each number rather than being one bound for the whole walk: it is the moment whoever holds
+  // that number now came into being, and only where the number is somebody else's by now is there one at all. A child
+  // of such a number born after that moment is the new holder's own. One level down there is no bound — the parent is
+  // by then known to be this run's, and what it started may well be younger than whoever picked a number up.
+  const queue: { pid: number; until: bigint | null }[] = [];
+  const look = (number: number, bound: bigint | null) => {
+    if (seen.has(number)) return;
+    seen.add(number);
+    queue.push({ pid: number, until: bound });
+  };
+  look(pid, until);
+  // Every level this run's tree was walked under before, each with the moment it came into being. Still held by that
+  // same process, it is a live descendant and so one of the numbers to kill; gone, it is only a way in to what hung
+  // off it; held by something else by now, that something's own children are bounded out as above.
+  for (const [number, was] of seedsFromRecord) {
+    if (number === pid || seen.has(number)) continue;
+    const now = table.born.get(number);
+    if (table.live.has(number) && now !== undefined && now !== was) {
+      // The number has become somebody else's. Without a moment to bound them by, its children cannot be told from
+      // this run's leftovers at all, so none of them is claimed.
+      const taken = ticks(now);
+      if (taken !== null) look(number, taken);
+      continue;
+    }
+    if (table.live.has(number) && now === was) found.push(number);
+    look(number, null);
+  }
   for (let at = 0; at < queue.length; at++) {
-    const parent = queue[at]!;
+    const { pid: parent, until: bound } = queue[at]!;
     for (const child of table.children.get(parent) ?? []) {
       if (seen.has(child)) continue;
-      seen.add(child);
       const born = ticks(table.born.get(child));
       // Where the moment cannot be compared the child counts: only a few of the system's own processes have none to
       // give, and a record without one is from a launch that this version did not write the moment down for.
-      if (since !== null && born !== null && born < since) continue;
-      // Under a number somebody else holds, a child whose moment cannot be read says nothing either way, and one born
-      // after that holder is the holder's own. Only at the first level: deeper down the parent is already known to be
-      // this run's, and what it started may well be younger than whoever picked the run's own number up.
-      if (parent === pid && until !== null && (born === null || born >= until)) continue;
+      if (since !== null && born !== null && born < since) {
+        seen.add(child);
+        continue;
+      }
+      // Under a number somebody else holds, a child whose moment cannot be read says nothing either way.
+      if (bound !== null && (born === null || born >= bound)) {
+        seen.add(child);
+        continue;
+      }
+      look(child, null);
       found.push(child);
-      queue.push(child);
     }
   }
+  // Written down before anything is done about them: the next walk gets in this way again even once this level is gone.
+  if (record !== undefined && about) remember(record, written, found, table);
   return found;
+}
+
+/** The levels a record says were walked under before: `<进程号>` against the moment it came into being, as numbers. */
+function knownTree(written: Launch | null): [number, string][] {
+  const tree = written?.tree;
+  if (!tree || typeof tree !== "object" || Array.isArray(tree)) return [];
+  const seeds: [number, string][] = [];
+  for (const [key, born] of Object.entries(tree)) {
+    const number = Number(key);
+    if (Number.isInteger(number) && number > 0 && typeof born === "string" && /^\d+$/.test(born))
+      seeds.push([number, born]);
+  }
+  return seeds;
+}
+
+/**
+ * Puts what the walk reached into the launch record, so that a level gone by the next walk is still a way in to what
+ * hangs off it. Only what the machine says a moment for is written: a number without one cannot be told from the next
+ * holder of that number, and a way in that may lead into a stranger's tree is worse than none.
+ *
+ * Never throws and never fails a run: this is how well a stopped run can be reached, not whether it stops.
+ */
+function remember(record: string, written: Launch | null, found: number[], table: Table) {
+  const tree: Record<string, string> = { ...(written?.tree ?? {}) };
+  let added = false;
+  for (const child of found) {
+    const born = table.born.get(child);
+    if (!born || tree[String(child)] === born) continue;
+    if (Object.keys(tree).length >= REMEMBER_TREE && tree[String(child)] === undefined) continue;
+    tree[String(child)] = born;
+    added = true;
+  }
+  if (!added) return;
+  try {
+    writeFileSync(record, `${JSON.stringify({ ...(written ?? {}), tree })}\n`, { mode: 0o600 });
+  } catch {}
 }
 
 /**
