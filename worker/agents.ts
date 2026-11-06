@@ -81,8 +81,10 @@ export function findProgram(name: string, elsewhere: () => string[] = () => []) 
           .map((line) => line.trim())
           .filter(Boolean);
         // A .cmd / .bat shim, such as the one npm writes, is a script for the command interpreter and cannot be
-        // started as a program, so a real executable further along PATH is the one to use.
-        onPath = matches.find((match) => /\.(exe|com)$/i.test(match)) ?? matches[0] ?? null;
+        // started as a program: Windows refuses it outright. So only a real executable counts as being on PATH —
+        // anything else is as good as nothing here, and the places in `elsewhere()` are looked at instead. Taking the
+        // nearest match whatever it is would both shadow those places and hand the launcher a name it can't start.
+        onPath = matches.find((match) => /\.(exe|com)$/i.test(match)) ?? null;
       } else {
         const shell = process.env.SHELL ?? "/bin/sh";
         const printed = execFileSync(shell, ["-lc", 'command -v "$1"', "sh", name], {

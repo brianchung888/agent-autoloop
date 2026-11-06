@@ -6,7 +6,7 @@
 // Used only where the worker has no `/bin/sh` to do this. Everywhere else the shell still does it, exactly as before.
 //
 //   node launcher.ts <stdout 文件> <stderr 文件> <exit 文件> -- <程序> [参数…]
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, openSync, renameSync, writeFileSync } from "node:fs";
 
 const [out, err, exitFile, dashes, ...argv] = process.argv.slice(2);
@@ -40,8 +40,6 @@ try {
   process.exit(0);
 }
 
-const [program, ...args] = argv;
-const child = spawn(program!, args, { stdio: ["ignore", stdout, stderr], windowsHide: true });
 let published = false;
 const once = (code: number) => {
   if (published) return;
@@ -51,11 +49,25 @@ const once = (code: number) => {
   publish(code);
   process.exit(0);
 };
-child.on("error", (error) => {
+const whyNot = (error: unknown) => {
   try {
     writeFileSync(err, `启动不了：${error}\n`, { flag: "a" });
   } catch {}
   once(127);
-});
+};
+
+const [program, ...args] = argv;
+let child: ChildProcess;
+try {
+  child = spawn(program!, args, { stdio: ["ignore", stdout, stderr], windowsHide: true });
+} catch (error) {
+  // Windows refuses a .cmd or .bat outright, and says so by throwing from spawn itself: no `error` event follows, so
+  // this is the only place it can be answered. Without it the wrapper dies here, the exit file never appears, and the
+  // worker waits out the whole timeout for a run that never started.
+  whyNot(error);
+  // whyNot has already left the process; saying so here is what makes `child` a process from this point on.
+  process.exit(0);
+}
+child.on("error", whyNot);
 // A process ended by a signal has no code of its own; a shell would report 128 plus the signal's number.
 child.on("exit", (code, signal) => once(code ?? (signal ? 143 : 1)));
