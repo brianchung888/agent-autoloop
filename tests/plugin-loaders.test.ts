@@ -187,7 +187,8 @@ test("插件名字是来处的最后一段：Windows 路径的反斜线也算分
       env: { ...process.env, AGENT_AUTOLOOP_HOME: join(home, "不存在的安装") },
       timeout: 30_000,
     });
-  assert.match(name(String.raw`C:	mp\plugins\Bad_Name`).stderr, /插件名字「bad_name」不能用/);
+  assert.match(name(String.raw`C:\tmp\plugins\Bad_Name`).stderr, /插件名字「bad_name」不能用/);
+  assert.match(name("C:\\tmp\\plugins\\Bad_Name\\").stderr, /插件名字「bad_name」不能用/);
   assert.match(name("C:/tmp/plugins/Bad_Name/").stderr, /插件名字「bad_name」不能用/);
   assert.match(name("git@example.com:me/Bad_Name.git").stderr, /插件名字「bad_name」不能用/);
   assert.match(name("https://example.com/me/Bad_Name/").stderr, /插件名字「bad_name」不能用/);
