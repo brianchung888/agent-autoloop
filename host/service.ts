@@ -192,9 +192,13 @@ export function runningUp(): number | null | "unknown" {
     return born === claim.born ? claim.pid : null;
   }
   if (running(claim.pid) !== true) return null;
-  // Where there is a `ps` the command line is read for a file left by a version that wrote no token at all.
-  if (token === null) return /agent-autoloop(\.ts)? up\b/.test(commandOf(claim.pid)) ? claim.pid : null;
-  return claim.token === null || claim.token === token ? claim.pid : null;
+  // Where there is a `ps` the command line is what settles it, and it is asked for whatever the file says. The token
+  // matches the file this install left behind for ever, so a number given away after a SIGKILL matches it too; the one
+  // thing that says the process holding that number now is an `up` at all is what it is running. Both, then — the
+  // token for "this install's", the command line for "an `up`" — which is what this lock meant before a token existed.
+  const looksLikeUp = () => /agent-autoloop(\.ts)? up\b/.test(commandOf(claim.pid));
+  if (token === null) return looksLikeUp() ? claim.pid : null;
+  return (claim.token === null || claim.token === token) && looksLikeUp() ? claim.pid : null;
 }
 
 /** What up.pid says, whichever version wrote it: the shape below, or a bare number from one that wrote only that. */
