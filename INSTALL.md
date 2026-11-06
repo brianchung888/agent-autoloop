@@ -38,7 +38,7 @@ AGENT_AUTOLOOP_REPO=/path/to/agent-autoloop sh /path/to/agent-autoloop/install.s
 
 `--agent claude` 选择 Claude Code；只有其他 CLI 时加 `--command 'hermes chat -Q -q {prompt}'`。不指定时会检测本机安装的 Agent，第一种作为试跑对象。
 
-程序装进 `~/.agent-autoloop/app`，配置和记录留在 `~/.agent-autoloop`。默认打开桌面通知；macOS / Linux 没有图形会话时安静跳过，Windows 是一律跳过（这边还没有可用的通知程序），两种情况下问题都仍能用 `agent-autoloop status` 查看，`agent-autoloop doctor` 也会指出来。命令放在 PATH 中的 `~/.local/bin`；macOS / Linux 上这个目录不在 PATH 里时改选 PATH 里第一个可写目录，Windows 上则是把 `%USERPROFILE%\.local\bin` 加进用户 PATH（`setx`，要重开终端才生效）。两边都不用 sudo、不覆盖其他程序；没有位置时使用安装器打印的完整路径。
+程序装进 `~/.agent-autoloop/app`，配置和记录留在 `~/.agent-autoloop`。默认打开桌面通知；macOS / Linux 没有图形会话时安静跳过，Windows 是一律跳过（这边还没有可用的通知程序），两种情况下问题都仍能用 `agent-autoloop status` 查看，`agent-autoloop doctor` 也会指出来。命令放在 PATH 中的 `~/.local/bin`；macOS / Linux 上这个目录不在 PATH 里时改选 PATH 里第一个可写目录，Windows 上则是把 `%USERPROFILE%\.local\bin` 加进用户 PATH（走 `[Environment]::SetEnvironmentVariable`，不用 `setx`——`setx` 会把超过 1024 个字的 PATH 截短；要重开终端才生效，把 `AGENT_AUTOLOOP_NO_PATH` 设成非空就不改 PATH）。两边都不用 sudo、不覆盖其他程序；没有位置时使用安装器打印的完整路径。
 
 安装器和中台启动时都会把数据目录设为 `0700`，包括已有目录，阻止其他系统用户读取数据库、事件和运行输出。Windows 没有 `0700`，改用 `icacls` 把数据目录的权限锁到当前用户（去掉继承，只留你自己，子目录和文件跟着继承），`master.key` 另外单独锁一次；锁不上（网络盘、FAT32、域策略）不会拦着启动，但 `agent-autoloop doctor` 会多出一条“文件权限降级”，这时同机的其他用户可能读得到数据。升级后同步重启中台与接单程序；新版 `status` 使用中台提供的费用汇总。
 
