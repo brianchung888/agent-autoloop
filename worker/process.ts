@@ -247,7 +247,8 @@ export function treeAlive(pid: number | undefined, record?: string): boolean | n
     // Asking about one number costs a tenth of what the whole table costs, and while the run's own process is there —
     // and is still the one that was launched — the answer is already yes. Only once it has gone, or once the number
     // has become somebody else's, does anything under it have to be looked for.
-    if (self === true && sameAsRecorded(pid, recorded)) return true;
+    const mine = self === true ? sameAsRecorded(pid, recorded) : true;
+    if (self === true && mine) return true;
     const table = processTable();
     // Without the whole table the tree is only partly known, and a part of it is not an answer about all of it.
     if (!table) return null;
@@ -260,12 +261,21 @@ export function treeAlive(pid: number | undefined, record?: string): boolean | n
     // the first child that can be this run's already answers the question. Anything deeper hangs off a child, and a
     // child that is gone is in no table to be walked through — which was as true of the walk this replaces.
     const since = ticks(recorded);
+    // The number is a live process and is no longer this run's: whatever holds it now came into being after the run
+    // did, so nothing this run left behind can be as young as that. Its moment is the upper bound, and without a
+    // bound at both ends the new holder's own children are indistinguishable from this run's leftovers — which is
+    // how a stopped run would never be `cancelled` and an unrelated tree would be force-killed on every tick.
+    const until = mine ? null : ticks(table.born.get(pid));
+    if (!mine && (since === null || until === null)) return false;
     for (const child of table.children.get(pid) ?? []) {
       if (child === pid) continue;
       const born = ticks(table.born.get(child));
       // Where the moment cannot be compared the child counts: only a few of the system's own processes have none to
       // give, and a record without one is from a launch that this version did not write the moment down for.
       if (since !== null && born !== null && born < since) continue;
+      // Under a number somebody else holds, a child whose moment cannot be read says nothing either way, and one born
+      // after that holder is the holder's own.
+      if (until !== null && (born === null || born >= until)) continue;
       return true;
     }
     return false;
@@ -290,9 +300,18 @@ export function treeAlive(pid: number | undefined, record?: string): boolean | n
   }
 }
 
-/** Asks the run and everything under it to stop. `hard` leaves it no say; on Windows nothing else reliably does. */
-export function terminate(pid: number | undefined, hard: boolean) {
+/**
+ * Asks the run and everything under it to stop. `hard` leaves it no say; on Windows nothing else reliably does.
+ *
+ * `record` is the file the launch was written down in, the same one `alive` reads. Windows gives a number back once
+ * its process is gone, and `taskkill /T /F` on a number that has become somebody else's takes down a tree that was
+ * never this run's. So before the forced kill the number is asked about once more: shown to be another process's, it
+ * is left alone. A record that cannot be read, or one from a version that wrote no moment down, kills as it always
+ * did — and the polite stop is not worth a question, since nothing it reaches is left without a say.
+ */
+export function terminate(pid: number | undefined, hard: boolean, record?: string) {
   if (!pid) return;
+  if (WINDOWS && hard && record !== undefined && alive(pid, "", record) === false) return;
   try {
     if (WINDOWS) {
       execFileSync("taskkill", ["/PID", String(pid), "/T", ...(hard ? ["/F"] : [])], {

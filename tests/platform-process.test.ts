@@ -216,3 +216,44 @@ test("问一个号的创建时刻，用不着列整张进程表，也不扔掉�
   writeFileSync(record, JSON.stringify({ pid: child.pid, born: "1" }));
   assert.equal(alive(child.pid, "", record), false, "别的时刻就不是它");
 });
+
+test("号被回收以后：别人的树不算这一轮的，也不会每个 tick 被硬杀", ONLY_WINDOWS, async (t) => {
+  // 这一轮的 launcher 没了，号还回去，机器又把它给了另一个 node.exe（下面用「记录里的创建时刻比机器说的更早」
+  // 来摆出同一个局面：号活着，但不是记录里那一个）。以前这里还是按本轮 born 当下界去走孩子——新持有者的孩子
+  // 一定比本轮晚，于是树永远活着，被 stop 的一轮永远不变 cancelled，而且每个 tick 还要对那棵无关的树 taskkill /T /F。
+  const noted = join(dir, "taken-over.pid");
+  const holder = started(
+    `const c=require("node:child_process").spawn(process.execPath,["-e","${SLEEP}"],{detached:true,stdio:"ignore"});` +
+      `require("node:fs").writeFileSync(${JSON.stringify(noted)},String(c.pid));c.unref();${SLEEP}`,
+  );
+  t.after(() => {
+    terminate(holder.pid, true);
+    if (existsSync(noted)) terminate(Number(readFileSync(noted, "utf8")), true);
+  });
+  await until("新持有者起来了", () => running(holder.pid!));
+  const born = bornAt(holder.pid);
+  assert.match(String(born), /^\d+$/);
+
+  const record = join(dir, "launch-taken.json");
+  // 对得上的记录：孩子算这一轮的，树还活着——这是没被回收时的样子，不能一起改掉。
+  writeFileSync(record, JSON.stringify({ pid: holder.pid, born }));
+  await until("孩子起来了", () => treeAlive(holder.pid, record));
+  const orphan = Number(readFileSync(noted, "utf8"));
+
+  // 同一张机器状态，只把记录的创建时刻挪到这个号出生之前：这个号已经是别人的了。
+  const earlier = String(BigInt(born!) > 10_000_000n ? BigInt(born!) - 10_000_000n : 1n);
+  forgetProcesses();
+  writeFileSync(record, JSON.stringify({ pid: holder.pid, born: earlier }));
+  assert.equal(treeAlive(holder.pid, record), false, "新持有者的孩子不是这一轮的，这一轮才能交 cancelled");
+
+  // 而且硬杀会先确认身份：那棵无关的树一个都不能少。
+  terminate(holder.pid, true, record);
+  await pause(300);
+  assert.equal(running(holder.pid!), true, "号已经是别人的，不该被 taskkill /T /F 带走");
+  assert.equal(running(orphan), true, "它的孩子也不该被带走");
+
+  // 没有记录可读时，和改动前一样照杀：这是旧版本写下的那种记录。
+  terminate(holder.pid, true, join(dir, "没有这个文件"));
+  await until("照杀的那条路还在", () => running(holder.pid!) === false || null);
+  assert.equal(running(holder.pid!), false);
+});

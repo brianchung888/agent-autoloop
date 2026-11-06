@@ -400,7 +400,7 @@ export function createWorker({
       const going = treeAlive(entry.pid, files(entry).launch);
       const overdue = now() - entry.stopping > STOP_GRACE;
       if (going === true) {
-        if (overdue) terminate(entry.pid, true);
+        if (overdue) terminate(entry.pid, true, files(entry).launch);
         return;
       }
       if (going === null) {
@@ -408,7 +408,7 @@ export function createWorker({
         // `cancelled` would release the item while a process may still be in it, which the protocol forbids
         // (docs/protocol.md: 确认组内没有活进程后才交 cancelled). `failed` also stops the run and claims less.
         if (!overdue) return;
-        terminate(entry.pid, true);
+        terminate(entry.pid, true, files(entry).launch);
         return endWith(entry, {
           outcome: "failed",
           error: "停止信号发出后没能确认进程组已结束：这一轮按没跑成记，不再重试，进程可能还在。",
