@@ -4,7 +4,7 @@
 // as unknown, or a copy unpacked inside some other repository reads as that repository's commit or release.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -85,4 +85,50 @@ test("a commit reads the same whether its ref is a file or packed away, and a de
   assert.equal(commitOf(clone), "deployed");
   if (before === undefined) delete process.env.AGENT_AUTOLOOP_COMMIT;
   else process.env.AGENT_AUTOLOOP_COMMIT = before;
+});
+
+test("建置期说的那一句话算数：打包版没有 .git 可问，版本是被写进去的", () => {
+  // 打包的时候这两个值被替换成字面量，所以答案跟着二进位走，而不是跟着谁的环境走。源码模式下它们是空的，
+  // 由 checkout 回答——上面那几条讲的就是那条路。
+  const was = { commit: process.env.AGENT_AUTOLOOP_COMMIT, release: process.env.AGENT_AUTOLOOP_RELEASE };
+  const nowhere = join(dir, "not-a-checkout");
+  mkdirSync(nowhere, { recursive: true });
+  try {
+    delete process.env.AGENT_AUTOLOOP_COMMIT;
+    delete process.env.AGENT_AUTOLOOP_RELEASE;
+    assert.equal(commitOf(nowhere), "dev", "没有 .git 又没人告诉它，就老实说不知道");
+    assert.equal(releaseOf(nowhere), null);
+
+    process.env.AGENT_AUTOLOOP_COMMIT = "0123456789abcdef0123";
+    process.env.AGENT_AUTOLOOP_RELEASE = "v9.9.9";
+    assert.equal(releaseOf(nowhere), "v9.9.9");
+    assert.equal(versionName(nowhere), "v9.9.9");
+    assert.equal(versionLine(nowhere), "agent-autoloop v9.9.9（提交 0123456789ab）");
+    // 空字符串是「这次建置不知道」，不是一个版本号：PoC 里 doctor 印出的那个 dev 就是这种情况。
+    process.env.AGENT_AUTOLOOP_RELEASE = "";
+    assert.equal(releaseOf(nowhere), null);
+    assert.equal(versionLine(nowhere), "agent-autoloop 未发布（提交 0123456789ab）");
+  } finally {
+    for (const [name, value] of [
+      ["AGENT_AUTOLOOP_COMMIT", was.commit],
+      ["AGENT_AUTOLOOP_RELEASE", was.release],
+    ] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+});
+
+test("打包版不去问旁边那个 .git：先问这是哪一种建置，再决定要不要问 git", () => {
+  // 二进位被复制进一棵 checkout 里时，ROOT（import.meta.dirname 的上一层）就落在那棵 checkout 里，于是
+  // --version 会报出别人的提交号。bug report 里报错号比报 dev 更糟。这一条钉住那道先问的顺序：真正的
+  // 二进位行为由自检里的「打包版 --version」与 tests/sea-format.test.ts 覆盖，这里没有 SEA 可以假装。
+  const text = readFileSync(join(root, "host", "version.ts"), "utf8");
+  assert.match(text, /from "\.\/assets\.ts"/, "host/version.ts 没有问过这是哪一种建置");
+  for (const which of ["commitOf", "releaseOf"]) {
+    const body = text.slice(text.indexOf(`export function ${which}(`));
+    const asked = body.indexOf("packaged()");
+    const git = body.indexOf('path.join(root, ".git")');
+    assert.ok(asked >= 0 && git >= 0 && asked < git, `${which} 先摸了 .git 才问这是哪一种建置`);
+  }
 });
