@@ -1,13 +1,32 @@
 // Codex: the user's own, installed and signed in by them. A run is a `codex exec` in the background; its thread is kept
 // on disk, so a retry or an answer can go on in it, and the link opens it in the app.
 import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
+import path from "node:path";
 import { findProgram, tail, type Adapter } from "../../worker/agents.ts";
 
 const SANDBOX = { read: "read-only", edit: "workspace-write", full: "danger-full-access" };
-export const IN_THE_APP = [
-  "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
-  "/Applications/Codex.app/Contents/Resources/codex",
-];
+/**
+ * Where it is when the worker does not share the PATH the person installed it on: inside the desktop app, or in the
+ * folders an install of its own uses. Only real executables — a batch shim such as the one npm writes cannot be started
+ * as a program, so naming one here would only trade a clear "not installed" for an obscure failure at the first turn.
+ */
+function elsewhere() {
+  if (process.platform !== "win32")
+    return [
+      "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+      "/Applications/Codex.app/Contents/Resources/codex",
+    ];
+  const local = process.env.LOCALAPPDATA ?? path.join(homedir(), "AppData/Local");
+  return [
+    path.join(local, "Programs/ChatGPT/resources/codex-cli/codex.exe"),
+    path.join(local, "Programs/Codex/resources/codex.exe"),
+    path.join(homedir(), ".local/bin/codex.exe"),
+    path.join(homedir(), ".codex/bin/codex.exe"),
+    path.join(homedir(), ".cargo/bin/codex.exe"),
+  ];
+}
+export const IN_THE_APP = elsewhere();
 
 export default {
   command: (turn) => [

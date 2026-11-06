@@ -7,20 +7,43 @@ import { findProgram, tail, type Adapter } from "../../worker/agents.ts";
 
 const PERMISSIONS = { read: "plan", edit: "acceptEdits", full: "bypassPermissions" };
 
+const WINDOWS = process.platform === "win32";
+/** Where the desktop app keeps the copies it ships, and what the program inside each build is called there. */
+const APP = WINDOWS
+  ? { root: () => path.join(process.env.APPDATA ?? path.join(homedir(), "AppData/Roaming"), "Claude/claude-code") }
+  : { root: () => path.join(homedir(), "Library/Application Support/Claude/claude-code") };
+const INSIDE_BUILD = WINDOWS ? "claude.exe" : "claude.app/Contents/MacOS/claude";
+
+/**
+ * Where an install of its own puts it, for those whose PATH the worker does not share. Only real executables: a batch
+ * shim such as the one npm writes cannot be started as a program, so naming one here would only trade a clear "not
+ * installed" for an obscure failure at the first turn.
+ */
+function installedSeparately() {
+  if (!WINDOWS) return [];
+  const local = process.env.LOCALAPPDATA ?? path.join(homedir(), "AppData/Local");
+  return [
+    path.join(homedir(), ".local/bin/claude.exe"),
+    path.join(local, "Programs/claude/claude.exe"),
+    path.join(local, "claude/claude.exe"),
+  ];
+}
+
 /** The newest Claude Code the desktop app ships, for those without a separate install. */
 export function inTheApp() {
-  const root = path.join(homedir(), "Library/Application Support/Claude/claude-code");
-  if (!existsSync(root)) return [];
+  const root = APP.root();
+  if (!existsSync(root)) return installedSeparately();
   // The app keeps its own files, such as auto-update-state.json, beside the version folders.
   const folders = (at: string) =>
     readdirSync(at, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name);
   const oldestFirst = folders(root).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  return oldestFirst.reverse().flatMap((version) => {
+  const shipped = oldestFirst.reverse().flatMap((version) => {
     const builds = folders(path.join(root, version));
-    return builds.map((build) => path.join(root, version, build, "claude.app/Contents/MacOS/claude"));
+    return builds.map((build) => path.join(root, version, build, INSIDE_BUILD));
   });
+  return [...shipped, ...installedSeparately()];
 }
 
 export default {

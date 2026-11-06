@@ -75,7 +75,14 @@ export function findProgram(name: string, elsewhere: () => string[] = () => []) 
           timeout: 15_000,
           stdio: ["ignore", "pipe", "ignore"],
         });
-        onPath = printed.trim().split(/\r?\n/)[0]?.trim() || null;
+        const matches = printed
+          .trim()
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+        // A .cmd / .bat shim, such as the one npm writes, is a script for the command interpreter and cannot be
+        // started as a program, so a real executable further along PATH is the one to use.
+        onPath = matches.find((match) => /\.(exe|com)$/i.test(match)) ?? matches[0] ?? null;
       } else {
         const shell = process.env.SHELL ?? "/bin/sh";
         const printed = execFileSync(shell, ["-lc", 'command -v "$1"', "sh", name], {
