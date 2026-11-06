@@ -182,7 +182,8 @@ export function createWorker({
     delete entry.why;
     save(entry);
     const { rule, agent } = entry.job;
-    const cwd = rule.cwd.replace(/^~(?=\/)/, homedir());
+    // `~`, `~/work` and `~\work` all mean the owner's folder: a separator is whichever one this platform writes.
+    const cwd = path.resolve(rule.cwd.replace(/^~(?=[\\/]|$)/, homedir()));
     const turn: Turn = {
       prompt,
       session: entry.session,
