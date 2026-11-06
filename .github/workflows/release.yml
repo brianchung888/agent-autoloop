@@ -14,6 +14,15 @@ on:
 permissions:
   contents: read
 
+# Two of these on the same thing must not run at once: both would build the same three binaries and both would attach
+# them to the same Release, and which upload wins is then whichever finished last. Named after what is being built, so
+# a dispatch on a branch is its own group and never waits on a tag. Not cancelled, because the one already running may
+# be halfway through attaching: a Release left with one platform's binary on it is the thing the attach job exists to
+# prevent.
+concurrency:
+  group: release-${{ inputs.release || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   binary:
     strategy:
@@ -105,4 +114,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release upload "$TAG" assets/* --clobber --repo "$GITHUB_REPOSITORY"
+        # A tag pushed on its own has no Release behind it, and `gh release upload` has nothing to upload to: the three
+        # binaries that were just built go nowhere and the job fails at the last step. So the Release is made here if
+        # it is not there yet, and left exactly as it is if it is — a Release written by hand first, with its own
+        # notes, must not be overwritten by generated ones. `--verify-tag` keeps a mistyped tag from creating a
+        # Release for a tag that does not exist, which is how a tag push would otherwise end up with two Releases.
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$TAG" --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" assets/* --clobber --repo "$GITHUB_REPOSITORY"

@@ -95,3 +95,18 @@ test("两个平台的入口脚本都只是入口：建置契约只写一遍", ()
   for (const name of ["linux-x64", "macos-arm64", "windows-x64"]) assert.match(workflow, new RegExp(name));
   assert.match(workflow, /sha256sum|shasum/);
 });
+
+test("打 tag 就能发：Release 不在就先建，而且同一个 tag 不会有两个 release 在跑", () => {
+  const workflow = readFileSync(join(root, ".github", "workflows", "release.yml"), "utf8");
+  // 一个单独 push 上去的 tag 后面没有 Release，`gh release upload` 就没有地方可上传，三个平台白建一遍。
+  const attach = workflow.slice(workflow.indexOf("上传到 Release"));
+  assert.match(attach, /gh release create "\$TAG"/, "Release 不在的时候没有人去建它");
+  assert.match(attach, /--verify-tag/, "没有 --verify-tag，一个打错的 tag 也能建出一个 Release");
+  assert.ok(
+    attach.indexOf('gh release create "$TAG"') < attach.indexOf('gh release upload "$TAG"'),
+    "先上传再建 Release，顺序反了",
+  );
+  // 同一个 tag 来两次，或者一次 tag、一次手动，两条流水线会各自往同一个 Release 上传同一批文件。
+  assert.match(workflow, /^concurrency:$/m, "没有 concurrency，两条同样的流水线会撞在一起");
+  assert.match(workflow, /group: release-/);
+});
