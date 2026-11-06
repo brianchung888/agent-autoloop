@@ -11,9 +11,12 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { shellOnPath } from "./helpers.ts";
 import { readMessage, resultFrom } from "../worker/contract.ts";
 
 /** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
+/** 这一条跑 README 里的 curl，要 PATH 上有 sh：PowerShell 里没有，Git Bash 里有。 */
+const NEEDS_SH = { skip: shellOnPath() ? false : "这一条跑 README 里的 curl，PATH 上没有 sh" };
 const ONLY_POSIX = { skip: process.platform === "win32" && "这两条用 #!/bin/sh 写假 gh，Windows 上没有 /bin/sh" };
 
 const ROOT = join(import.meta.dirname, "..");
@@ -94,44 +97,48 @@ async function freePort() {
   return port;
 }
 
-test("ops-alerts: the curl in the README reaches the rule, and that key can't set off the restart", async () => {
-  const home = mkdtempSync(join(scratch, "ops-"));
-  const port = await freePort();
-  const env = { AGENT_AUTOLOOP_HOME: home };
-  writeFileSync(join(home, "rules.json"), readFileSync(join(RECIPES, "ops-alerts", "rules.json")));
-  const key = agentAutoloop(["key", "new", "source", "shop"], env).stdout.trim().split("\n").at(-1)!;
-  const url = `http://127.0.0.1:${port}`;
-  writeFileSync(join(home, "config.json"), JSON.stringify({ url, hub: { listen: `127.0.0.1:${port}` } }));
-  const hub = spawn(
-    process.execPath,
-    ["--disable-warning=ExperimentalWarning", join(ROOT, "bin", "agent-autoloop.ts"), "up"],
-    { env: { ...cleanEnv(), ...env }, stdio: "ignore" },
-  );
-  try {
-    for (let tries = 0; tries < 100; tries++) {
-      const up = await fetch(`${url}/healthz`).catch(() => null);
-      if (up?.ok) break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
+test(
+  "ops-alerts: the curl in the README reaches the rule, and that key can't set off the restart",
+  NEEDS_SH,
+  async () => {
+    const home = mkdtempSync(join(scratch, "ops-"));
+    const port = await freePort();
+    const env = { AGENT_AUTOLOOP_HOME: home };
+    writeFileSync(join(home, "rules.json"), readFileSync(join(RECIPES, "ops-alerts", "rules.json")));
+    const key = agentAutoloop(["key", "new", "source", "shop"], env).stdout.trim().split("\n").at(-1)!;
+    const url = `http://127.0.0.1:${port}`;
+    writeFileSync(join(home, "config.json"), JSON.stringify({ url, hub: { listen: `127.0.0.1:${port}` } }));
+    const hub = spawn(
+      process.execPath,
+      ["--disable-warning=ExperimentalWarning", join(ROOT, "bin", "agent-autoloop.ts"), "up"],
+      { env: { ...cleanEnv(), ...env }, stdio: "ignore" },
+    );
+    try {
+      for (let tries = 0; tries < 100; tries++) {
+        const up = await fetch(`${url}/healthz`).catch(() => null);
+        if (up?.ok) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      const curl = /```bash\n(curl [\s\S]*?)```/.exec(readDoc("ops-alerts"))?.[1];
+      assert.ok(curl, "README 里要有一条 curl");
+      const sent = spawnSync("sh", ["-c", curl.replaceAll("http://127.0.0.1:3350", url)], {
+        env: { ...cleanEnv(), SHOP_KEY: key },
+        encoding: "utf8",
+      });
+      assert.equal(sent.status, 0, sent.error?.message ?? sent.stderr);
+      assert.deepEqual(JSON.parse(sent.stdout).routed, ["查线上报错"]);
+      const restart = await fetch(`${url}/v1/events`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+        body: JSON.stringify({ id: "from-outside", type: "restart", subject: "checkout" }),
+      });
+      assert.deepEqual((await restart.json()).routed, []);
+    } finally {
+      hub.kill("SIGTERM");
+      await new Promise((resolve) => hub.once("exit", resolve));
     }
-    const curl = /```bash\n(curl [\s\S]*?)```/.exec(readDoc("ops-alerts"))?.[1];
-    assert.ok(curl, "README 里要有一条 curl");
-    const sent = spawnSync("sh", ["-c", curl.replaceAll("http://127.0.0.1:3350", url)], {
-      env: { ...cleanEnv(), SHOP_KEY: key },
-      encoding: "utf8",
-    });
-    assert.equal(sent.status, 0, sent.stderr);
-    assert.deepEqual(JSON.parse(sent.stdout).routed, ["查线上报错"]);
-    const restart = await fetch(`${url}/v1/events`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify({ id: "from-outside", type: "restart", subject: "checkout" }),
-    });
-    assert.deepEqual((await restart.json()).routed, []);
-  } finally {
-    hub.kill("SIGTERM");
-    await new Promise((resolve) => hub.once("exit", resolve));
-  }
-});
+  },
+);
 
 // Stands in for gh and does what gh does with --jq, so the watcher's own filter really runs.
 const FAKE_GH = `#!/bin/sh
@@ -167,7 +174,7 @@ function watch(args: string[]) {
     },
     encoding: "utf8",
   });
-  assert.equal(done.status, 0, done.stderr);
+  assert.equal(done.status, 0, done.error?.message ?? done.stderr);
   return { said: done.stdout, asked: readFileSync(join(dir, "log"), "utf8"), issues };
 }
 

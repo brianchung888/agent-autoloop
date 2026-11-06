@@ -1,5 +1,6 @@
 // Each test file runs in its own process with its own home and the fixture rules; modules are imported after this sets
 // the environment they read.
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -17,7 +18,27 @@ import { after, test as runTest } from "node:test";
  * nothing: scripts/ci-scope.sh says what each platform's job runs, and the Windows job prints both numbers.
  */
 export function skipOn(platforms: NodeJS.Platform[], why: string): typeof runTest {
-  if (!platforms.includes(process.platform)) return runTest;
+  return skipUnless(!platforms.includes(process.platform), why);
+}
+
+/**
+ * Whether a POSIX shell is on PATH. A few tests here are about shell scripts this project ships
+ * (`scripts/ci-scope.sh`, `examples/*.sh`) and about the `curl` lines its READMEs tell people to run: those run
+ * wherever `sh` does, which on Windows is Git Bash and not PowerShell. Asked by running it, once, rather than guessed
+ * at from the platform — a skip that says "Windows" would hide the Git Bash job that does run them.
+ */
+let shell: boolean | undefined;
+export function shellOnPath() {
+  if (shell === undefined) {
+    const ran = spawnSync("sh", ["-c", "exit 0"], { stdio: "ignore" });
+    shell = !ran.error && ran.status === 0;
+  }
+  return shell;
+}
+
+/** The `test` of a file, or of one case, that cannot run unless something is here, so that it says what is missing. */
+export function skipUnless(able: boolean, why: string): typeof runTest {
+  if (able) return runTest;
   const skipping = (name: unknown, second?: unknown, third?: unknown) => {
     const options = typeof second === "object" && second !== null ? second : {};
     const body = typeof second === "function" ? second : third;

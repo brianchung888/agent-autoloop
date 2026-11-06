@@ -8,7 +8,14 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { after, test } from "node:test";
+import { after } from "node:test";
+import { shellOnPath, skipUnless } from "./helpers.ts";
+
+/** 整份测试跑 scripts/ci-scope.sh，理由写进每一条 skip 里。 */
+const test = skipUnless(
+  shellOnPath(),
+  "这份测试跑 scripts/ci-scope.sh，PATH 上没有 sh（Windows 的 PowerShell 里没有，Git Bash 里有）",
+);
 
 const script = join(import.meta.dirname, "..", "scripts", "ci-scope.sh");
 const dir = mkdtempSync(join(tmpdir(), "agent-autoloop-ci-scope-"));
@@ -49,7 +56,7 @@ function scope(root: string, event = "pull_request") {
     env: { ...process.env, GITHUB_EVENT_NAME: event },
     encoding: "utf8",
   });
-  assert.equal(ran.status, 0, ran.stderr);
+  assert.equal(ran.status, 0, ran.error?.message ?? ran.stderr);
   return ran.stdout.trim();
 }
 
