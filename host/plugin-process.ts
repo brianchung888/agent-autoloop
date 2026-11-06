@@ -18,7 +18,7 @@
 // language already has a way in that costs it nothing — the hub's own HTTP protocol (host/channels.ts:1-2).
 //
 // Nothing here goes through a shell. The command line is an array, as everywhere else in this program.
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import type { PluginKind } from "./plugins.ts";
 
@@ -103,7 +103,19 @@ function ask(name: string, folder: string, argv: string[], request: Record<strin
 function askLater(name: string, folder: string, argv: string[], request: Record<string, unknown>): Promise<unknown> {
   const [program, ...args] = argv;
   return new Promise<Ran>((settle) => {
-    const child = spawn(program!, args, { ...where(folder), stdio: ["pipe", "pipe", "pipe"] });
+    // `spawn` is where the two ways part: `spawnSync` puts whatever went wrong into `ran.error`, while `spawn` has two
+    // ways of saying it — an `error` event, and a throw of its own, right here, before there is a child to listen to.
+    // Windows throws that way for an `entry` that is not a real executable (a `.cmd`, a `#!/bin/sh` script): EINVAL or
+    // EFTYPE out of CreateProcess. Caught, it becomes the same `Ran` an `error` event would, so the one reader turns it
+    // into the same sentence an agent plugin already gets — «插件的程序起不来（…）» — instead of a raw errno reaching
+    // the webhook that asked, where it is nobody's message at all.
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(program!, args, { ...where(folder), stdio: ["pipe", "pipe", "pipe"] });
+    } catch (error) {
+      settle({ error: error as Error, signal: null, status: null, stdout: "", stderr: "" });
+      return;
+    }
     let out = "";
     let err = "";
     let said = 0;

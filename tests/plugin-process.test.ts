@@ -7,6 +7,7 @@
 // an install already working has; a channel is let through, where nothing can carry its loop.
 import assert from "node:assert/strict";
 import { copyFileSync, linkSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { test } from "node:test";
 import { setup } from "./helpers.ts";
@@ -260,6 +261,48 @@ test("没做成的插件不进缓存：修好了不必重启中台", async () =>
   await assert.rejects(() => loadPlugin("fixable", "agent"), /先运行 gh auth login/);
   plugin("fixable", handler({ command: '["printf", "hi"]', read: "({ text: request.stdout })" }));
   assert.equal(typeof (await loadPlugin("fixable", "agent")).command, "function");
+});
+
+test(
+  "Windows 上 source 插件的 entry 不是真正的可执行文件：spawn 当场抛出，也要变成插件的那句话",
+  { skip: !WINDOWS && "POSIX 上 spawn 不会当场抛，起不来是异步的 error 事件，下面那条测试走的就是它" },
+  async () => {
+    // source 走的是不阻塞的那一条（host/plugin-process.ts 的 askLater），`spawn` 在 Windows 上对着一个不是真正可执行
+    // 文件的 entry 是当场抛，不是发 error 事件。没包起来的时候这个原始 errno 一路抛到 webhook 那头，变成一个 500。
+    const folder = join(home, "plugins", "wrapped-source");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "run.cmd"), '@echo {"ok":true,"value":{"calls":["translate"]}}\r\n');
+    writeFileSync(join(folder, "plugin.json"), JSON.stringify({ runtime: "process", entry: "run.cmd" }));
+    await assert.rejects(() => loadPlugin("wrapped-source", "source"), /插件的程序起不来（.*run\.cmd）/);
+  },
+);
+
+test("entry 起不来的 source 插件，webhook 收到的是插件那句话，不是 500「中台出错了」", async () => {
+  // fixture 里 hooks 这个来源的 adapter 就叫 echo，所以把 echo 做成一个起不来的 process 插件，走的就是真的那扇门。
+  // 两边都起不来，原因不同：Windows 上 CreateProcess 认不出这个文件，当场抛；POSIX 上这个文件没有执行位，EACCES。
+  const folder = join(home, "plugins", "echo");
+  mkdirSync(folder, { recursive: true });
+  const entry = WINDOWS ? "run.cmd" : "run";
+  writeFileSync(join(folder, entry), '@echo {"ok":true,"value":{"calls":["translate"]}}\r\n');
+  writeFileSync(join(folder, "plugin.json"), JSON.stringify({ runtime: "process", entry }));
+  const { serve } = await import("../host/http.ts");
+  const server = serve(0, "127.0.0.1");
+  try {
+    await new Promise((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${port}/v1/in/hooks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ items: [] }),
+    });
+    const said = await response.text();
+    assert.notEqual(response.status, 500, said);
+    assert.ok(!said.includes("中台出错了"), said);
+    assert.match(said, /echo 插件的程序起不来/);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
 });
 
 test("同一个目录里既有 .ts 又有 plugin.json，那个 .ts 还是赢：装好的插件不会被改掉", async () => {

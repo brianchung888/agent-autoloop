@@ -57,7 +57,17 @@ function logStream(after: number, signal: AbortSignal, key: string) {
 async function adaptWebhook(source: string, headers: Headers, body: string) {
   const adapter = hub.rules.sources[source]?.adapter;
   if (!adapter || !/^[a-z][a-z0-9-]*$/.test(adapter)) throw new NotFound("这个来源不收 Webhook");
-  const translate = await loadPlugin(adapter, "source");
+  // Getting the plugin is its own trouble, told apart from what it answers with. Outside a `catch` this threw past
+  // every door this file has, and whoever sent the webhook got a 500 saying «中台出错了» while the one sentence that
+  // says what is wrong — a program that cannot be started, a plugin that will not load — went only to the hub's own
+  // log. It is this source's adapter being unusable, which is the same thing the line above is about, said with what
+  // the plugin said: an answer whoever installed it can act on.
+  let translate;
+  try {
+    translate = await loadPlugin(adapter, "source");
+  } catch (error) {
+    throw new NotFound((error as Error).message);
+  }
   const secret = process.env[`AGENT_AUTOLOOP_SECRET_${source.toUpperCase().replaceAll("-", "_")}`] ?? "";
   try {
     const events = await translate({ headers: Object.fromEntries(headers), body, secret });
