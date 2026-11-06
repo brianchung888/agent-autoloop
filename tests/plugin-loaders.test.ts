@@ -143,6 +143,11 @@ test("内置清单覆盖 plugins/ 下所有的 agent/channel/source，一条都�
   );
   assert.equal(read.length, 11, "README 和计划里都说是 11 个内置插件");
 
+  // 扫出来的每一条都是真有那个文件：这是 scan() 自己的性质——它只说刚刚看见过的文件——所以 --check 里
+  // 再对一遍「清单里的路径存不存在」是永远成立的死码。这一条钉住那个性质，好让那段话没有被白删。
+  for (const { name, kind } of scan(root))
+    assert.ok(existsSync(join(root, "plugins", name, `${kind}.ts`)), `${name}/${kind}`);
+
   // 产生出来的那份模块也要过 typecheck：打包版编不过的模块，就是编不出来的打包版。
   const tsconfig = JSON.parse(readFileSync(join(root, "tsconfig.json"), "utf8"));
   assert.ok(tsconfig.include.includes("build"), "build/ 不在 tsconfig 的 include 里，产生出来的模块没人检查");

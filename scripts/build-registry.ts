@@ -6,10 +6,11 @@
 //   node --disable-warning=ExperimentalWarning scripts/build-registry.ts --check    对一遍，不写
 //
 // `--check` says the list is a function of `plugins/` alone: run twice, the second run must find exactly what the
-// first wrote, and every path in it must be a file. It cannot catch a stale list, because the list is not in the
-// version control and there is none to be stale — a plugin added to `plugins/` and missing from the list is caught by
-// the test that scans the folder itself (tests/plugin-loaders.test.ts). That is the difference worth catching: a
-// plugin the packaged build silently does not have, while the source build is perfectly fine.
+// first wrote. It cannot catch a stale list, because the list is not in the version control and there is none to be
+// stale — a plugin added to `plugins/` and missing from the list is caught by the test that scans the folder itself
+// (tests/plugin-loaders.test.ts). That is the difference worth catching: a plugin the packaged build silently does not
+// have, while the source build is perfectly fine. Nor does it check that every path in the list is a file: the list is
+// `scan()`, and `scan()` only names a file it has just seen — the one thing the two runs do not share is the writing.
 //
 // What it writes is in tsconfig's `include`, so it is typechecked like anything else: a generated module that does not
 // compile is a packaged build that does not build. CI therefore writes it before the typecheck, and a tree where it
@@ -70,12 +71,6 @@ function main(args: string[]) {
     console.error(`${OUTPUT} 和 plugins/ 下的实际情况对不上：重新运行 scripts/build-registry.ts（不加 --check）`);
     return 1;
   }
-  // And every path in it is a file: a plugin renamed or taken away leaves a line that imports nothing.
-  for (const { name, kind } of scan())
-    if (!existsSync(join(ROOT, "plugins", name, `${kind}.ts`))) {
-      console.error(`清单里的 plugins/${name}/${kind}.ts 不存在`);
-      return 1;
-    }
   console.log(`对得上：${scan().length} 条内置插件都在清单里。`);
   return 0;
 }
