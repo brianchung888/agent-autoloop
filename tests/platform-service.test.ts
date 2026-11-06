@@ -199,6 +199,26 @@ test("what a killed `up` leaves behind never stops the next one", notWindows, as
   assert.equal(runningUp(), process.pid);
 });
 
+test("记录里没有创建时刻，这把锁就是看不清，不是空的", notWindows, async (t) => {
+  const pid = join(home, "up.pid");
+  const token = join(home, "up.token");
+  // 机器不肯说这个号是什么时候来的（bornAt 吞掉回 null），claimUp 就写下 born:null。少了这一项，留下的文件和真正
+  // 在跑的 up 长得一模一样：号活着、是本程序的运行时、token 也对。以前这里按「对不上」算，锁当成空的，第二个 hub
+  // 于是开同一个 SQLite 文件。
+  const node = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+  t.after(() => node.kill());
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  writeFileSync(token, "no-born");
+  writeFileSync(pid, JSON.stringify({ pid: node.pid, token: "no-born", born: null }));
+  assert.equal(runningUp(), "unknown", "认不出来就不是「没人在跑」");
+
+  // 有这一项、而且对不上，才是真的不是它。
+  writeFileSync(pid, JSON.stringify({ pid: node.pid, token: "no-born", born: "1" }));
+  assert.equal(runningUp(), null, "写下了创建时刻、又对不上，这才是留下的文件");
+  rmSync(pid, { force: true });
+  rmSync(token, { force: true });
+});
+
 test("列不出进程的时候，这把锁谁都不许抢", notWindows, (t) => {
   const release = claimUp();
   t.after(release);

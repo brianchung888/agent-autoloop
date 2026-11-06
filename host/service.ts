@@ -182,6 +182,11 @@ export function runningUp(): number | null | "unknown" {
     // And the number has to have come into being when the claim says it did. `uninstall --yes` leaves both files
     // behind by itself (the forced stop never reaches the release), and everything above matches such a leftover as
     // soon as any node of this machine's is given that number: the lock then sticks for as long as that one runs.
+    //
+    // A claim that went down without that moment (the machine would not say, host/service.ts: claimUp logs it) cannot
+    // be matched against anything, and the number alone is what `tasklist` says yes about for whatever took it. Not
+    // knowing is not the same as the lock being free: taking it for free is how two hubs end up on one database.
+    if (claim.born === null) return "unknown";
     const born = bornAt(claim.pid);
     if (born === null) return running(claim.pid) === false ? null : "unknown";
     return born === claim.born ? claim.pid : null;
@@ -234,7 +239,12 @@ export function claimUp() {
   const token = randomUUID();
   // `born` is what the machine says about the moment this number came into being, and only Windows has anything to
   // say: it is what tells this lock from a file left behind by an `up` whose number something else holds by now.
-  const claim = { pid: process.pid, token, born: bornAt(process.pid), startedAt: new Date().toISOString() };
+  const born = bornAt(process.pid);
+  // Without it the lock cannot be told from a file left behind, and `up` would rather wait five minutes than start a
+  // second hub: whoever reads the log should know which of the two they are about to get.
+  if (born === null && windows())
+    console.error("问不出本进程的创建时刻：up.pid 少了这一项，下一次 up 会说看不清这把锁，而不是把它当空的。");
+  const claim = { pid: process.pid, token, born, startedAt: new Date().toISOString() };
   writeFileSync(tokenFile(), `${token}\n`, { mode: 0o600 });
   writeFileSync(pidFile(), `${JSON.stringify(claim)}\n`);
   return () => {
