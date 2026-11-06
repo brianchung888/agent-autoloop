@@ -18,6 +18,7 @@ import { hubClient } from "../protocol/client.ts";
 import { parseRules } from "../protocol/rules.ts";
 import { CONFIG_FILE, readConfig, writeConfig, type Config } from "../host/config.ts";
 import { HOME, RULES_FILE } from "../host/home.ts";
+import { desktopTrouble } from "../host/notify.ts";
 import { permissionTrouble, secureDir } from "../host/permissions.ts";
 import {
   installService,
@@ -590,15 +591,22 @@ async function doctor() {
           say(!problem, problem ?? `${agent.name} 可以用`);
         }
       }
-      for (const channel of state.channels) say(channel.online, `${channel.name}${channel.online ? "在线" : "不在线"}`);
+      for (const channel of state.channels) {
+        // A channel answering the hub is not the same as a notification arriving. Where this computer has no notifier
+        // the cards go down the skipped path, and that is what to say — not a green「在线」。It is not a red mark
+        // either: everything else about the install is in order, and `agent-autoloop status` still shows the card.
+        const trouble = channel.id === "desktop" ? desktopTrouble() : null;
+        if (channel.online && trouble) console.log(`○ ${trouble}`);
+        else say(channel.online, `${channel.name}${channel.online ? "在线" : "不在线"}`);
+      }
       const manual = path.join(ROOT, "skills", "agent-autoloop", "SKILL.md");
       if (!state.channels.length) {
         console.log(`○ 还没接通道：Agent 问你时不会主动告诉你，要自己运行 agent-autoloop status 看。接法见 ${manual}`);
       } else if (state.channels.length === 1 && state.channels[0].id === "desktop") {
-        console.log(
-          "○ 只接了桌面通知：Agent 问你时只有这台电脑会弹通知，人不在电脑前、或者电脑没有图形界面就看不到。" +
-            `要发到飞书、钉钉这些地方，接法见 ${manual}`,
-        );
+        const only = desktopTrouble()
+          ? "○ 只接了桌面通知，而这台电脑弹不出通知：Agent 问你时得自己运行 agent-autoloop status 看。"
+          : "○ 只接了桌面通知：Agent 问你时只有这台电脑会弹通知，人不在电脑前、或者电脑没有图形界面就看不到。";
+        console.log(`${only}要发到飞书、钉钉这些地方，接法见 ${manual}`);
       }
     } catch (error) {
       say(false, `读不到中台状态：${(error as Error).message}`);

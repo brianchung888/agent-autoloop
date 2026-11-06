@@ -2,8 +2,11 @@
 // an answer; `agent-autoloop status` shows the card and `agent-autoloop answer` answers it.
 //   "channels": { "desktop": { "key": "…" } } in config.json
 //   "channels": { "desktop": { "name": "桌面通知" } } in rules.json
-import { execFile, spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import type { Card, ChannelContext } from "../../host/channels.ts";
+// Saying there is no notifier sends cards down the skipped path, which is right and quiet, rather than failing each one
+// on a command that isn't there. `doctor` reads the same answer, so the two can never say different things.
+import { hasDesktopNotifier } from "../../host/notify.ts";
 
 const WORDS = "运行 agent-autoloop status 查看";
 const TITLE = "Agent 问你一个问题";
@@ -19,16 +22,6 @@ export function notifyCommand(title: string, platform: string = process.platform
   return ["notify-send", ["--", TITLE, body]];
 }
 
-function hasDesktop() {
-  if (process.platform === "darwin") {
-    // getuid is a POSIX call and missing on some platforms; this branch is the only one that asks for it.
-    return spawnSync("launchctl", ["print", `gui/${process.getuid?.() ?? -1}`], { stdio: "ignore" }).status === 0;
-  }
-  // Windows has a graphical session but no notifier this takes: saying so sends cards down the skipped path, which is
-  // right and quiet, rather than failing each one on a command that isn't there.
-  return process.platform === "linux" && Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
-}
-
 /** Not the sync call the other channels get away with: this runs in the hub's own process, and may wait on a dialog. */
 function show(title: string) {
   const [program, args] = notifyCommand(title);
@@ -38,7 +31,7 @@ function show(title: string) {
 }
 
 export default async function desktop({ hub, log, signal }: ChannelContext) {
-  const available = hasDesktop();
+  const available = hasDesktopNotifier();
   while (!signal.aborted) {
     let card: Card | null;
     try {
