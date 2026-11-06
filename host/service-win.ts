@@ -16,6 +16,10 @@ export type TaskOptions = {
   label: string;
   home: string;
   executable: string;
+  /**
+   * The entry script to run, or `""` where there is none: a packaged build is one executable and the task names only
+   * it. What the task is then known by is the executable instead — see `installMark` below.
+   */
   program: string;
   /** When the repeating trigger starts counting. Any moment already past starts it now. */
   startBoundary?: string;
@@ -42,6 +46,9 @@ export const envFile = (home: string) => path.join(home, "service.env");
  */
 export const installMark = (home: string, program: string) =>
   `install:${createHash("sha256").update(`${home}\u0000${program}`).digest("hex").slice(0, 16)}`;
+
+/** The one word this install is known by inside the task: its entry script, or the executable where there is none. */
+const known = (options: TaskOptions) => options.program || options.executable;
 
 const xml = (text: string) =>
   text
@@ -70,11 +77,18 @@ export function environment(home: string) {
  * no limit — this is meant to stay up.
  */
 export function taskXml(options: TaskOptions) {
-  const args = [`--env-file=${envFile(options.home)}`, "--disable-warning=ExperimentalWarning", options.program, "up"];
+  // The home a task carries comes in through an env file, since a task carries no environment of its own. Then
+  // whatever has to come before a subcommand: the warning flag and the entry script in source mode, and nothing at
+  // all in a packaged build — there is no `.ts` file to name there, and no node to read the flag.
+  const args = [
+    `--env-file=${envFile(options.home)}`,
+    ...(options.program ? ["--disable-warning=ExperimentalWarning", options.program] : []),
+    "up",
+  ];
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Agent 自动化中台（${xml(options.label)}）[${installMark(options.home, options.program)}]</Description>
+    <Description>Agent 自动化中台（${xml(options.label)}）[${installMark(options.home, known(options))}]</Description>
     <URI>\\${xml(options.label)}</URI>
   </RegistrationInfo>
   <Triggers>${options.atLogon ? "\n    <LogonTrigger><Enabled>true</Enabled></LogonTrigger>" : ""}

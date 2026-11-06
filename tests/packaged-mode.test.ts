@@ -15,6 +15,8 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { envFile, installMark, taskXml } from "../host/service-win.ts";
+import { unit } from "../host/service.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "agent-autoloop-packaged-"));
 after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 3 }));
@@ -74,4 +76,69 @@ test("入口脚本的路径只有一种写法：命令行这边不再自己抄�
     "cli/main.ts 又自己拼了一份入口脚本路径：要从 host/self.ts 取 PROGRAM，否则两份会各走各的（ROOT 来自 import.meta.dirname，打包版里被 define 掉）",
   );
   assert.match(main, /from "\.\.\/host\/self\.ts"/, "cli/main.ts 没有从 host/self.ts 取这件事");
+});
+
+test("服务定义里也没有 .ts 可以指：只有那个可执行文件和 up", () => {
+  // 常驻那一层写的是「用这个 node 跑这个入口脚本」。打包版里没有入口脚本，也没有一个会去读
+  // --disable-warning 的 node：任务和 unit 只该写那个可执行文件。program 为空就是「没有入口脚本」。
+  const home = join(dir, "service");
+  const executable = join(dir, "agent-autoloop.exe");
+  const written = taskXml({
+    label: "agent-autoloop",
+    home,
+    executable,
+    program: "",
+    startBoundary: "2026-01-01T00:00",
+  });
+  assert.ok(written.includes(`<Command>${executable}</Command>`), written);
+  assert.ok(written.includes(`<Arguments>&quot;--env-file=${envFile(home)}&quot; &quot;up&quot;</Arguments>`), written);
+  assert.doesNotMatch(written, /disable-warning/, "打包版里没有谁会读这个 flag");
+  assert.doesNotMatch(written, /\.ts&quot;/, "任务还指着一个 .ts");
+  // 任务的身份在打包版里是那个可执行文件：uninstall 靠它认出这个任务是不是自己的。
+  assert.ok(written.includes(installMark(home, executable)), "任务的记号不是按这个可执行文件记的");
+  // 源码模式下这一行一个字都没变：入口脚本还在，flag 也还在。
+  const asBefore = taskXml({ label: "a", home, executable, program: join(home, "bin", "agent-autoloop.ts") });
+  assert.ok(asBefore.includes(`&quot;--disable-warning=ExperimentalWarning&quot;`), asBefore);
+
+  // systemd 那边同理。ExecStart 的每个词都被引起来并转义过，所以数词：两个，而不是四个。
+  const service = unit({ home, executable, program: "" });
+  const exec = /^ExecStart=(.*)$/m.exec(service)?.[1] ?? "";
+  assert.equal(exec.split(" ").length, 2, `ExecStart 不是「可执行文件 + up」两个词：${exec}`);
+  assert.ok(exec.endsWith('"up"'), exec);
+  assert.doesNotMatch(service, /disable-warning/);
+  assert.equal(/^ExecStart=(.*)$/m.exec(unit({ home, executable, program: "/p/bin/x.ts" }))?.[1]?.split(" ").length, 4);
+});
+
+test("内部子命令不进帮助，也不进 TAKES：它们不是给人打的", () => {
+  const main = readFileSync(join(repo, "cli", "main.ts"), "utf8");
+  const help = main.slice(main.indexOf("const HELP = `"), main.indexOf("const INIT_USAGE"));
+  assert.doesNotMatch(help, /internal:/, "内部子命令进了帮助");
+  const takes = main.slice(main.indexOf("const TAKES"), main.indexOf("type Flags"));
+  assert.doesNotMatch(
+    takes,
+    /internal:/,
+    "内部子命令进了 TAKES：它们的参数是另一个程序的命令行，不该被当成本程序的 flag 检查",
+  );
+  // 而它们确实都在那张表里：worker 包一轮用的、插件再起本程序用的。
+  assert.match(main, /"internal:launch":/);
+  assert.match(main, /"internal:plugin":/);
+});
+
+test("「这是哪一种建置」先问 node:sea，再看磁盘上有没有入口脚本", () => {
+  // 顺序就是行为。PoC 实测过反过来的代价：打包版里 import.meta.dirname 变成那个 exe 自己的目录，于是一个被
+  // 复制进源码树的二进位找得到 bin/agent-autoloop.ts，把自己当成源码安装——之后它去跑它根本跑不了的 .ts，
+  // 而该说的那句话一句都没说。这里没有 SEA 可以假装，所以钉的是那道顺序；真二进位的行为在自检里跑。
+  const self = readFileSync(join(repo, "host", "self.ts"), "utf8");
+  const asked = self.indexOf("packaged() === null");
+  const looked = self.indexOf("existsSync(PROGRAM)");
+  assert.ok(asked >= 0, "host/self.ts 没有问 node:sea");
+  assert.ok(looked > asked, "先摸了磁盘才问这是哪一种建置");
+});
+
+test("再起本程序的那条命令行，在没有入口脚本的树里只有那个可执行文件", () => {
+  // selfExecutable() 是所有这些地方的唯一来源：常驻、worker 包一轮、插件再起本程序、init 告诉人怎么打。
+  const done = run(["internal:plugin", "没有这个插件"]);
+  assert.notEqual(done.status, 0);
+  // 走到的是同一个 loader，所以说的还是那一句；这里要的是它真的走到了，而不是半路因为路径不对就死了。
+  assert.match(done.stderr, /插件名字不正确|没有/);
 });

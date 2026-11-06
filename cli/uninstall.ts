@@ -4,6 +4,7 @@ import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, unlinkSync }
 import { homedir } from "node:os";
 import path from "node:path";
 import { HOME } from "../host/home.ts";
+import { selfProgram } from "../host/self.ts";
 import { removeService, stopUp } from "../host/service.ts";
 
 const ROOT = path.join(import.meta.dirname, "..");
@@ -69,7 +70,9 @@ function removeCopiedSkill(folder: string, skill: string) {
 }
 
 function removeLinks() {
-  const program = path.join(ROOT, "bin", "agent-autoloop.ts");
+  // What a shim or a link has to name for it to be this install's and not somebody else's: the one word that is this
+  // install (host/self.ts). The entry script in source mode, as it has always been; the executable in a packaged build.
+  const program = selfProgram();
   const places = placesOnPath();
   for (const place of places) {
     if (process.platform === "win32") {

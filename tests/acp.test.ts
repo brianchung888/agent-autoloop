@@ -115,6 +115,31 @@ test("ACP says a turn started once the agent has the prompt, and never for a ses
   assert.equal(reading.started, undefined);
   assert.match(reading.error!, /bad session/);
 });
+test("这一轮起的是这个程序的一个子命令，不是 bridge.ts 这个文件", async () => {
+  // 打包版里没有 .ts 文件可以指，而 plugins/acp/agent.ts:9 以前指的就是一个：那一轮在二进位里根本起不来。
+  // 现在它起 `<本程序> internal:plugin acp <turn>`，和 plugins/delivery 走的是同一个口（host/plugins.ts）。
+  const turn = { command: [process.execPath, fake], cwd: home, prompt: "完成了", access: "read", resume: null };
+  const line = acp.command(turn as never);
+  const { selfExecutable } = await import("../host/self.ts");
+  assert.deepEqual(line.slice(0, selfExecutable().length + 2), [...selfExecutable(), "internal:plugin", "acp"]);
+  assert.ok(
+    !line.slice(selfExecutable().length).some((word) => word.endsWith(".ts")),
+    `命令行还指着一个文件：${line.join(" ")}`,
+  );
+
+  // 而且这条命令行真的跑得起来，答出来的东西和直接跑 bridge.ts 一样。
+  const child = spawn(line[0]!, line.slice(1), { stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  let err = "";
+  child.stdout.on("data", (b) => (out += b));
+  child.stderr.on("data", (b) => (err += b));
+  const code = await new Promise<number | null>((resolve) => child.on("close", resolve));
+  assert.equal(code, 0, err);
+  const reading = acp.read(out, code, err);
+  assert.equal(reading.started, true);
+  assert.equal(reading.text, "完成了");
+});
+
 for (const [what, script] of [
   ["exits as soon as it starts", "process.exit(3);"],
   ["fails to initialize", `on.initialize = ${refusing("初始化坏了")};`],

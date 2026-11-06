@@ -882,7 +882,10 @@ async function askAtTerminal(question: string) {
 const [command, ...args] = process.argv.slice(2);
 const commands: Record<string, () => unknown> = {
   mcp: async () => (await import("./mcp.ts")).mcp(),
+  // Internal subcommands: not in HELP, not in TAKES. They are how one executable does what a `.ts` file beside it used
+  // to be named for, and `host/self.ts: selfExecutable()` is what puts this program in front of them.
   "internal:plugin": () => runPlugin(args),
+  "internal:launch": async () => (await import("../worker/launcher.ts")).launch(args),
   add: () => addPlugin(args),
   init: () => init(args),
   join: () => join(args),

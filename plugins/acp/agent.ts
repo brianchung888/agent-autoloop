@@ -1,14 +1,12 @@
-import { join } from "node:path";
-import { stablePath } from "../../host/node-path.ts";
+// A turn over this protocol runs in a process of its own (bridge.ts), and that process is this program started again
+// with a subcommand — not `bridge.ts` named as a file. A packaged build has no `.ts` file to name, and naming one is
+// what stopped a turn from running at all there; `internal:plugin acp` is the same words in both modes, and it reaches
+// `main` below through the one loader (host/plugins.ts), as plugins/delivery already does.
+import { selfExecutable } from "../../host/self.ts";
 import { tail, type Adapter, type Reading } from "../../worker/agents.ts";
 
 export default {
-  command: (turn) => [
-    stablePath(process.execPath),
-    "--disable-warning=ExperimentalWarning",
-    join(import.meta.dirname, "bridge.ts"),
-    JSON.stringify(turn),
-  ],
+  command: (turn) => [...selfExecutable(), "internal:plugin", "acp", JSON.stringify(turn)],
   read(stdout, code, stderr) {
     let reading: Reading = {};
     for (const line of stdout.trim().split("\n")) {
@@ -28,4 +26,5 @@ export default {
     }
     return reading;
   },
+  main: async (argv) => (await import("./bridge.ts")).bridge(JSON.parse(argv[0]!)),
 } satisfies Adapter;

@@ -26,14 +26,19 @@ import { secureDir } from "../host/permissions.ts";
 import type { Job } from "../protocol/job.ts";
 import { addUsage, type Notice, type Result } from "../protocol/validate.ts";
 import { adapterFor, type Adapter, type Reading, type Turn, type Usage } from "./agents.ts";
+import { selfExecutable } from "../host/self.ts";
 import { alive, bornAt, forgetProcesses, terminate, treeAlive } from "./process.ts";
 import { promptFor, readMessage, repairPrompt, resultFrom } from "./contract.ts";
 import { loadUsage, saveUsage, usageDelta } from "./usage.ts";
 
 const RUNS = path.join(HOME, "worker", "runs");
 const WINDOWS = process.platform === "win32";
-/** The wrapper that stands in for the shell where there is none. */
-const LAUNCHER = ["--disable-warning=ExperimentalWarning", path.join(import.meta.dirname, "launcher.ts")];
+/**
+ * The wrapper that stands in for the shell where there is none: a subcommand of this program, not a file of this
+ * program's (worker/launcher.ts). A packaged build has no `.ts` file to name, and naming one was what stopped a turn
+ * from running at all there — it spawned a `launcher.ts` that is not on anybody's disk.
+ */
+const launcher = () => [...selfExecutable(), "internal:launch"];
 const NOTHING: Usage = { input: 0, output: 0, cached: 0, cost: 0 };
 const TIMEOUT_MINUTES = 180;
 /** A reader of the turn's end that doesn't exit is given this long. */
@@ -206,7 +211,8 @@ export function createWorker({
       // waits for the agent and publishes the exit code. Nothing is quoted because nothing is parsed — the command
       // line arrives already split. There is no login shell either: a scheduled task starts with its owner's own
       // environment, which is what the login shell was for.
-      child = spawn(process.execPath, [...LAUNCHER, out, err, exit, "--", ...argv], {
+      const words = [...launcher(), out, err, exit, "--", ...argv];
+      child = spawn(words[0]!, words.slice(1), {
         cwd,
         env: agentEnvironment(entry),
         detached: true,

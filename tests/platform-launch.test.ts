@@ -7,7 +7,7 @@
 // is what a .cmd shim is; the lookup hands back such a shim, so every turn either dies on spawn or ends in 127 while a
 // real executable sat in the places `elsewhere` names.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,6 +65,46 @@ test("a program that isn't there is 127, the way a shell says it", async () => {
   const done = await launched([join(dir, "没有这个程序")]);
   assert.equal(done.exit, "127\n");
   assert.match(done.err, /启动不了/);
+});
+
+test("包装是这个程序的一个子命令，走那条路得到的是同一件事", async () => {
+  // worker 现在起的不是 worker/launcher.ts 这个文件，而是 `<本程序> internal:launch`（host/self.ts 的
+  // selfExecutable 决定前面那几个词）。打包版里没有 .ts 文件可以指，而以前指的就是一个文件——那一轮因此根本
+  // 跑不起来。这条走真正的那条路，拿到的三个文件和退出码要和上面逐字相同。
+  const where = join(dir, `subcommand-${counter++}`);
+  mkdirSync(where, { recursive: true });
+  const files = { out: join(where, "out"), err: join(where, "err"), exit: join(where, "exit") };
+  const child = spawn(
+    process.execPath,
+    [
+      "--disable-warning=ExperimentalWarning",
+      join(import.meta.dirname, "..", "bin", "agent-autoloop.ts"),
+      "internal:launch",
+      files.out,
+      files.err,
+      files.exit,
+      "--",
+      process.execPath,
+      "-e",
+      'process.stdout.write("走子命令这条路");process.exit(0)',
+    ],
+    { stdio: "ignore" },
+  );
+  const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+  assert.equal(code, 0);
+  assert.equal(readFileSync(files.exit, "utf8"), "0\n", "退出码还是整个出现");
+  assert.equal(readFileSync(files.out, "utf8"), "走子命令这条路");
+  assert.equal(readFileSync(files.err, "utf8"), "");
+});
+
+test("internal:launch 不出现在帮助里：它不是给人打的", () => {
+  const help = spawnSync(
+    process.execPath,
+    ["--disable-warning=ExperimentalWarning", join(import.meta.dirname, "..", "bin", "agent-autoloop.ts"), "help"],
+    { encoding: "utf8", timeout: 30_000 },
+  );
+  assert.equal(help.status, 0, help.stderr);
+  assert.doesNotMatch(help.stdout, /internal:/, "内部子命令进了帮助");
 });
 
 test("the wrapper refuses a command line it can't make sense of", async () => {

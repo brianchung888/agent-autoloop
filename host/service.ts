@@ -15,7 +15,7 @@ import { installTask, removeTask, taskAtLogon, taskEnabled } from "./service-win
 const windows = () => process.platform === "win32";
 
 // The one spelling of this path, so that a service, a wrapper and a plugin cannot drift apart (host/self.ts).
-import { PROGRAM } from "./self.ts";
+import { fromSource, PROGRAM, selfExecutable, selfProgram } from "./self.ts";
 /** Another install on this machine (another AGENT_AUTOLOOP_HOME) has a service of its own. */
 const label = () =>
   HOME === path.join(homedir(), ".agent-autoloop")
@@ -28,8 +28,18 @@ const xml = (text: string) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt
 export type UnitOptions = {
   home: string;
   executable: string;
+  /**
+   * The entry script to run, or `""` where there is none to run: in a packaged build the executable is the whole
+   * command line, and a service definition naming a `.ts` file would name a file that is not on the disk.
+   */
   program: string;
 };
+
+/** What the service starts, as words: this runtime and the entry script, or just the executable. Then `up`. */
+const started = (options: Pick<UnitOptions, "executable" | "program">) =>
+  options.program
+    ? [options.executable, "--disable-warning=ExperimentalWarning", options.program]
+    : [options.executable];
 
 const systemdItem = (text: string, escapeDollar = false) => {
   if (/[\u0000-\u001f\u007f]/u.test(text)) throw new Error("systemd unit 的值不能包含控制字符");
@@ -43,7 +53,7 @@ export function plist() {
   const systemPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
   const executable = stablePath(process.execPath);
   const searchPath = [path.dirname(executable), ...systemPaths].join(":");
-  const program = [executable, "--disable-warning=ExperimentalWarning", PROGRAM, "up"];
+  const program = [...selfExecutable(), "up"];
   const programArguments = program.map((part) => `<string>${xml(part)}</string>`).join("");
   const homeEntry = `<key>AGENT_AUTOLOOP_HOME</key><string>${xml(HOME)}</string>`;
   const pathEntry = `<key>PATH</key><string>${xml(searchPath)}</string>`;
@@ -62,11 +72,9 @@ export function plist() {
 `;
 }
 
-export function unit(options: UnitOptions = { home: HOME, executable: process.execPath, program: PROGRAM }) {
+export function unit(options: UnitOptions = { home: HOME, executable: process.execPath, program: entryScript() }) {
   const environment = systemdItem(`AGENT_AUTOLOOP_HOME=${options.home}`);
-  const command = [options.executable, "--disable-warning=ExperimentalWarning", options.program, "up"]
-    .map((part) => systemdItem(part, true))
-    .join(" ");
+  const command = [...started(options), "up"].map((part) => systemdItem(part, true)).join(" ");
   return `[Unit]
 Description=Agent 自动化中台
 
@@ -87,12 +95,15 @@ const launchdHasIt = () =>
   spawnSync("launchctl", ["print", `${domain()}/${label()}`], { stdio: "ignore" }).status === 0;
 const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
+/** The entry script where this build has one, and nothing where the executable is the whole program (host/self.ts). */
+const entryScript = () => (fromSource() ? PROGRAM : "");
+
 /** What the service starts, whichever platform describes it: this node, this install's program, `up`. */
 const taskOptions = () => ({
   label: label(),
   home: HOME,
   executable: stablePath(process.execPath),
-  program: PROGRAM,
+  program: entryScript(),
 });
 
 export function installService() {
@@ -116,14 +127,17 @@ export function installService() {
 
 export function removeService() {
   // The task is its own record, so what it was registered with is read back from it rather than from a file beside it.
-  if (windows()) return removeTask(label(), HOME, PROGRAM);
+  if (windows()) return removeTask(label(), HOME, selfProgram());
   const file = process.platform === "darwin" ? plistFile() : unitFile();
   if (!existsSync(file)) return;
   const service = readFileSync(file, "utf8");
+  // What says the file is this install's and not somebody else's: the one word that is this install (host/self.ts).
+  // In source mode that is the entry script, as it has always been; in a packaged build it is the executable itself.
+  const mine = selfProgram();
   const ownsService =
     process.platform === "darwin"
-      ? service.includes(xml(PROGRAM))
-      : service.includes(systemdItem(PROGRAM, true)) || service.includes(PROGRAM);
+      ? service.includes(xml(mine))
+      : service.includes(systemdItem(mine, true)) || service.includes(mine);
   if (!ownsService) return;
   if (process.platform === "darwin") {
     spawnSync("launchctl", ["bootout", `${domain()}/${label()}`], { stdio: "ignore" });
