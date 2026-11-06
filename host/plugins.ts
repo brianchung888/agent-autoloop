@@ -5,7 +5,7 @@
 // The order is the behaviour, so it does not change: this install's folder first, then the ones that ship. A loader
 // finds a plugin or says it has none; the first that finds one wins, and the lot of them coming up empty is the one
 // error below. Finding is what loads it, at the moment it is found — importing a plugin runs it, as it always has.
-import { builtinLoader, externalLoader, shippedLoader } from "./plugin-loaders.ts";
+import { builtinLoader, externalLoader, processLoader, shippedLoader } from "./plugin-loaders.ts";
 
 export type PluginKind = "agent" | "channel" | "source";
 /**
@@ -19,7 +19,9 @@ export type PluginLoader = {
   resolve(name: string, kind: PluginKind): Promise<Found | null>;
 };
 
-const loaders: PluginLoader[] = [externalLoader, builtinLoader, shippedLoader];
+// This install's folder first, both ways it can hold a plugin, then the ones that come with the build: a plugin
+// installed here wins over one that ships, which is what it has always done.
+const loaders: PluginLoader[] = [externalLoader, processLoader, builtinLoader, shippedLoader];
 
 // What it hands back is what it always did: the plugin's default export, which each caller reads as the shape its kind
 // requires (worker/agents.ts: `Adapter`, host/channels.ts: the channel function, host/server.ts: the source function).

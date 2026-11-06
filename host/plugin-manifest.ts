@@ -14,10 +14,15 @@ export type PluginManifest = {
   readonly runtime: PluginRuntime;
   /** For `process`: the executable to run, resolved to a path inside the plugin's own folder. */
   readonly entry: string | null;
+  /**
+   * Arguments that go before the call's own, every time. A program that needs a runtime of its own keeps that runtime
+   * in its folder and names the script here; these are arguments, never shell words — nothing is interpolated.
+   */
+  readonly args: readonly string[];
 };
 
 /** A plugin that says nothing is what every plugin was: a `.ts` file this process imports. */
-export const DEFAULT_MANIFEST: PluginManifest = { runtime: "source", entry: null };
+export const DEFAULT_MANIFEST: PluginManifest = { runtime: "source", entry: null, args: [] };
 
 const RUNTIMES: PluginRuntime[] = ["source", "process"];
 
@@ -43,7 +48,7 @@ export function readManifest(folder: string, name = folder): PluginManifest {
     return DEFAULT_MANIFEST;
   }
   if (typeof declared !== "object" || declared === null || Array.isArray(declared)) return DEFAULT_MANIFEST;
-  const { runtime, entry } = declared as { runtime?: unknown; entry?: unknown };
+  const { runtime, entry, args } = declared as { runtime?: unknown; entry?: unknown; args?: unknown };
   if (runtime === undefined || runtime === null) return DEFAULT_MANIFEST;
   if (typeof runtime !== "string" || !RUNTIMES.includes(runtime as PluginRuntime))
     throw new Error(
@@ -58,7 +63,9 @@ export function readManifest(folder: string, name = folder): PluginManifest {
   const inside = relative(resolve(folder), file);
   if (!inside || inside.startsWith("..") || isAbsolute(inside))
     throw new Error(`${name} 的 plugin.json 里 entry 走出了插件目录：${entry}`);
-  return { runtime: "process", entry: file };
+  if (args !== undefined && (!Array.isArray(args) || args.some((part) => typeof part !== "string")))
+    throw new Error(`${name} 的 plugin.json 里 args 要是一串字符串，每一项都是一个参数`);
+  return { runtime: "process", entry: file, args: (args as string[]) ?? [] };
 }
 
 const describe = (value: unknown) => (typeof value === "string" ? JSON.stringify(value) : String(value));

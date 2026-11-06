@@ -21,7 +21,7 @@ function plugin(name: string, manifest?: string) {
 
 test("没有 plugin.json 的插件，就是这个机制存在之前的那种插件", () => {
   assert.deepEqual(readManifest(plugin("bare")), DEFAULT_MANIFEST);
-  assert.deepEqual(DEFAULT_MANIFEST, { runtime: "source", entry: null });
+  assert.deepEqual(DEFAULT_MANIFEST, { runtime: "source", entry: null, args: [] });
 });
 
 test("别人为别的用途写的 plugin.json 不能让今天能用的插件用不了", () => {
@@ -54,7 +54,10 @@ test("process 的 entry 是插件目录里的一个相对路径，走不出去",
   assert.throws(() => readManifest(folder, "outside"), /不能是绝对路径/);
 
   const fine = plugin("runs", '{"runtime":"process","entry":"bin/run.js"}');
-  assert.deepEqual(readManifest(fine, "runs"), { runtime: "process", entry: join(fine, "bin", "run.js") });
+  assert.deepEqual(readManifest(fine, "runs"), { runtime: "process", entry: join(fine, "bin", "run.js"), args: [] });
+  // args 是参数，不是 shell 词：写错形状就拒掉。
+  writeFileSync(join(fine, "plugin.json"), '{"runtime":"process","entry":"bin/run.js","args":"-x"}');
+  assert.throws(() => readManifest(fine, "runs"), /args 要是一串字符串/);
 });
 
 test("解析顺序没有变：这个安装目录里的同名插件，胜过随引擎发布的那一个", async () => {

@@ -9,7 +9,10 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { HOME } from "./home.ts";
+import { readManifest } from "./plugin-manifest.ts";
+import { processPlugin } from "./plugin-process.ts";
 import { builtins, registryKey } from "./plugin-registry.ts";
+import { fromSource } from "./self.ts";
 import type { Found, PluginLoader } from "./plugins.ts";
 
 /** Where a plugin's entry file would be under a folder of plugin folders. The name is already known to be a name. */
@@ -40,5 +43,31 @@ export const builtinLoader: PluginLoader = {
     const open = builtins()?.[registryKey(name, kind)];
     if (!open) return null;
     return { plugin: (await open()).default };
+  },
+};
+
+/**
+ * A plugin under this install that says it is a program of its own: `plugin.json` with `runtime: "process"`
+ * (host/plugin-manifest.ts, host/plugin-process.ts). Asked after the folder has been looked in for a `.ts` file, so
+ * that a plugin with both is the plugin it has always been.
+ *
+ * It is also where a packaged build says what to do about a plugin it cannot import. Such a build has no way to run an
+ * external `.ts` file, and "没有这个插件" would be a lie about a plugin that is plainly there.
+ */
+export const processLoader: PluginLoader = {
+  id: "process",
+  async resolve(name, kind): Promise<Found | null> {
+    const folder = join(HOME, "plugins", name);
+    if (!existsSync(folder)) return null;
+    const manifest = readManifest(folder, name);
+    if (manifest.runtime !== "process") {
+      if (!fromSource() && existsSync(entryIn(folder, name, kind)))
+        throw new Error(
+          `${name} 是源码插件（plugins/${name}/${kind}.ts），这个打包版跑不了外部的 .ts 文件。` +
+            `在 ${join(folder, "plugin.json")} 里写 {"runtime":"process","entry":"…"}，让它当一个独立程序被调用（见 docs/plugins.md）。`,
+        );
+      return null;
+    }
+    return { plugin: processPlugin(name, kind, manifest.entry!, manifest.args) };
   },
 };
