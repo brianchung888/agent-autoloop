@@ -127,7 +127,9 @@ if (-not (Test-Path $Shim) -or (Get-Content -LiteralPath $Shim -Raw).Contains($P
 }
 
 # The user's own PATH, which is theirs to change without an administrator. setx would cut it short at 1024 characters.
-if ($placed) {
+# This is the one thing here that outlives the folders above, so there is a way to say no to it: a smoke test installs
+# into a throwaway profile, and the PATH it would be writing to is the real one either way.
+if ($placed -and -not $env:AGENT_AUTOLOOP_NO_PATH) {
   $mine = [Environment]::GetEnvironmentVariable("PATH", "User")
   $already = @()
   if ($mine) { $already = $mine.Split(";") | Where-Object { $_ } }
@@ -136,8 +138,9 @@ if ($placed) {
     [Environment]::SetEnvironmentVariable("PATH", $joined, "User")
     Write-Host "把 $ShimFolder 加进了你的 PATH。这个终端还没生效，重开一个才算。"
   }
-  if (($env:PATH -split ";") -notcontains $ShimFolder) { $env:PATH = "$ShimFolder;$($env:PATH)" }
 }
+# This session's own PATH either way: what runs below should find the name it is about to tell the person to type.
+if ($placed -and ($env:PATH -split ";") -notcontains $ShimFolder) { $env:PATH = "$ShimFolder;$($env:PATH)" }
 
 $code = 0
 if ($args.Count -gt 0 -and $args[0] -eq "join") {
@@ -154,8 +157,15 @@ if ($args.Count -gt 0 -and $args[0] -eq "join") {
   $code = $LASTEXITCODE
 }
 
-# Whether typing the name runs this program, which is what every message printed above assumes.
-$found = & where.exe agent-autoloop 2>$null
+# Whether typing the name runs this program, which is what every message printed above assumes. Finding nothing is an
+# answer, not a failure: where.exe says so on its error output, and that is not something to stop for.
+$before = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+  $found = & where.exe agent-autoloop 2>$null
+} finally {
+  $ErrorActionPreference = $before
+}
 $ours = $false
 foreach ($place in @($found)) {
   if ($place -and (Test-Path -LiteralPath $place) -and (Get-Content -LiteralPath $place -Raw).Contains($Program)) {
