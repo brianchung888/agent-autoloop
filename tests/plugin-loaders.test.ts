@@ -3,8 +3,8 @@
 // nobody implements is taken for the default and the wrong thing runs; an `entry` reaches out of the plugin's folder.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import { setup } from "./helpers.ts";
@@ -102,7 +102,7 @@ test("打包版里，装在这里的源码插件要得到那句能照着做的�
 });
 
 test("内置清单覆盖 plugins/ 下所有的 agent/channel/source，一条都不少", async () => {
-  const { render, scan } = await import("../scripts/build-registry.ts");
+  const { OUTPUT, render, scan } = await import("../scripts/build-registry.ts");
   const root = join(import.meta.dirname, "..");
   // 产生器扫出来的，要和自己读一遍目录得到的完全一样：漏登记的插件在源码模式下毫无异样，只有打包版没有它。
   const read = readdirSync(join(root, "plugins"), { withFileTypes: true })
@@ -120,6 +120,11 @@ test("内置清单覆盖 plugins/ 下所有的 agent/channel/source，一条都�
     read,
   );
   assert.equal(read.length, 11, "README 和计划里都说是 11 个内置插件");
+
+  // 产生出来的那份模块也要过 typecheck：打包版编不过的模块，就是编不出来的打包版。
+  const tsconfig = JSON.parse(readFileSync(join(root, "tsconfig.json"), "utf8"));
+  assert.ok(tsconfig.include.includes("build"), "build/ 不在 tsconfig 的 include 里，产生出来的模块没人检查");
+  assert.ok(OUTPUT.startsWith(join(root, "build") + sep), `产生的位置在 build/ 之外：${OUTPUT}`);
 
   // 写出来的那份模块里，每一条都是字面量 import：bundler 读不懂的东西它跟不上。
   const written = render(scan(root));

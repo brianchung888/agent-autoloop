@@ -36,12 +36,18 @@ jobs:
         run: npm ci
       - if: steps.scope.outputs.scope != 'docs'
         run: npm run format:check
-      - if: steps.scope.outputs.scope != 'docs'
-        run: npm run typecheck
-      # A plugin added to plugins/ without the built-in list being written again is one the packaged build silently
-      # does not have, while the source build is perfectly fine: the hardest kind of difference to notice.
+      # Before the typecheck, because what it writes is typechecked too: `build/` is in tsconfig's include, and a
+      # generated module that does not compile is a packaged build that does not build.
+      #
+      # The list is not in the version control, so there is no stale one to catch here — writing it and then comparing
+      # cannot fail on its own. What the pair does check is the generator: that it runs at all, that it is a function of
+      # `plugins/` alone and writes the same thing twice, and that every path it wrote is a file. The difference it
+      # exists for — a plugin added to `plugins/` and missing from the list — is caught by the test that scans the
+      # folder itself (tests/plugin-loaders.test.ts), on a machine where this step has already run.
       - if: steps.scope.outputs.scope != 'docs'
         run: npm run build:registry && npm run build:registry -- --check
+      - if: steps.scope.outputs.scope != 'docs'
+        run: npm run typecheck
       - if: steps.scope.outputs.scope == 'normal' || steps.scope.outputs.scope == 'kernel'
         run: npm run test:quick
       - if: steps.scope.outputs.scope == 'kernel'
@@ -73,6 +79,9 @@ jobs:
           package-manager-cache: false
       - if: steps.scope.outputs.scope != 'docs'
         run: npm ci
+      # The generated list first, for the same reason as in the job above: it is part of what the typecheck covers.
+      - if: steps.scope.outputs.scope != 'docs'
+        run: npm run build:registry
       - if: steps.scope.outputs.scope != 'docs'
         run: npm run typecheck
       - if: steps.scope.outputs.scope != 'docs'

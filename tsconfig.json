@@ -13,6 +13,7 @@
   },
   "include": [
     "bin",
+    "build",
     "host",
     "plugins",
     "worker",
