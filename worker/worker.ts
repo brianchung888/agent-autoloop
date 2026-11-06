@@ -25,6 +25,7 @@ import { HOME } from "../host/home.ts";
 import type { Job } from "../protocol/job.ts";
 import { addUsage, type Notice, type Result } from "../protocol/validate.ts";
 import { adapterFor, type Adapter, type Reading, type Turn, type Usage } from "./agents.ts";
+import { alive, terminate, treeAlive } from "./process.ts";
 import { promptFor, readMessage, repairPrompt, resultFrom } from "./contract.ts";
 import { loadUsage, saveUsage, usageDelta } from "./usage.ts";
 
@@ -117,51 +118,6 @@ const files = (entry: Entry) => ({
 });
 const quoted = (word: string) => `'${word.replaceAll("'", `'\\''`)}'`;
 const marker = (entry: Entry) => `agent-autoloop-run:${entry.run}:${entry.attempt}:${entry.turn}`;
-
-/** Whether the run's process is still going: false when it is gone, null when we could not look. */
-function alive(entry: Entry): boolean | null {
-  if (!entry.pid) return false;
-  try {
-    const command = execFileSync("ps", ["-p", String(entry.pid), "-o", "command="], { encoding: "utf8" });
-    return command.includes(marker(entry));
-  } catch (error) {
-    // A process that is gone makes ps exit with status 1; anything else (EPERM, EACCES, a spawn
-    // failure) means we could not look, which is not the same as it being gone.
-    const status = (error as { status?: number | null }).status;
-    if (status === 1) return false;
-    return null;
-  }
-}
-
-function signal(entry: Entry, name: NodeJS.Signals) {
-  try {
-    if (entry.pid) process.kill(-entry.pid, name);
-  } catch {}
-}
-
-/** Whether anything in the run's group is still going, null when we could not look. */
-function groupAlive(entry: Entry): boolean | null {
-  // The wrapper can die before a child; zombies have already stopped and only their parent can reap them.
-  if (!entry.pid) return false;
-  try {
-    return execFileSync("ps", ["-ax", "-o", "pgid=", "-o", "stat="], { encoding: "utf8" })
-      .trim()
-      .split("\n")
-      .some((line) => {
-        const [group, state] = line.trim().split(/\s+/);
-        return Number(group) === entry.pid && !state.startsWith("Z");
-      });
-  } catch {
-    // ps itself may be missing or blocked in a sandbox. This group was started here, so it can be asked about
-    // directly: no such group is gone, anything else means it couldn't be looked at.
-    try {
-      process.kill(-entry.pid, 0);
-      return true;
-    } catch (failure) {
-      return (failure as NodeJS.ErrnoException).code === "ESRCH" ? false : null;
-    }
-  }
-}
 
 function snapshot(file: string) {
   if (!existsSync(file)) return "";
@@ -408,10 +364,10 @@ export function createWorker({
     const { exit } = files(entry);
     const exitCode = () => (existsSync(exit) ? Number(readFileSync(exit, "utf8").trim()) : null);
     if (entry.stopping !== undefined) {
-      const going = groupAlive(entry);
+      const going = treeAlive(entry.pid);
       const overdue = now() - entry.stopping > STOP_GRACE;
       if (going === true) {
-        if (overdue) signal(entry, "SIGKILL");
+        if (overdue) terminate(entry.pid, true);
         return;
       }
       if (going === null) {
@@ -419,7 +375,7 @@ export function createWorker({
         // `cancelled` would release the item while a process may still be in it, which the protocol forbids
         // (docs/protocol.md: 确认组内没有活进程后才交 cancelled). `failed` also stops the run and claims less.
         if (!overdue) return;
-        signal(entry, "SIGKILL");
+        terminate(entry.pid, true);
         return endWith(entry, {
           outcome: "failed",
           error: "停止信号发出后没能确认进程组已结束：这一轮按没跑成记，不再重试，进程可能还在。",
@@ -429,10 +385,10 @@ export function createWorker({
     }
     if (existsSync(exit)) return conclude(entry, adapter, exitCode());
     // The shell can publish its exit between the first file check and ps returning.
-    const looking = alive(entry);
+    const looking = alive(entry.pid, marker(entry));
     if (looking === false) return conclude(entry, adapter, exitCode());
     // Unable to look, the run counts as still going, so its timeout and its finished turn still end it.
-    if (looking === null && !blind) log(`couldn't run ps; runs count as going until they end or time out`);
+    if (looking === null && !blind) log(`couldn't look at the run; runs count as going until they end or time out`);
     blind = looking === null;
     const seen = read(entry, adapter, null);
     // Kept as soon as it's read: if the end can't be read, the one made up at launch may be nothing its CLI knows of.
@@ -469,7 +425,7 @@ export function createWorker({
     entry.stopping = now();
     entry.why = why;
     save(entry);
-    signal(entry, "SIGTERM");
+    terminate(entry.pid, false);
     log(`run ${entry.run}: stopping (${why})`);
   }
 
