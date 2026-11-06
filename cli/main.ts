@@ -19,6 +19,7 @@ import { parseRules } from "../protocol/rules.ts";
 import { CONFIG_FILE, readConfig, writeConfig, type Config } from "../host/config.ts";
 import { HOME, RULES_FILE } from "../host/home.ts";
 import { readManifest, type PluginManifest } from "../host/plugin-manifest.ts";
+import { stablePath } from "../host/node-path.ts";
 import { desktopTrouble } from "../host/notify.ts";
 import { permissionTrouble, secureDir } from "../host/permissions.ts";
 import {
@@ -29,12 +30,13 @@ import {
   serviceRunning,
   systemUnit,
 } from "../host/service.ts";
+// The one spelling of "how to start this program again" (host/self.ts), so a second one here cannot drift from it.
+import { fromSource, PROGRAM } from "../host/self.ts";
 import { versionLine } from "../host/version.ts";
 import { spendLine } from "./spend.ts";
 import { attemptsOf, newFailure, waitingRetry } from "./try.ts";
 
 const ROOT = path.join(import.meta.dirname, "..");
-const PROGRAM = path.join(ROOT, "bin", "agent-autoloop.ts");
 
 const HELP = `Agent 自动化中台
 
@@ -282,9 +284,14 @@ function readSkillWays(): Record<string, SkillWay> {
  * What to type to run this program: its name if that's what a shell finds, otherwise where it is. Windows has no
  * `command -v`, and nothing is found by a shell that isn't there — `where.exe` is what answers the same question. A
  * path with a space in it is quoted the way the shell being typed into reads it, which is not the same quote.
+ *
+ * In a packaged build the executable is the whole of it. There is no entry script to name and no `.ts` on disk to
+ * name it with, so telling someone to run one would be telling them to run a file that is not there.
  */
 function howToRun() {
   const windows = process.platform === "win32";
+  // What a shim or a link would have to lead to for `agent-autoloop` to be this install rather than someone else's.
+  const self = fromSource() ? PROGRAM : stablePath(process.execPath);
   const asked = windows
     ? spawnSync("where.exe", ["agent-autoloop"], { encoding: "utf8" })
     : spawnSync("/bin/sh", ["-c", "command -v agent-autoloop"], { encoding: "utf8" });
@@ -292,15 +299,12 @@ function howToRun() {
   const found = (asked.stdout ?? "").trim().split(/\r?\n/)[0]?.trim() ?? "";
   try {
     // On Windows what is on PATH is a shim that names this program rather than a link that leads to it.
-    if (
-      found &&
-      (windows ? readFileSync(found, "utf8").includes(PROGRAM) : realpathSync(found) === realpathSync(PROGRAM))
-    )
+    if (found && (windows ? readFileSync(found, "utf8").includes(self) : realpathSync(found) === realpathSync(self)))
       return "agent-autoloop";
   } catch {}
-  // The program itself is a .ts, and Windows reads no shebang: what runs it there is the .cmd beside it.
+  // In source mode the program itself is a .ts, and Windows reads no shebang: what runs it there is the .cmd beside it.
   const cmd = path.join(ROOT, "bin", "agent-autoloop.cmd");
-  const shown = windows && existsSync(cmd) ? cmd : PROGRAM;
+  const shown = fromSource() && windows && existsSync(cmd) ? cmd : self;
   if (!/\s/.test(shown)) return shown;
   return windows ? `"${shown}"` : `'${shown}'`;
 }
