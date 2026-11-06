@@ -118,6 +118,25 @@ test("答不出一行 JSON、或者什么都不答，都说得明明白白", asy
   await assert.rejects(() => loadPlugin("grumbling", "agent"), /插件说：先运行 gh auth login/);
 });
 
+test(
+  "Windows 上 entry 得是真正的可执行文件：.cmd 和 sh 脚本都起不来，而且说得出是哪个程序",
+  { skip: !WINDOWS && "docs/plugins.md 的这一段讲的是 Windows；POSIX 上 sh 脚本正是上面几条走的那条路" },
+  async () => {
+    // 这里不经过 shell，所以 CreateProcess 认什么就是什么。docs/plugins.md 说的就是这件事。
+    const folder = join(home, "plugins", "wrapped");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "run.cmd"), '@echo {"ok":true,"value":{"calls":[]}}\r\n');
+    writeFileSync(join(folder, "plugin.json"), JSON.stringify({ runtime: "process", entry: "run.cmd" }));
+    await assert.rejects(() => loadPlugin("wrapped", "agent"), /插件的程序起不来（.*run\.cmd）/);
+
+    const shell = join(home, "plugins", "shelled");
+    mkdirSync(shell, { recursive: true });
+    writeFileSync(join(shell, "run"), '#!/bin/sh\necho \'{"ok":true,"value":{"calls":[]}}\'\n');
+    writeFileSync(join(shell, "plugin.json"), JSON.stringify({ runtime: "process", entry: "run" }));
+    await assert.rejects(() => loadPlugin("shelled", "agent"), /插件的程序起不来（.*run）/);
+  },
+);
+
 test("通道还不能这样跑，而且说清楚该怎么办", async () => {
   plugin("outside-channel", handler({ command: "[]" }));
   await assert.rejects(() => loadPlugin("outside-channel", "channel"), /通道是和中台一样长命的循环/);
