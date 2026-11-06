@@ -45,6 +45,29 @@ const placesOnPath = () => {
   return new Set([...usual, ...onPath]);
 };
 
+/** How the install last put the skill into each Agent's folder. Nothing written down means: by a link. */
+function skillWays(): Record<string, string> {
+  try {
+    const read = JSON.parse(readFileSync(path.join(HOME, "skill-link.json"), "utf8"));
+    return typeof read === "object" && read !== null && !Array.isArray(read) ? read : {};
+  } catch {
+    return {};
+  }
+}
+
+/** A copy of ours, and only that: the same SKILL.md, word for word. Anything someone has made their own stays. */
+function removeCopiedSkill(folder: string, skill: string) {
+  if (!existsSync(folder)) return;
+  try {
+    const here = readFileSync(path.join(folder, "SKILL.md"), "utf8");
+    if (here !== readFileSync(path.join(skill, "SKILL.md"), "utf8")) return;
+  } catch {
+    return;
+  }
+  rmSync(folder, { recursive: true, force: true });
+  console.log(`删掉了 ${folder}`);
+}
+
 function removeLinks() {
   const program = path.join(ROOT, "bin", "agent-autoloop.ts");
   const places = placesOnPath();
@@ -56,7 +79,15 @@ function removeLinks() {
     removeLink(path.join(place, "agent-autoloop"), program);
   }
   const skill = path.join(ROOT, "skills", "agent-autoloop");
-  for (const agent of [".claude", ".codex"]) removeLink(path.join(homedir(), agent, "skills", "agent-autoloop"), skill);
+  // Where a link could not be made the install copied the folder, and said so. A copy leads nowhere, so nothing about
+  // the folder itself can say whose it is: what the install wrote down is the only thing that can.
+  const ways = skillWays();
+  for (const agent of [".claude", ".codex"]) {
+    const link = path.join(homedir(), agent, "skills", "agent-autoloop");
+    if (ways[agent] === "copy") removeCopiedSkill(link, skill);
+    else removeLink(link, skill);
+  }
+  rmSync(path.join(HOME, "skill-link.json"), { force: true });
 }
 
 /** Confirmation is about removing the program; data is never part of this command. */

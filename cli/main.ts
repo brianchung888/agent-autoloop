@@ -1,7 +1,16 @@
 // The command line: what a person, or their Agent, types.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, hostname } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -204,15 +213,53 @@ function starterRules(agents: Record<string, object>, first: string) {
   };
 }
 
-/** Shows the user's Agents how to set it up. Only for the install in its usual place, never over their own. */
+/**
+ * Shows the user's Agents how to set it up. Only for the install in its usual place, never over their own.
+ *
+ * Windows makes a plain link to a folder only for somebody allowed to make one, and a person installing a program of
+ * their own usually is not: a junction leads to the same folder and asks nobody. Where even that is refused the folder
+ * is copied instead, and which of the two it was is written down — a copy is not a link, and `uninstall` has to know,
+ * or what was put there stays there.
+ *
+ * Nothing here is worth failing an install over: it is how an Agent is told what this program can do, not the program.
+ */
+const SKILL_WAYS = () => path.join(HOME, "skill-link.json");
+type SkillWay = "link" | "copy";
+
 function linkSkill() {
-  if (process.env.AGENT_AUTOLOOP_HOME) return;
-  for (const agent of [".claude", ".codex"]) {
-    if (!existsSync(path.join(homedir(), agent))) continue;
-    const link = path.join(homedir(), agent, "skills", "agent-autoloop");
-    if (lstatSync(link, { throwIfNoEntry: false })) continue;
-    mkdirSync(path.dirname(link), { recursive: true });
-    symlinkSync(path.join(ROOT, "skills", "agent-autoloop"), link);
+  try {
+    if (process.env.AGENT_AUTOLOOP_HOME) return;
+    const skill = path.join(ROOT, "skills", "agent-autoloop");
+    const ways = readSkillWays();
+    for (const agent of [".claude", ".codex"]) {
+      if (!existsSync(path.join(homedir(), agent))) continue;
+      const link = path.join(homedir(), agent, "skills", "agent-autoloop");
+      if (lstatSync(link, { throwIfNoEntry: false })) continue;
+      mkdirSync(path.dirname(link), { recursive: true });
+      try {
+        symlinkSync(skill, link, process.platform === "win32" ? "junction" : undefined);
+        ways[agent] = "link";
+      } catch (error) {
+        if (process.platform !== "win32") throw error;
+        cpSync(skill, link, { recursive: true });
+        ways[agent] = "copy";
+      }
+    }
+    if (Object.keys(ways).length) {
+      writeFileSync(SKILL_WAYS(), `${JSON.stringify(ways, null, 2)}\n`, { mode: 0o600 });
+    }
+  } catch (error) {
+    console.log(`没能把 skill 接到你的 Agent 上（${(error as Error).message}）。这不影响中台，之后可以手动放。`);
+  }
+}
+
+/** How the skill was put in each Agent's folder, as the install last left it. A missing file means: by a link. */
+function readSkillWays(): Record<string, SkillWay> {
+  try {
+    const read = JSON.parse(readFileSync(SKILL_WAYS(), "utf8")) as Record<string, SkillWay>;
+    return typeof read === "object" && read !== null && !Array.isArray(read) ? read : {};
+  } catch {
+    return {};
   }
 }
 
