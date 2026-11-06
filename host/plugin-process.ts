@@ -114,8 +114,10 @@ function make(name: string, kind: PluginKind, folder: string, entry: string, arg
   if (!existsSync(entry)) throw new Error(`${name} 的 plugin.json 指的程序不在：${entry}`);
   const argv = [entry, ...args];
   const has = describe(name, folder, argv);
+  // Which call this is, last: the webhook's own headers and body are spread in here, and a request that arrives with
+  // a `call` of its own would otherwise choose which of the plugin's calls runs.
   if (kind === "source")
-    return (input: unknown) => ask(name, folder, argv, { call: "translate", ...(input as object) });
+    return (input: unknown) => ask(name, folder, argv, { ...(input as object), call: "translate" });
   const adapter: Record<string, unknown> = {
     command: (turn: unknown) => ask(name, folder, argv, { call: "command", turn }),
     read: (stdout: string, code: number | null, stderr: string) =>

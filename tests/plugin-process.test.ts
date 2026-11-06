@@ -107,6 +107,12 @@ test("source 是一次纯翻译，返回事件数组", async () => {
   ]);
   // 插件自己挂了、一句话没留下，那还是一个要抛出去的毛病：host/server.ts 把它变成「验签没过」。
   assert.throws(() => translate({ headers: {}, body: "{}", secret: "k" }), /插件对 translate 什么都没答/);
+  // 进来的东西选不了这是哪一个 call：webhook 的字段是摊进这个请求里的，`call` 要压在最后。
+  assert.deepEqual(
+    translate({ headers: { "x-sig": "k" }, body: '{"no":7}', secret: "k", call: "describe" }),
+    [{ id: "order-7", type: "shop.order" }],
+    "请求自带的 call 盖掉了 translate",
+  );
 });
 
 test("答不出一行 JSON、或者什么都不答，都说得明明白白", async () => {
