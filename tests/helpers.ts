@@ -1,7 +1,7 @@
 // Each test file runs in its own process with its own home and the fixture rules; modules are imported after this sets
 // the environment they read.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { after, test as runTest } from "node:test";
@@ -54,8 +54,38 @@ export function skipUnless(able: boolean, why: string): typeof runTest {
   }) as unknown as typeof runTest;
 }
 
+/** The prefix every home this file makes is named with, and the one thing the sweep below is allowed to go by. */
+const MINE = "agent-autoloop-";
+/** Old enough that no run going on now can be in it: the whole suite is nine minutes, and the longest file is two. */
+const STALE = 2 * 60 * 60 * 1000;
+
+/**
+ * What earlier runs left in the system's temporary place. Windows refuses to remove a folder anything still holds open,
+ * and a detached child may for a moment longer — so a home now and then survives the hook below, and a machine that
+ * runs this suite every day ends up with hundreds of them. Nothing here is about tidying up, which is why it is
+ * best-effort and silent; what it is about is that leaving rubbish behind is not a thing a test suite may do.
+ *
+ * Only folders named the way this file names them, and only ones nothing has touched for two hours: a run going on
+ * right now, on another file of this suite or in another terminal, is minutes old and is never one of these. What one
+ * run leaves behind it therefore still leaves behind — the hold on the folder outlives the process asking for it — but
+ * it is gone by the next day instead of staying for ever.
+ */
+function sweep() {
+  try {
+    for (const item of readdirSync(tmpdir(), { withFileTypes: true })) {
+      if (!item.isDirectory() || !item.name.startsWith(MINE)) continue;
+      const folder = join(tmpdir(), item.name);
+      try {
+        if (Date.now() - statSync(folder).mtimeMs < STALE) continue;
+        rmSync(folder, { recursive: true, force: true, maxRetries: 2 });
+      } catch {}
+    }
+  } catch {}
+}
+
 export function setup(name: string, rules = "rules.fixture.json") {
-  const directory = mkdtempSync(join(tmpdir(), `agent-autoloop-${name}-`));
+  sweep();
+  const directory = mkdtempSync(join(tmpdir(), `${MINE}${name}-`));
   process.env.AGENT_AUTOLOOP_HOME = directory;
   // A path from the root is given as it is; a bare name is one of the fixtures beside this file. On Windows a path
   // from the root does not begin with a separator at all, so what makes it one is asked rather than guessed.
@@ -63,10 +93,12 @@ export function setup(name: string, rules = "rules.fixture.json") {
   process.env.AGENT_AUTOLOOP_PUBLIC_URL = "https://hub.test";
   after(() => {
     try {
-      rmSync(directory, { recursive: true, force: true, maxRetries: 3 });
+      // Windows refuses to remove a folder anything still holds open, and a detached child may for a moment longer —
+      // so it is asked for again, with a wait between, instead of once. `maxRetries` waits for this and nothing else.
+      rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     } catch (error) {
-      // Windows refuses to remove a folder anything still holds open, and a detached child may for a moment longer.
-      // Tidying up is not what any of these tests are about, and the folder is in the system's own temporary place.
+      // And where it still will not go, the sweep at the next run's start gets it: tidying up is not what any of these
+      // tests are about, and the folder is in the system's own temporary place.
       if (process.platform !== "win32") throw error;
     }
   });
