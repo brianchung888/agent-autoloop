@@ -11,7 +11,16 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { alive, bornAt, forgetProcesses, leftBehind, running, terminate, treeAlive } from "../worker/process.ts";
+import {
+  alive,
+  bornAt,
+  forgetProcesses,
+  leftBehind,
+  running,
+  sampleTree,
+  terminate,
+  treeAlive,
+} from "../worker/process.ts";
 
 const WINDOWS = process.platform === "win32";
 /** Long enough that nothing here finishes by itself; the test ends it. */
@@ -414,4 +423,71 @@ test("号被回收以后：别人的树不算这一轮的，也不会每个 tick
   terminate(holder.pid, true, join(dir, "没有这个文件"));
   await until("照杀的那条路还在", () => running(holder.pid!) === false || null);
   assert.equal(running(holder.pid!), false);
+});
+
+test("根和中间层同时没了，孙子还找得着：一轮跑着的时候就把树取样记下来", ONLY_WINDOWS, async (t) => {
+  // 上面那一条是「根先没、中间层后没」：根一没就走了一次树，中间层那时还看得见，于是被记了下来。真正剩下的窗口是
+  // 根还活着的时候一次树都没走过——orphans 在「根活着而且还是启动的那一个」时直接答 true，launch-N.json 于是整轮
+  // 都是空的。根和中间层在两拍之间一起没了，孙子身上那个父号这时谁都不是，机器上和记录里都没有一句话说它曾经是这
+  // 一轮的：树看起来是空的，被 stop 的一轮交出 cancelled，而活儿还在干。所以跑着的时候也要隔一阵走一次树。
+  process.env.AGENT_AUTOLOOP_TREE_SAMPLE = "300";
+  t.after(() => {
+    delete process.env.AGENT_AUTOLOOP_TREE_SAMPLE;
+  });
+  const kids = join(dir, "sampled.json");
+  const middle =
+    `const c=require("node:child_process").spawn(process.execPath,["-e","${SLEEP}"],{detached:true,stdio:"ignore"});` +
+    `c.unref();require("node:fs").writeFileSync(${JSON.stringify(kids)},JSON.stringify({middle:process.pid,grand:c.pid}));${SLEEP}`;
+  const root = started(
+    `const c=require("node:child_process").spawn(process.execPath,["-e",${JSON.stringify(middle)}],{detached:true,stdio:"ignore"});c.unref();${SLEEP}`,
+  );
+  const noted = () => (existsSync(kids) ? (JSON.parse(readFileSync(kids, "utf8")) as Record<string, number>) : null);
+  t.after(() => {
+    terminate(root.pid, true);
+    for (const pid of Object.values(noted() ?? {})) terminate(pid, true);
+  });
+  await until("根起来了", () => running(root.pid!));
+  const born = bornAt(root.pid);
+  const record = join(dir, "launch-sampled.json");
+  writeFileSync(record, JSON.stringify({ pid: root.pid, born }));
+  await until("孙子起来了", () => noted() !== null && running(noted()!.grand!));
+  const { middle: middlePid, grand } = noted()!;
+  const written = () => JSON.parse(readFileSync(record, "utf8")) as { tree?: Record<string, string> };
+
+  // 三层都在跑着：问树只答 true，没有谁去走它，记录里也还是空的。
+  forgetProcesses();
+  assert.equal(leftBehind(root.pid!, record), true, "根还活着而且就是启动的那一个，答案就是 true");
+  assert.equal(written().tree, undefined, "根活着的时候没有谁会去走树——这就是那个窗口");
+
+  // 等一个取样周期，取样走一次：答案照旧，但走到的每一层都记下来了。
+  await pause(400);
+  forgetProcesses();
+  sampleTree(root.pid, record);
+  assert.match(String(written().tree?.[String(middlePid)]), /^\d+$/, "中间层没被记下来");
+  assert.match(String(written().tree?.[String(grand)]), /^\d+$/, "孙子没被记下来");
+
+  // 同一个周期里再叫一次不会再走一遍：整张进程表是将近一秒的机器时间，每一拍都付一次谁都受不了。
+  writeFileSync(record, JSON.stringify({ pid: root.pid, born }));
+  sampleTree(root.pid, record);
+  assert.equal(written().tree, undefined, "同一个取样周期里又把整张表走了一遍");
+  await pause(400);
+  forgetProcesses();
+  sampleTree(root.pid, record);
+  assert.ok(written().tree, "下一个周期该再走一次");
+
+  // 这才是这一条要的那一幕：根和中间层同时没了，孙子还在跑。
+  process.kill(root.pid!);
+  process.kill(middlePid!);
+  await until("根没了", () => running(root.pid!) === false || null);
+  await until("中间层也没了", () => running(middlePid!) === false || null);
+  forgetProcesses();
+  const left = leftBehind(root.pid!, record);
+  assert.ok(Array.isArray(left) && left.includes(grand!), `根和中间层同时没了就找不着孙子了：${left}`);
+  assert.equal(treeAlive(root.pid, record), true, "孙子还在跑着，这一轮还不能交 cancelled");
+
+  // 而且硬杀真的杀得到它：这才是「确认组内没有活进程后才交 cancelled」成立的那一步。
+  terminate(root.pid, true, record);
+  await until("孙子也走了", () => running(grand!) === false || null);
+  forgetProcesses();
+  assert.equal(treeAlive(root.pid, record), false, "组内没有活进程了，这一轮才交得出 cancelled");
 });

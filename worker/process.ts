@@ -262,7 +262,7 @@ function ticks(value: string | undefined | null): bigint | null {
  * the only way to reach them once the root is gone — `taskkill /T` walks down from a number, and that number is now
  * either nobody's or somebody else's.
  */
-function orphans(pid: number, record?: string): true | number[] | null {
+function orphans(pid: number, record?: string, sampling = false): true | number[] | null {
   const written = launchRecord(record);
   // A record that names another number is not about this run at all, so it says nothing about what to accept below.
   const about = !written || written.pid === undefined || written.pid === pid;
@@ -274,10 +274,15 @@ function orphans(pid: number, record?: string): true | number[] | null {
   // and is still the one that was launched — the answer is already yes. Only once it has gone, or once the number
   // has become somebody else's, does anything under it have to be looked for.
   const mine = self === true ? sameAsRecorded(pid, recorded) : true;
-  if (self === true && mine) return true;
+  // The run's own process is there and is still the one that was launched, so there is nothing to answer by walking:
+  // whatever the walk reached, the answer is `true`. A sampling walk goes on anyway (`sampleTree` below), because what
+  // it is for is what the walk writes down and not what it answers.
+  const whole = self === true && mine;
+  if (whole && !sampling) return true;
   const table = processTable();
-  // Without the whole table the tree is only partly known, and a part of it is not an answer about all of it.
-  if (!table) return null;
+  // Without the whole table the tree is only partly known, and a part of it is not an answer about all of it. A
+  // sampling walk has an answer already and only loses what it came for.
+  if (!table) return whole ? true : null;
   // Windows keeps the number of the parent a process was started by for ever — after that parent is gone, and after
   // its number has been given to something else. So the parent numbers alone say that anything whose long-dead
   // parent happened to hold this number is still in this run's tree, and a stopped run then never ends. What settles
@@ -296,10 +301,14 @@ function orphans(pid: number, record?: string): true | number[] | null {
   // a way in after it goes, and what hangs off it is still this run's to find and to kill.
   //
   // What that leaves is one window: a level that was never seen at all — gone before the first table this run's tree
-  // was walked under was read, which on a run whose own process is still there means gone before any table was read at
-  // all, since nothing walks a tree whose root is alive and is still the one that was launched. What hung off such a
-  // level is not claimed: nothing on the machine, and nothing written down, says it was ever this run's, and a
-  // stranger's tree force-killed every tick would be the worse of the two mistakes. docs/protocol.md says so too.
+  // was walked under was read. A run whose own process is still there used to be the whole of that window, since
+  // nothing walked a tree whose root was alive and was still the one that was launched: a root and the level under it
+  // going between two ticks meant the level under that was never claimed, and a run told to stop reported `cancelled`
+  // with its work still going. That is what `sampleTree` closes — a run that is going has its tree walked now and
+  // then, so every level that lasted a sampling period was seen once and is a way in afterwards. What is left is a
+  // level that came and went inside one such period together with its parent. What hung off it is not claimed:
+  // nothing on the machine, and nothing written down, says it was ever this run's, and a stranger's tree force-killed
+  // every tick would be the worse of the two mistakes. docs/protocol.md says so too.
   const since = ticks(recorded);
   // The number is a live process and is no longer this run's: whatever holds it now came into being after the run
   // did, so nothing this run left behind can be as young as that. Its moment is the upper bound, and without a
@@ -361,7 +370,7 @@ function orphans(pid: number, record?: string): true | number[] | null {
   }
   // Written down before anything is done about them: the next walk gets in this way again even once this level is gone.
   if (record !== undefined && about) remember(record, written, found, table);
-  return found;
+  return whole ? true : found;
 }
 
 /** The levels a record says were walked under before: `<进程号>` against the moment it came into being, as numbers. */
@@ -405,6 +414,50 @@ function remember(record: string, written: Launch | null, found: number[], table
  * only says whether there are any and `terminate` only kills them — so something has to be able to say which.
  */
 export const leftBehind = (pid: number, record?: string): true | number[] | null => orphans(pid, record);
+
+/**
+ * How often a run that is still going has its tree walked. The whole process table is the best part of a second of
+ * this process's own time, and the worker shares it with the hub, so this is that second once every thirty with a run
+ * in hand — against the window above, which without it is every level of every run that ends together with its
+ * parent. A test cannot wait thirty seconds, so the period can be said in the environment.
+ */
+const SAMPLE_EVERY = 30_000;
+function sampleEvery() {
+  const given = Number(process.env.AGENT_AUTOLOOP_TREE_SAMPLE);
+  return Number.isInteger(given) && given >= 0 ? given : SAMPLE_EVERY;
+}
+
+/** When each run's tree was last walked while it was going, by the file its launch was written down in. */
+const sampled = new Map<string, number>();
+function dueToSample(record: string) {
+  const last = sampled.get(record);
+  const moment = Date.now();
+  if (last !== undefined && moment - last < sampleEvery()) return false;
+  if (sampled.size >= REMEMBER) sampled.clear();
+  sampled.set(record, moment);
+  return true;
+}
+
+/**
+ * Walks the tree of a run that is going, now and then, for what the walk writes down: a level seen once stays a way
+ * in to what hangs off it after it is gone (`orphans`, `remember`), and a level nobody ever saw takes what hangs off
+ * it with it — a run told to stop then reports `cancelled` with its work still going.
+ *
+ * Windows only. A POSIX run is a process group, which reaches every level of itself whatever has died in between, and
+ * nothing here would tell it anything it does not already know.
+ *
+ * Nothing is answered: whether the run is going is `alive`'s question and is asked every tick. This is the tick in
+ * thirty seconds that pays for the picture, and on every other one it returns without asking the machine anything.
+ */
+export function sampleTree(pid: number | undefined, record?: string) {
+  if (!WINDOWS || !pid || record === undefined) return;
+  if (!dueToSample(record)) return;
+  orphans(pid, record, true);
+  // Timed from when the walk was done rather than from when it was asked for, as the kept table is (processTable):
+  // the walk is the best part of a second of its own, and a clock started before it would make a period shorter than
+  // the walk no period at all.
+  sampled.set(record, Date.now());
+}
 
 /**
  * Whether anything in the run's group is still going, null when we could not look. `record` is the file the launch was

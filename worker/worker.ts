@@ -27,7 +27,7 @@ import type { Job } from "../protocol/job.ts";
 import { addUsage, type Notice, type Result } from "../protocol/validate.ts";
 import { adapterFor, type Adapter, type Reading, type Turn, type Usage } from "./agents.ts";
 import { selfExecutable } from "../host/self.ts";
-import { alive, bornAt, forgetProcesses, terminate, treeAlive } from "./process.ts";
+import { alive, bornAt, forgetProcesses, sampleTree, terminate, treeAlive } from "./process.ts";
 import { promptFor, readMessage, repairPrompt, resultFrom } from "./contract.ts";
 import { loadUsage, saveUsage, usageDelta } from "./usage.ts";
 
@@ -429,6 +429,11 @@ export function createWorker({
     // Unable to look, the run counts as still going, so its timeout and its finished turn still end it.
     if (looking === null && !blind) log(`couldn't look at the run; runs count as going until they end or time out`);
     blind = looking === null;
+    // While it is going, its tree is walked now and then so that every level of it was seen at least once. Nothing
+    // here reads an answer: a level nobody ever saw takes what hangs off it with it, and a run told to stop then
+    // reports `cancelled` with its work still going (worker/process.ts: sampleTree). Windows only, and one tick in
+    // thirty seconds; every other call returns without asking the machine anything.
+    sampleTree(entry.pid, files(entry).launch);
     const seen = read(entry, adapter, null);
     // Kept as soon as it's read: if the end can't be read, the one made up at launch may be nothing its CLI knows of.
     if (seen.session && seen.session !== entry.session) {
