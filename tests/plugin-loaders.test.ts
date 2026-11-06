@@ -3,7 +3,7 @@
 // nobody implements is taken for the default and the wrong thing runs; an `entry` reaches out of the plugin's folder.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -53,6 +53,28 @@ test("process 的 entry 是插件目录里的一个相对路径，走不出去",
     String.raw`{"runtime":"process","entry":"C:\\Windows\\system32\\cmd.exe"}`,
   );
   assert.throws(() => readManifest(folder, "outside"), /不能是绝对路径/);
+
+  // 路径的写法不够：插件目录里一个符号链接，写出来是目录内的相对路径，指的却是外面——跑的是它指到的那个。
+  const linked = plugin("linked", '{"runtime":"process","entry":"out/run.js"}');
+  const elsewhere = join(home, "另一个地方");
+  mkdirSync(elsewhere, { recursive: true });
+  writeFileSync(join(elsewhere, "run.js"), "");
+  let made = true;
+  try {
+    // Windows 上 junction 不需要特权，POSIX 上就是一个目录链接。
+    symlinkSync(elsewhere, join(linked, "out"), process.platform === "win32" ? "junction" : "dir");
+  } catch {
+    made = false;
+  }
+  if (made) assert.throws(() => readManifest(linked, "linked"), /走出了插件目录/, "经过链接走出去了");
+  // 指向无处的链接也算出去：从它写进去，创建的是它指到的那个地方。
+  const dangling = plugin("dangling", '{"runtime":"process","entry":"gone"}');
+  try {
+    symlinkSync(join(home, "根本没有这个"), join(dangling, "gone"), "junction");
+    assert.throws(() => readManifest(dangling, "dangling"), /走出了插件目录/);
+  } catch (error) {
+    assert.match(String(error), /走出了插件目录|ENOENT|EPERM|EINVAL|UNKNOWN/);
+  }
 
   const fine = plugin("runs", '{"runtime":"process","entry":"bin/run.js"}');
   assert.deepEqual(readManifest(fine, "runs"), { runtime: "process", entry: join(fine, "bin", "run.js"), args: [] });
