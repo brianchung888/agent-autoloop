@@ -26,7 +26,7 @@ import { secureDir } from "../host/permissions.ts";
 import type { Job } from "../protocol/job.ts";
 import { addUsage, type Notice, type Result } from "../protocol/validate.ts";
 import { adapterFor, type Adapter, type Reading, type Turn, type Usage } from "./agents.ts";
-import { alive, terminate, treeAlive } from "./process.ts";
+import { alive, forgetProcesses, terminate, treeAlive } from "./process.ts";
 import { promptFor, readMessage, repairPrompt, resultFrom } from "./contract.ts";
 import { loadUsage, saveUsage, usageDelta } from "./usage.ts";
 
@@ -515,6 +515,8 @@ export function createWorker({
   /** One round: look at what's in hand, hand in what's ended, come for more. Whether the hub could be reached. */
   async function tick() {
     // Here and not in run: whatever drives the worker comes through here.
+    // What the machine looked like last tick is not what it looks like now, and one tick asks about it once.
+    forgetProcesses();
     if (now() - tidied >= TIDY_EVERY) {
       tidied = now();
       tidy(tidied);

@@ -38,8 +38,35 @@ function tasklistRows(filters: string[]): string[][] | null {
   }
 }
 
+/** Every live process and the parent each was started by. */
+type Table = { live: Set<number>; children: Map<number, number[]> };
+
+/**
+ * The whole table is one process to ask for and the best part of a second to wait for, and the worker asks about every
+ * run it holds within the same tick — while the hub, which shares this process, waits. So it is asked for once and
+ * kept for a moment: long enough that a tick pays for one query however many runs are in it, short enough that a loop
+ * waiting for something to stop still sees it stop. A tick says outright when what was kept is from before it
+ * (forgetProcesses), so every answer inside a tick is one picture of the machine rather than several.
+ */
+const FRESH = 1000;
+let kept: { at: number; table: Table | null } | null = null;
+
+function processTable(): Table | null {
+  if (kept && Date.now() - kept.at < FRESH) return kept.table;
+  // Timed from when the answer arrived, not from when it was asked for: the asking is the slow part, and starting the
+  // clock before it would throw the answer away before anyone in the same tick could use it.
+  const table = readProcessTable();
+  kept = { at: Date.now(), table };
+  return table;
+}
+
+/** Said at the start of a tick: whatever is kept is from before it, and this tick asks again. */
+export function forgetProcesses() {
+  kept = null;
+}
+
 /** Every live process and the parent each was started by, or null when the table could not be read. */
-function processTable(): { live: Set<number>; children: Map<number, number[]> } | null {
+function readProcessTable(): Table | null {
   try {
     const printed = execFileSync(
       "powershell",
@@ -86,6 +113,9 @@ export function treeAlive(pid: number | undefined): boolean | null {
   // The wrapper can die before a child; zombies have already stopped and only their parent can reap them.
   if (!pid) return false;
   if (WINDOWS) {
+    // Asking about one number costs a tenth of what the whole table costs, and while the run's own process is there
+    // the answer is already yes. Only once it has gone does anything under it have to be looked for.
+    if (running(pid) === true) return true;
     const table = processTable();
     // Without the whole table the tree is only partly known, and a part of it is not an answer about all of it.
     if (!table) return null;

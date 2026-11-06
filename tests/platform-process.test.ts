@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { test } from "node:test";
-import { alive, running, terminate, treeAlive } from "../worker/process.ts";
+import { alive, forgetProcesses, running, terminate, treeAlive } from "../worker/process.ts";
 
 const WINDOWS = process.platform === "win32";
 /** Long enough that nothing here finishes by itself; the test ends it. */
@@ -84,3 +84,25 @@ test("stopping nothing is not an error", () => {
   // A number nobody holds: whatever the platform says, it must not throw into the worker's loop.
   assert.doesNotThrow(() => terminate(0x7ffffff0, true));
 });
+
+test(
+  "一个 tick 里问多少次，机器只被问一次",
+  { skip: !WINDOWS && "只有 Windows 要列整张进程表；POSIX 的 ps 一次就够，没有可省的" },
+  () => {
+    // 树不在了才需要整张表，所以这里问的是一个谁都不是的号：第一次要等机器列表，之后在同一个 tick 里不再等。
+    const nobody = 0x7ffffff0;
+    forgetProcesses();
+    const first = Date.now();
+    assert.notEqual(treeAlive(nobody), true);
+    const asked = Date.now() - first;
+    const second = Date.now();
+    assert.notEqual(treeAlive(nobody), true);
+    assert.ok(
+      Date.now() - second < Math.max(asked / 2, 200),
+      `又问了一次机器：${asked}ms 之后还要 ${Date.now() - second}ms`,
+    );
+    // 新的 tick 说一声，就重新问。
+    forgetProcesses();
+    assert.notEqual(treeAlive(nobody), true);
+  },
+);
