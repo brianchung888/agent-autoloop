@@ -59,18 +59,32 @@ export async function adapterFor(use: string): Promise<Adapter> {
 
 const found = new Map<string, string | null>();
 
-/** Where a program is: on the login shell's PATH (launchd and systemd start with a bare one), or in one of these. */
+/**
+ * Where a program is: on the login shell's PATH (launchd and systemd start with a bare one), or in one of these. A name
+ * is only ever an argument to the shell, never part of the script it runs. Windows has no login shell and no `command
+ * -v`: a scheduled task already starts with its owner's environment, so its own PATH is the one to ask about.
+ */
 export function findProgram(name: string, elsewhere: () => string[] = () => []) {
   if (!found.has(name)) {
-    const shell = process.env.SHELL ?? "/bin/sh";
     let onPath: string | null = null;
     try {
-      const printed = execFileSync(shell, ["-lc", `command -v ${name}`], {
-        encoding: "utf8",
-        timeout: 15_000,
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      onPath = printed.trim().split("\n").at(-1) || null;
+      if (process.platform === "win32") {
+        // where.exe prints every match, nearest on PATH first, which is the one that would run.
+        const printed = execFileSync("where.exe", [name], {
+          encoding: "utf8",
+          timeout: 15_000,
+          stdio: ["ignore", "pipe", "ignore"],
+        });
+        onPath = printed.trim().split(/\r?\n/)[0]?.trim() || null;
+      } else {
+        const shell = process.env.SHELL ?? "/bin/sh";
+        const printed = execFileSync(shell, ["-lc", 'command -v "$1"', "sh", name], {
+          encoding: "utf8",
+          timeout: 15_000,
+          stdio: ["ignore", "pipe", "ignore"],
+        });
+        onPath = printed.trim().split("\n").at(-1) || null;
+      }
     } catch {}
     found.set(name, onPath ?? elsewhere().find(existsSync) ?? null);
   }
