@@ -283,13 +283,16 @@ test("doctor says what reaches you: only this computer, or nothing yet, or no wo
     };
     const alone = await hint({ desktop: { name: "桌面通知" } });
     assert.match(alone, /只接了桌面通知/);
+    // 降级说明有自己的符号：和红项的 ○ 混在一起的话，每一条说明读起来都像出了毛病，而退出码又说没有。
+    assert.match(alone, /◐ 只接了桌面通知/);
+    assert.doesNotMatch(alone, /○ 只接了桌面通知/);
     assert.doesNotMatch(alone, /还没接通道/);
     const none = await hint({});
     assert.match(none, /还没接通道/);
     assert.doesNotMatch(none, /只接了桌面通知/);
     const more = await hint({ desktop: { name: "桌面通知" }, feishu: { name: "飞书" } });
     assert.doesNotMatch(more, /只接了桌面通知|还没接通道/);
-    assert.match(more, /飞书没写 answerers：这个通道里谁都能回答卡片/);
+    assert.match(more, /◐ 飞书没写 answerers：这个通道里谁都能回答卡片/);
     assert.doesNotMatch(more, /桌面通知没写 answerers/, "nobody answers from a notification");
     const limited = await hint({
       desktop: { name: "桌面通知" },

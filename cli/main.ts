@@ -557,11 +557,17 @@ async function doctor() {
     console.log(`${ok ? "●" : "○"} ${words}`);
     if (!ok) bad += 1;
   };
+  /**
+   * Something this install does not promise, said so that whoever runs it knows. It is not a red mark — everything
+   * works, it just works less than the words elsewhere suggest — and a mark of its own is what says which it is: the
+   * same ○ for both would make every degradation read as a fault, and the exit code say otherwise.
+   */
+  const aside = (words: string) => console.log(`◐ ${words}`);
   say(Number(process.versions.node.split(".")[0]) >= 24, `Node ${process.versions.node}`);
   if (!existsSync(CONFIG_FILE)) return say(false, "还没装好：运行 agent-autoloop init");
   // Not a red mark: it still runs, and whoever runs it should know what it does not promise about these files.
   const files = permissionTrouble();
-  if (files) console.log(`○ 文件权限降级：${files}`);
+  if (files) aside(`文件权限降级：${files}`);
   const config = readConfig();
   if (config.hub) {
     try {
@@ -570,7 +576,7 @@ async function doctor() {
       for (const [id, channel] of Object.entries(channels)) {
         // Nobody answers from a desktop notification, and a link goes only to whoever it's sent to.
         if (id !== "desktop" && !channel.links && !channel.answerers) {
-          console.log(`○ ${channel.name}没写 answerers：这个通道里谁都能回答卡片。`);
+          aside(`${channel.name}没写 answerers：这个通道里谁都能回答卡片。`);
         }
       }
     } catch (error) {
@@ -581,7 +587,7 @@ async function doctor() {
     say(true, "系统服务在跑");
     // What this platform's way of keeping it running doesn't promise. Not a red mark: it is there, it just comes back slower.
     const note = serviceNote();
-    if (note) console.log(`○ ${note}`);
+    if (note) aside(note);
   } else if (systemUnit()) say(true, "系统级服务在跑");
   else say(false, "系统服务没在跑：agent-autoloop service install");
   try {
@@ -609,17 +615,17 @@ async function doctor() {
         // the cards go down the skipped path, and that is what to say — not a green「在线」。It is not a red mark
         // either: everything else about the install is in order, and `agent-autoloop status` still shows the card.
         const trouble = channel.id === "desktop" ? desktopTrouble() : null;
-        if (channel.online && trouble) console.log(`○ ${trouble}`);
+        if (channel.online && trouble) aside(trouble);
         else say(channel.online, `${channel.name}${channel.online ? "在线" : "不在线"}`);
       }
       const manual = path.join(ROOT, "skills", "agent-autoloop", "SKILL.md");
       if (!state.channels.length) {
-        console.log(`○ 还没接通道：Agent 问你时不会主动告诉你，要自己运行 agent-autoloop status 看。接法见 ${manual}`);
+        aside(`还没接通道：Agent 问你时不会主动告诉你，要自己运行 agent-autoloop status 看。接法见 ${manual}`);
       } else if (state.channels.length === 1 && state.channels[0].id === "desktop") {
         const only = desktopTrouble()
-          ? "○ 只接了桌面通知，而这台电脑弹不出通知：Agent 问你时得自己运行 agent-autoloop status 看。"
-          : "○ 只接了桌面通知：Agent 问你时只有这台电脑会弹通知，人不在电脑前、或者电脑没有图形界面就看不到。";
-        console.log(`${only}要发到飞书、钉钉这些地方，接法见 ${manual}`);
+          ? "只接了桌面通知，而这台电脑弹不出通知：Agent 问你时得自己运行 agent-autoloop status 看。"
+          : "只接了桌面通知：Agent 问你时只有这台电脑会弹通知，人不在电脑前、或者电脑没有图形界面就看不到。";
+        aside(`${only}要发到飞书、钉钉这些地方，接法见 ${manual}`);
       }
     } catch (error) {
       say(false, `读不到中台状态：${(error as Error).message}`);
