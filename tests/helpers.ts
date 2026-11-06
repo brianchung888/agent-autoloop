@@ -23,7 +23,14 @@ export function skipOn(platforms: NodeJS.Platform[], why: string): typeof runTes
     const body = typeof second === "function" ? second : third;
     return (runTest as (...args: unknown[]) => unknown)(name, { ...options, skip: why }, body);
   };
-  return Object.assign(skipping, runTest) as unknown as typeof runTest;
+  // `test.skip`, `test.only` and `test.todo` are functions in their own right, and handing back copies of the real
+  // ones would make a file that says it cannot run here run after all, one spelling at a time. Each of them is the
+  // same wrapper: there is nothing to say about a case on a platform the whole file cannot run on.
+  return Object.assign(skipping, runTest, {
+    skip: skipping,
+    only: skipping,
+    todo: skipping,
+  }) as unknown as typeof runTest;
 }
 
 export function setup(name: string, rules = "rules.fixture.json") {

@@ -7,7 +7,6 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { skipOn } from "./helpers.ts";
 import { settings, matches, releaseRequired, readMainSettings, liveRelease } from "../plugins/delivery/project.ts";
 const root = mkdtempSync(join(tmpdir(), "agent-autoloop-delivery-scope-"));
 after(() => rmSync(root, { recursive: true, force: true }));

@@ -12,7 +12,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { skipOn } from "./helpers.ts";
 
 /** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
 const ONLY_POSIX = { skip: process.platform === "win32" && "这两条用 #!/bin/sh 写假 dsh，Windows 上没有 /bin/sh" };
