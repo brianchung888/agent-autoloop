@@ -46,3 +46,47 @@ jobs:
         run: npm test
       - if: steps.scope.outputs.scope != 'docs'
         run: sh scripts/install-smoke.sh
+
+  # Windows, where the tests that write a `#!/bin/sh` stand-in cannot run at all: those say so themselves, one skip at a
+  # time, and this job prints how many of them there were so a silent collapse to nothing shows up. What it does check is
+  # the whole of what Windows adds — tests/platform-*.test.ts, with real processes, a real scheduled task and real access
+  # lists — and the first hour someone has with it, from install.ps1 to uninstall.
+  check-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # The runner has bash, and the scope script is the same decision on every platform.
+      - id: scope
+        shell: bash
+        run: sh scripts/ci-scope.sh >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.scope != 'docs'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - if: steps.scope.outputs.scope != 'docs'
+        run: npm ci
+      - if: steps.scope.outputs.scope != 'docs'
+        run: npm run typecheck
+      - if: steps.scope.outputs.scope != 'docs'
+        run: npm run format:check
+      # A floor, not a count: it may only go up. Nothing being run is the failure this guards against.
+      - if: steps.scope.outputs.scope != 'docs'
+        shell: bash
+        run: |
+          node --disable-warning=ExperimentalWarning --test --test-reporter=tap tests/platform-*.test.ts | tee platform.tap
+          passed=$(grep -c '^ok ' platform.tap)
+          echo "platform tests passed: $passed"
+          [ "$passed" -ge 12 ] || { echo "too few platform tests ran: $passed"; exit 1; }
+      - if: steps.scope.outputs.scope == 'normal' || steps.scope.outputs.scope == 'kernel'
+        shell: bash
+        run: |
+          npm run test:quick | tee quick.tap
+          echo "skipped on this platform: $(grep -c 'SKIP' quick.tap || true)"
+      - if: steps.scope.outputs.scope == 'full'
+        run: npm test
+      - if: steps.scope.outputs.scope != 'docs'
+        run: pwsh -NoProfile -File scripts/install-smoke.ps1

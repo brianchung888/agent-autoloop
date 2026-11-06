@@ -5,6 +5,11 @@
 # nightly and before a release; a pull request only gets them for the two files nothing else would run, or a diff it can't
 # get. What reaches main gets the quick tests, text too: a commit whose run a newer push replaced is checked by the next one,
 # whatever that is.
+#
+# The same answer on every platform: what differs is what each job then runs, not how much of a change it is. The Windows
+# job runs the same quick tests, where the ones that write a `#!/bin/sh` stand-in or ask `ps` about a process group skip
+# themselves with their reason said in the skip — plus tests/platform-*.test.ts, which only exist for what Windows adds,
+# and scripts/install-smoke.ps1 in place of the POSIX one.
 set -u
 
 if [ "${GITHUB_EVENT_NAME:-}" = push ]; then
