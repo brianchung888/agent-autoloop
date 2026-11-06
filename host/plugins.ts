@@ -23,6 +23,9 @@ export type PluginLoader = {
 // installed here wins over one that ships, which is what it has always done.
 const loaders: PluginLoader[] = [externalLoader, processLoader, builtinLoader, shippedLoader];
 
+/** The order, for a test to read: it is the behaviour, so something has to be able to say what it is. */
+export const loaderOrder = (): readonly PluginLoader[] => loaders;
+
 // What it hands back is what it always did: the plugin's default export, which each caller reads as the shape its kind
 // requires (worker/agents.ts: `Adapter`, host/channels.ts: the channel function, host/server.ts: the source function).
 export async function loadPlugin(name: string, kind: PluginKind): Promise<any> {

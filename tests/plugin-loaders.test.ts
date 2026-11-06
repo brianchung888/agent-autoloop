@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import { setup } from "./helpers.ts";
 
@@ -143,4 +144,36 @@ test("internal:plugin 走的是同一个 loader，所以命令行这边照样不
     spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", bin, "help"], { encoding: "utf8" }).stdout,
     /internal:plugin/,
   );
+});
+
+test("一共四个 loader，顺序就是那句注释说的：装在这里的优先，随引擎发布的在后", async () => {
+  const { builtinLoader, externalLoader, processLoader, shippedLoader } = await import("../host/plugin-loaders.ts");
+  const { loaderOrder } = await import("../host/plugins.ts");
+  assert.deepEqual(
+    loaderOrder().map((loader) => loader.id),
+    ["external", "process", "builtin", "shipped"],
+  );
+  assert.deepEqual(loaderOrder(), [externalLoader, processLoader, builtinLoader, shippedLoader]);
+});
+
+// 这一条要改全局的那张表，所以放在最后：前面有一条断言「源码模式下根本没有这张表」。
+test("交进来一张清单，内置就从清单里拿——这是打包版走的那条路", async () => {
+  const { loadPlugin } = await import("../host/plugins.ts");
+  const { registerBuiltins } = await import("../host/plugin-registry.ts");
+  const root = join(import.meta.dirname, "..");
+  registerBuiltins({
+    "made-up/agent": async () => ({ default: { marker: "from the registry" } }),
+    // 真的内置插件也放一条：清单里的 import 要确实能把它拿出来。
+    "webhook/channel": () => import(`${pathToFileURL(join(root, "plugins", "webhook", "channel.ts")).href}`),
+  });
+  assert.equal((await loadPlugin("made-up", "agent")).marker, "from the registry");
+  assert.equal(typeof (await loadPlugin("webhook", "channel")), "function");
+
+  // 而装在这个安装目录里的同名插件，还是赢过清单里的那一条。
+  mkdirSync(join(home, "plugins", "made-up"), { recursive: true });
+  writeFileSync(join(home, "plugins", "made-up", "agent.ts"), 'export default { marker: "from the folder" };');
+  assert.equal((await loadPlugin("made-up", "agent")).marker, "from the folder");
+
+  // 清单里没有、目录里也没有，还是原来那一句话。
+  await assert.rejects(() => loadPlugin("neither", "source"), /没有 neither 的插件（plugins\/neither\/source\.ts）/);
 });
