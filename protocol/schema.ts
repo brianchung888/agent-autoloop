@@ -1,8 +1,12 @@
 // JSON Schema, as much of it as protocol/schema.json uses, so checking the protocol needs nothing installed.
-import { readFileSync } from "node:fs";
+//
+// The schema itself is read through host/assets.ts: a packaged build has no protocol/schema.json on disk and carries
+// it inside the executable instead, and this module is read at import time — so a build that could not find it would
+// not start at all. That reader installs nothing either; it asks the runtime's own `node:sea` and otherwise the disk.
+import { assetText } from "../host/assets.ts";
 import { dateTime } from "./validate.ts";
 
-export const schemas = JSON.parse(readFileSync(new URL("./schema.json", import.meta.url), "utf8"));
+export const schemas = JSON.parse(assetText("protocol/schema.json"));
 
 function hasType(type: string, item: unknown) {
   if (type === "object") return item !== null && typeof item === "object" && !Array.isArray(item);

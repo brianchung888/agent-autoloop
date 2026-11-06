@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { assetText } from "./assets.ts";
 import { HOME, RULES_FILE } from "./home.ts";
 import { stateOf as state, viewStatements } from "./state.ts";
 import { cardHash, digest, whose as keyHolder } from "../kernel/credentials.ts";
@@ -51,10 +52,12 @@ const CARD_HASH_INDEX =
 // The persisted projection is expendable; the log alone rebuilds it, which an upgrade has to wait for. So only the files that
 // decide what's stored count here, whole, since what they do is spread across helpers and constants. The views above are
 // made anew at every start and need no rebuild.
+//
+// A packaged build has no `kernel/` on disk and carries these two inside itself instead; `assetText` is the one reader
+// that knows which build this is, and the bytes it hands back are the same either way — or every existing install
+// would replay its whole log the first time it started as a binary (host/assets.ts).
 const format = digest(
-  ["../kernel/evolve.ts", "../kernel/credentials.ts"]
-    .map((file) => readFileSync(new URL(file, import.meta.url), "utf8"))
-    .join("\n") +
+  (["kernel/evolve.ts", "kernel/credentials.ts"] as const).map((file) => assetText(file)).join("\n") +
     CARD_HASH_INDEX +
     digest(environment.secret),
 );
