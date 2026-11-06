@@ -12,7 +12,7 @@
 
 一个插件就是一个目录，入口为 `agent.ts`、`channel.ts` 或 `source.ts`。只用 `node:` 模块和自己目录里的文件，类型在插件里声明；不要相对引用引擎源码：装在 `~/.agent-autoloop/plugins/` 的插件，相对路径到不了引擎。内置插件和引擎放在一起发布，才能直接引 `worker/agents.ts` 里的 `findProgram`、`tail` 这些小工具，引擎不反过来引插件。
 
-用 `agent-autoloop add <git 地址>` 安装到 `~/.agent-autoloop/plugins/<仓库名>`，也接受本地 Git 仓库。插件名就是那个目录名：仓库名转成小写，只能用小写字母、数字和 `-`，别的名字会被拒绝，并说出它算出来的名字；规则的 `use` 和来源的 `adapter` 都写这个名字。它只克隆，不装依赖、不跑安装脚本、不自动更新。加载时会执行插件，安装目录的同名插件优先。
+用 `agent-autoloop add <git 地址>` 安装到 `~/.agent-autoloop/plugins/<仓库名>`，也接受本地 Git 仓库。插件名就是那个目录名：仓库名转成小写，只能用小写字母、数字和 `-`，别的名字会被拒绝，并说出它算出来的名字；规则的 `use` 和来源的 `adapter` 都写这个名字。它只克隆，不装依赖、不跑安装脚本、不自动更新。加载时会执行插件，安装目录的同名插件优先。插件可以在自己目录里放一个 `plugin.json` 说明自己是哪种（见下一节）；没有这个文件就是源码插件，和以前一样。`add` 克隆完会把它声明的 `runtime` 印出来。
 
 ## 先跑起来
 
@@ -21,6 +21,44 @@
 ```bash
 node --disable-warning=ExperimentalWarning --test --test-name-pattern='agent-autoloop add' tests/example-plugins.test.ts
 ```
+
+## plugin.json：源码插件还是独立程序
+
+插件目录里可以有一个 `plugin.json`，可选，`runtime` 只有两个值：
+
+| `runtime` | 意思 |
+|---|---|
+| `source`（默认） | 入口是 `agent.ts` / `channel.ts` / `source.ts`，中台把它 `import` 进自己这个进程。**加载就是执行**：插件顶层干了什么，就在这一刻以中台的身份干了什么 |
+| `process` | 入口是 `entry` 指的一个可执行文件，中台每次调用起它一次，走标准输入输出的逐行 JSON |
+
+没有这个文件、读不出来、不是对象、或者没写 `runtime`，一律当 `source`：第三方仓库本来就可能有一个讲它自己事情的 `plugin.json`，不能让今天能用的插件用不了。写明了 `runtime` 又写错（不是这两个值、`process` 没有 `entry`、`entry` 是绝对路径或走出插件目录）则直接报错。
+
+### runtime: "process"
+
+```json
+{ "runtime": "process", "entry": "bin/my-plugin", "args": ["--quiet"] }
+```
+
+`entry` 是插件目录内的相对路径，走不出去；`args` 可选，每次调用都在最前面，是参数而不是 shell 词（不经 shell，也不做字符串拼接）。Windows 上 `entry` 要是真正的可执行文件，和 Agent 程序一样，`.cmd` 包装起不了。
+
+调用方式：每次起一个进程，标准输入给一行 JSON 请求，标准输出的**最后一行**是 JSON 答复，然后退出。答复是 `{"ok":true,"value":…}` 或 `{"ok":false,"error":"一句人能照着做的话"}`；中间想打印别的东西可以，只要答复在最后一行。
+
+| 请求 | 对应的函数 | `value` |
+|---|---|---|
+| `{"call":"describe"}` | — | `{"calls":["command","read","link","check"]}`，只用来问它有哪几个 |
+| `{"call":"command","turn":{…}}` | `command(turn)` | 命令参数数组 |
+| `{"call":"read","stdout":"…","code":0,"stderr":"…"}` | `read(stdout, code, stderr)` | `Reading` 对象，运行中 `code` 是 `null` |
+| `{"call":"link","session":"…"}` | `link(session)` | 链接字符串 |
+| `{"call":"check"}` | `check()` | `null` 或一句话 |
+| `{"call":"translate","headers":{},"body":"","secret":""}` | 事件插件的那个函数 | 事件数组 |
+
+这些就是全部：协议只是把已有的函数形状搛过进程边界，没有新能力。`describe` 没列出 `link` 或 `check` 的，就没有这两个：中台读的是「有没有」，凭空给一个 `link` 会报一个打不开的会话链接。这些函数在调用处都是同步的，所以一次调用就是程序跑一次：不留状态，也不用守着。
+
+**通道现在不支持 `process`。** 通道是和中台一样长命的循环，不是一次一答的翻译。用别的语言写通道，直接当独立程序连中台的 HTTP 协议（见下面的通道插件一节和 `examples/channel.sh`），不必经过插件机制。
+
+### 源码插件在打包版下的限制
+
+以单一二进位分发的版本里，内置插件是编进去的（`scripts/build-registry.ts` 在建置期产生一张静态清单，不进版本库），但它没有办法跑外部的 `.ts` 文件。所以装在 `~/.agent-autoloop/plugins/` 的第三方插件：`runtime: "source"` 在源码模式下照旧能用，在打包版下会报一句话、叫你改成 `runtime: "process"`；`process` 两边都能用。开发插件时用源码模式最方便，要分发给用打包版的人，就带一份 `process` 入口。
 
 ## Agent 插件
 
