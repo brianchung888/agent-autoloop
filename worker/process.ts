@@ -171,25 +171,49 @@ export function alive(pid: number | undefined, marker: string, record?: string):
   }
 }
 
-/** Whether anything in the run's group is still going, null when we could not look. */
-export function treeAlive(pid: number | undefined): boolean | null {
+/** The moment a process came into being, as something to compare with: a tick count is too big for a plain number. */
+function ticks(value: string | undefined | null): bigint | null {
+  if (!value || !/^\d+$/.test(value)) return null;
+  return BigInt(value);
+}
+
+/**
+ * Whether anything in the run's group is still going, null when we could not look. `record` is the file the launch was
+ * written down in, the same one `alive` reads: on Windows it is what tells this run's tree from a stale mention of its
+ * number, and without it the walk below can only be as sure as a parent number alone makes it.
+ */
+export function treeAlive(pid: number | undefined, record?: string): boolean | null {
   // The wrapper can die before a child; zombies have already stopped and only their parent can reap them.
   if (!pid) return false;
   if (WINDOWS) {
-    // Asking about one number costs a tenth of what the whole table costs, and while the run's own process is there
-    // the answer is already yes. Only once it has gone does anything under it have to be looked for.
-    if (running(pid) === true) return true;
+    const written = launchRecord(record);
+    // A record that names another number is not about this run at all, so it says nothing about what to accept below.
+    const recorded = written && written.pid !== undefined && written.pid !== pid ? undefined : written?.born;
+    const self = running(pid);
+    if (self === null) return null;
+    // Asking about one number costs a tenth of what the whole table costs, and while the run's own process is there —
+    // and is still the one that was launched — the answer is already yes. Only once it has gone, or once the number
+    // has become somebody else's, does anything under it have to be looked for.
+    if (self === true && sameAsRecorded(pid, recorded)) return true;
     const table = processTable();
     // Without the whole table the tree is only partly known, and a part of it is not an answer about all of it.
     if (!table) return null;
-    const seen = new Set<number>();
-    const pending = [pid];
-    while (pending.length) {
-      const next = pending.pop()!;
-      if (seen.has(next)) continue;
-      seen.add(next);
-      if (table.live.has(next)) return true;
-      for (const child of table.children.get(next) ?? []) pending.push(child);
+    // Windows keeps the number of the parent a process was started by for ever — after that parent is gone, and after
+    // its number has been given to something else. So the parent numbers alone say that anything whose long-dead
+    // parent happened to hold this number is still in this run's tree, and a stopped run then never ends. What settles
+    // it is the moment each came into being: nothing started by this run can be older than the run itself.
+    //
+    // Only the children are looked at, and not what is under them: every number in the table is a live process, so
+    // the first child that can be this run's already answers the question. Anything deeper hangs off a child, and a
+    // child that is gone is in no table to be walked through — which was as true of the walk this replaces.
+    const since = ticks(recorded);
+    for (const child of table.children.get(pid) ?? []) {
+      if (child === pid) continue;
+      const born = ticks(table.born.get(child));
+      // Where the moment cannot be compared the child counts: only a few of the system's own processes have none to
+      // give, and a record without one is from a launch that this version did not write the moment down for.
+      if (since !== null && born !== null && born < since) continue;
+      return true;
     }
     return false;
   }

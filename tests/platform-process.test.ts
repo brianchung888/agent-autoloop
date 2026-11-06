@@ -7,7 +7,7 @@
 // outlives the stop it was asked for; a number that is nobody's is taken for somebody.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -116,6 +116,42 @@ test(
     assert.notEqual(treeAlive(nobody), true);
   },
 );
+
+test("父进程死了以后，留在孩子身上的父号不能让这一轮永远活着", ONLY_WINDOWS, async (t) => {
+  // Windows 永久保留「父进程号」这一项：父没了、号还回去了、号给了别人，孩子身上写的还是那个号。只按父号展开，机器上任何
+  // 一个「父已死、父号刚好等于本轮 launcher 号」的进程都让树看起来永远活着——被 stop 的一轮于是永远不变 cancelled，
+  // 每个 tick 还要再硬杀一次，连无关的残留进程一起杀。所以要比创建时刻：本轮起的东西不可能比本轮本身更早。
+  const noted = join(dir, "orphan.pid");
+  const parent = started(
+    `const c=require("node:child_process").spawn(process.execPath,["-e","${SLEEP}"],{detached:true,stdio:"ignore"});` +
+      `require("node:fs").writeFileSync(${JSON.stringify(noted)},String(c.pid));c.unref();${SLEEP}`,
+  );
+  t.after(() => {
+    terminate(parent.pid, true);
+    if (existsSync(noted)) terminate(Number(readFileSync(noted, "utf8")), true);
+  });
+  await until("它起来了", () => running(parent.pid!));
+  const parentBorn = bornAt(parent.pid);
+  assert.match(String(parentBorn), /^\d+$/);
+
+  forgetProcesses();
+  const table = join(dir, "launch-tree.json");
+  writeFileSync(table, JSON.stringify({ pid: parent.pid, born: parentBorn }));
+  await until("孩子起来了", () => treeAlive(parent.pid, table));
+
+  // 父没了，孩子还在：这是真的孤儿，还算这一轮的树。只杀父亲一个——terminate 的 /T 会连孩子一起带走。
+  process.kill(parent.pid!);
+  await until("父没了", () => running(parent.pid!) === false || null);
+  forgetProcesses();
+  assert.equal(treeAlive(parent.pid, table), true, "比这一轮晚出生的孩子，是这一轮留下的");
+
+  // 同一张机器状态，只把「这一轮什么时候开始」挪到孩子出生之后：那孩子就不可能是这一轮起的，树是空的。
+  const later = String(BigInt(parentBorn!) + 10_000_000_000n);
+  writeFileSync(table, JSON.stringify({ pid: parent.pid, born: later }));
+  assert.equal(treeAlive(parent.pid, table), false, "残留的父号不算活着，这一轮才能交 cancelled");
+  // 而且没有谁被杀掉：孤儿是机器上一个真进程，这里只是不再把它算成这一轮的。
+  assert.equal(running(Number(readFileSync(noted, "utf8"))), true, "那个孤儿还在跑着，没有被连带杀掉");
+});
 
 test("号被别人捡走就不是这个 run 了：比对 launch-N.json 记下的创建时刻", ONLY_WINDOWS, async (t) => {
   const child = started(SLEEP);

@@ -397,7 +397,7 @@ export function createWorker({
     const { exit } = files(entry);
     const exitCode = () => (existsSync(exit) ? Number(readFileSync(exit, "utf8").trim()) : null);
     if (entry.stopping !== undefined) {
-      const going = treeAlive(entry.pid);
+      const going = treeAlive(entry.pid, files(entry).launch);
       const overdue = now() - entry.stopping > STOP_GRACE;
       if (going === true) {
         if (overdue) terminate(entry.pid, true);
