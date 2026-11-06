@@ -18,6 +18,7 @@ import { hubClient } from "../protocol/client.ts";
 import { parseRules } from "../protocol/rules.ts";
 import { CONFIG_FILE, readConfig, writeConfig, type Config } from "../host/config.ts";
 import { HOME, RULES_FILE } from "../host/home.ts";
+import { readManifest, type PluginManifest } from "../host/plugin-manifest.ts";
 import { desktopTrouble } from "../host/notify.ts";
 import { permissionTrouble, secureDir } from "../host/permissions.ts";
 import {
@@ -814,9 +815,20 @@ function addPlugin(args: string[]) {
   if (!/^[a-z][a-z0-9-]*$/.test(name))
     fail(`插件名字「${name}」不能用：只能用小写字母、数字和 -，规则里的 use 也写这个名字`);
   mkdirSync(path.join(HOME, "plugins"), { recursive: true });
-  const clone = spawnSync("git", ["clone", "--", url, path.join(HOME, "plugins", name)], { stdio: "inherit" });
+  const folder = path.join(HOME, "plugins", name);
+  const clone = spawnSync("git", ["clone", "--", url, folder], { stdio: "inherit" });
   if (clone.status !== 0) fail("安装失败。");
   console.log(`已安装 ${name}。`);
+  // Only cloned: nothing of it has run yet. What it says it is, it is worth saying out loud now, because the next
+  // thing that happens to a `source` plugin is the hub importing it, which runs it.
+  let said: PluginManifest;
+  try {
+    said = readManifest(folder, name);
+  } catch (error) {
+    return console.log(`但它的 plugin.json 写错了：${(error as Error).message}`);
+  }
+  if (said.runtime === "process") console.log(`它声明自己是一个外部程序（runtime: "process"），跑的是 ${said.entry}。`);
+  else console.log('它没有声明 runtime，按源码插件用（runtime: "source"）：中台加载它的时候会执行它。');
 }
 
 async function update() {
