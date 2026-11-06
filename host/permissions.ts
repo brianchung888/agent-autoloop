@@ -47,10 +47,17 @@ function lockOnWindows(target: string, folder: boolean) {
   return `icacls 没能锁定 ${target}${why ? `：${why}` : ""}`;
 }
 
-/** Keeps the first refusal, and the fact that it was tried at all: a missing mark means nobody has tried. */
-function remember(trouble: string | null) {
-  const before = readMark();
-  const mark: Mark = { at: new Date().toISOString(), trouble: before?.trouble ?? trouble };
+/**
+ * What this run found, for `doctor` to read back: the first thing refused in it, or nothing when every folder took it.
+ * The fact that it was tried at all is the mark being there — a missing one means nobody has tried.
+ *
+ * This run, and not every run before it. A refusal kept for ever would go on saying a machine cannot do something long
+ * after it can (a home moved off a share, a copy made on a local disk), with nothing a person could do to clear it.
+ * What is kept within the run is every folder it asked about, so one refusal among several is still the answer.
+ */
+function remember() {
+  const trouble = [...said.values()].find((why) => why !== null) ?? null;
+  const mark: Mark = { at: new Date().toISOString(), trouble };
   try {
     writeFileSync(`${markFile()}.tmp`, `${JSON.stringify(mark, null, 2)}\n`, { mode: 0o600 });
     renameSync(`${markFile()}.tmp`, markFile());
@@ -71,18 +78,16 @@ export function secureDir(dir: string) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (!windows()) return;
   if (said.has(dir)) return;
-  const trouble = lockOnWindows(dir, true);
-  said.set(dir, trouble);
-  remember(trouble);
+  said.set(dir, lockOnWindows(dir, true));
+  remember();
 }
 
 /** The same for one file that is already there. Inside a folder that took it, this is only belt and braces. */
 export function secureFile(file: string) {
   if (!windows() || !existsSync(file)) return;
   if (said.has(file)) return;
-  const trouble = lockOnWindows(file, false);
-  said.set(file, trouble);
-  remember(trouble);
+  said.set(file, lockOnWindows(file, false));
+  remember();
 }
 
 /**

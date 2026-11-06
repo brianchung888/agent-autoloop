@@ -63,7 +63,17 @@ if (-not $major -or [int]$major -lt 24) { NeedNode "需要 Node.js 24 或更新�
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
 # What a mode does on POSIX: everyone else out, and what is written inside inherits it. host/permissions.ts says the same.
 & icacls $Root /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
-if ($LASTEXITCODE -ne 0) { Write-Host "没能把 $Root 的权限锁到当前用户，同一台电脑上的其他用户可能读得到里面的东西。" }
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "没能把 $Root 的权限锁到当前用户，同一台电脑上的其他用户可能读得到里面的东西。"
+  # And written down where `doctor` reads it, in the shape host/permissions.ts writes: a line scrolling past during an
+  # install is not a thing anybody can go back and look at. Whatever runs next says the same again, and wins.
+  $mark = [pscustomobject]@{
+    at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+    trouble = "icacls 没能锁定 $Root"
+  } | ConvertTo-Json
+  # No mark of its own at the start of the file: node reads this back as JSON and a mark is not part of it.
+  [System.IO.File]::WriteAllText((Join-Path $Root "permissions.json"), $mark, [System.Text.UTF8Encoding]::new($false))
+}
 
 # A copy follows where it came from, and what came from the public repository follows its newest release, which has passed
 # every check. cli/update.ts decides the same way, or an update would fail on a copy this had moved.

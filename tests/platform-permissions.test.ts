@@ -61,6 +61,21 @@ test("it is written down that it was done, so doctor can say so", onlyWindows, (
   assert.equal(permissionTrouble(), null, "so doctor has nothing to report");
 });
 
+test("上一次锁不上不会粘着：这一次锁上了就是锁上了", onlyWindows, () => {
+  // A refusal written down by some earlier run (a home that was on a share, a folder somebody else owned). Keeping it
+  // for ever would have `doctor` reporting a machine cannot do something it has just been seen doing, and nobody
+  // could clear it: the file is written by this program alone.
+  writeFileSync(
+    join(home, "permissions.json"),
+    JSON.stringify({ at: "2020-01-01T00:00:00.000Z", trouble: "这是老早以前锁不上" }),
+  );
+  assert.match(String(permissionTrouble()), /老早以前/, "读的就是写下来的那份");
+
+  secureDir(join(home, "after-a-refusal"));
+  assert.equal(JSON.parse(readFileSync(join(home, "permissions.json"), "utf8")).trouble, null);
+  assert.equal(permissionTrouble(), null, "doctor 不再报一件已经不存在的事");
+});
+
 test("nothing here throws, whatever it is asked about", () => {
   // A file that is not there: this is belt and braces over an inherited list, never the thing being relied on.
   assert.doesNotThrow(() => secureFile(join(home, "not-a-file")));
@@ -70,4 +85,20 @@ test("nothing here throws, whatever it is asked about", () => {
   assert.doesNotThrow(() => secureDir(twice));
   mkdirSync(join(home, "deep", "and", "deeper"), { recursive: true });
   assert.doesNotThrow(() => secureDir(join(home, "deep", "and", "deeper")));
+});
+
+test("锁不上就写下来，不抛错", onlyWindows, () => {
+  // The one refusal that can be arranged on any machine: without a user there is nobody to grant it to. It must be a
+  // report and not an exception — `init` carrying on with weaker permissions is the whole of D5a.
+  const who = process.env.USERNAME;
+  try {
+    delete process.env.USERNAME;
+    assert.doesNotThrow(() => secureDir(join(home, "nobody-to-grant-to")));
+  } finally {
+    if (who === undefined) delete process.env.USERNAME;
+    else process.env.USERNAME = who;
+  }
+  const mark = JSON.parse(readFileSync(join(home, "permissions.json"), "utf8")) as { trouble: string | null };
+  assert.match(String(mark.trouble), /USERNAME/, "写下了为什么锁不上");
+  assert.match(String(permissionTrouble()), /其他用户可能读得到/, "doctor 说得出这是降级");
 });
