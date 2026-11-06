@@ -82,7 +82,7 @@ jobs:
           node --disable-warning=ExperimentalWarning --test --test-reporter=tap tests/platform-*.test.ts | tee platform.tap
           passed=$(grep '^ok ' platform.tap | grep -vc 'SKIP' || true)
           echo "platform tests passed: $passed, skipped: $(grep '^ok ' platform.tap | grep -c 'SKIP' || true)"
-          [ "$passed" -ge 24 ] || { echo "too few platform tests ran: $passed"; exit 1; }
+          [ "$passed" -ge 30 ] || { echo "too few platform tests ran: $passed"; exit 1; }
       - if: steps.scope.outputs.scope == 'normal' || steps.scope.outputs.scope == 'kernel'
         shell: bash
         run: |
