@@ -153,6 +153,40 @@ test("父进程死了以后，留在孩子身上的父号不能让这一轮永�
   assert.equal(running(Number(readFileSync(noted, "utf8"))), true, "那个孤儿还在跑着，没有被连带杀掉");
 });
 
+test("根没了、孙子还在：硬杀要逐个杀掉它们，否则这一轮永远交不出 cancelled", ONLY_WINDOWS, async (t) => {
+  // launcher 可以先死，而它起的东西还在跑。那个号这时谁都不是，`taskkill /PID <号> /T /F` 从它往下走，
+  // 走到的是空的（或者是别人的树，所以才有那道身份确认）。以前 terminate 在这里直接返回：树还活着，
+  // treeAlive 一直说 true，worker 于是永远等不到「组内没有活进程」，一轮被 stop 的运行只会变成 failed。
+  const noted = join(dir, "left-behind.pid");
+  const parent = started(
+    `const c=require("node:child_process").spawn(process.execPath,["-e","${SLEEP}"],{detached:true,stdio:"ignore"});` +
+      `require("node:fs").writeFileSync(${JSON.stringify(noted)},String(c.pid));c.unref();${SLEEP}`,
+  );
+  t.after(() => {
+    terminate(parent.pid, true);
+    if (existsSync(noted)) terminate(Number(readFileSync(noted, "utf8")), true);
+  });
+  await until("它起来了", () => running(parent.pid!));
+  const born = bornAt(parent.pid);
+  const record = join(dir, "launch-left.json");
+  writeFileSync(record, JSON.stringify({ pid: parent.pid, born }));
+  await until("孙子起来了", () => treeAlive(parent.pid, record));
+  const orphan = Number(readFileSync(noted, "utf8"));
+
+  // 只杀父亲一个，不带 /T：这就是 launcher 先死的样子。
+  process.kill(parent.pid!);
+  await until("父没了", () => running(parent.pid!) === false || null);
+  forgetProcesses();
+  assert.equal(alive(parent.pid, "", record), false, "那个号已经不是这一轮的了");
+  assert.equal(treeAlive(parent.pid, record), true, "可是它留下的那个还在跑");
+
+  terminate(parent.pid, true, record);
+  await until("留下的那个也走了", () => running(orphan) === false || null);
+  assert.equal(running(orphan), false);
+  forgetProcesses();
+  assert.equal(treeAlive(parent.pid, record), false, "组内没有活进程了，这一轮才交得出 cancelled");
+});
+
 test("号被别人捡走就不是这个 run 了：比对 launch-N.json 记下的创建时刻", ONLY_WINDOWS, async (t) => {
   const child = started(SLEEP);
   t.after(() => terminate(child.pid, true));
