@@ -11,7 +11,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { alive, bornAt, forgetProcesses, running, terminate, treeAlive } from "../worker/process.ts";
+import { alive, bornAt, forgetProcesses, leftBehind, running, terminate, treeAlive } from "../worker/process.ts";
 
 const WINDOWS = process.platform === "win32";
 /** Long enough that nothing here finishes by itself; the test ends it. */
@@ -185,6 +185,45 @@ test("根没了、孙子还在：硬杀要逐个杀掉它们，否则这一轮�
   assert.equal(running(orphan), false);
   forgetProcesses();
   assert.equal(treeAlive(parent.pid, record), false, "组内没有活进程了，这一轮才交得出 cancelled");
+});
+
+test("往下走到底，不是只看一层：孙子也算这一轮留下的", ONLY_WINDOWS, async (t) => {
+  // 真实的一轮就是三层：launcher 起智能体，智能体再起它自己的东西。只按「根的孩子」展开，中间那层一没，
+  // 它下面还在跑的就一个都找不着——树看起来是空的，这一轮交出 cancelled，而活儿还在干。
+  const kids = join(dir, "three-deep.json");
+  // 孙子那一层：起一个长命的，把它的号写下来，自己也不走。外面那一层用 JSON.stringify 整段塞进去，引号自己就对了。
+  const middle =
+    `const c=require("node:child_process").spawn(process.execPath,["-e","${SLEEP}"],{detached:true,stdio:"ignore"});` +
+    `c.unref();require("node:fs").writeFileSync(${JSON.stringify(kids)},String(c.pid));${SLEEP}`;
+  const root = started(
+    `const c=require("node:child_process").spawn(process.execPath,["-e",${JSON.stringify(middle)}],{detached:true,stdio:"ignore"});c.unref();${SLEEP}`,
+  );
+  const noted = () => (existsSync(kids) ? Number(readFileSync(kids, "utf8")) : 0);
+  t.after(() => {
+    terminate(root.pid, true);
+    if (noted()) terminate(noted(), true);
+  });
+  await until("根起来了", () => running(root.pid!));
+  const born = bornAt(root.pid);
+  const record = join(dir, "launch-deep.json");
+  writeFileSync(record, JSON.stringify({ pid: root.pid, born }));
+  await until("孙子起来了", () => noted() !== 0 && running(noted()));
+
+  // 根没了：这时才要去找它留下什么。孩子和孙子都还在，两个号都得找出来。
+  process.kill(root.pid!);
+  await until("根没了", () => running(root.pid!) === false || null);
+  forgetProcesses();
+  const left = leftBehind(root.pid!, record);
+  assert.ok(Array.isArray(left), `根已经不在了，该给号而不是 ${left}`);
+  assert.ok(left.length >= 2, `只找着 ${left.length} 个号：这还是只看了一层`);
+  assert.ok(left.includes(noted()), "孙子的号不在里面：只看一层就只看得见中间那层");
+  assert.equal(treeAlive(root.pid, record), true);
+
+  // 硬杀是逐个杀这些号，所以孙子也走得掉，不靠 /T 去走一棵随时会掉一截的树。
+  terminate(root.pid, true, record);
+  await until("孙子也走了", () => running(noted()) === false || null);
+  forgetProcesses();
+  assert.equal(treeAlive(root.pid, record), false, "组内没有活进程了，这一轮才交得出 cancelled");
 });
 
 test("号被别人捡走就不是这个 run 了：比对 launch-N.json 记下的创建时刻", ONLY_WINDOWS, async (t) => {

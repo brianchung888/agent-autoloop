@@ -259,9 +259,16 @@ function orphans(pid: number, record?: string): true | number[] | null {
   // parent happened to hold this number is still in this run's tree, and a stopped run then never ends. What settles
   // it is the moment each came into being: nothing started by this run can be older than the run itself.
   //
-  // Only the children are looked at, and not what is under them: every number in the table is a live process, so a
-  // child that can be this run's is the whole of what there is to find. Anything deeper hangs off a child, and a child
-  // that is gone is in no table to be walked through — while a child that is there takes its own tree with it.
+  // The walk goes all the way down, not one level. A child that is there is not the whole of what there is to find:
+  // the run's own launcher can be gone with a child of its own gone too and that child's children still running, and
+  // one level finds nothing then — the run is `cancelled` with its work still going. Walking down names every live
+  // descendant the picture reaches, so the forced stop has each number of its own to kill rather than trusting
+  // `taskkill /T` to walk a tree that may lose a branch between being looked at and being killed.
+  //
+  // What no walk can reach is a level that is itself already gone by the time the table is read: what hung off it
+  // carries that number as its parent for ever, and the number is now either nobody's or somebody else's. Nothing on
+  // the machine says it was ever this run's, so it is not claimed — a stranger's tree force-killed every tick would be
+  // the worse of the two mistakes.
   const since = ticks(recorded);
   // The number is a live process and is no longer this run's: whatever holds it now came into being after the run
   // did, so nothing this run left behind can be as young as that. Its moment is the upper bound, and without a
@@ -270,19 +277,35 @@ function orphans(pid: number, record?: string): true | number[] | null {
   const until = mine ? null : ticks(table.born.get(pid));
   if (!mine && (since === null || until === null)) return [];
   const found: number[] = [];
-  for (const child of table.children.get(pid) ?? []) {
-    if (child === pid) continue;
-    const born = ticks(table.born.get(child));
-    // Where the moment cannot be compared the child counts: only a few of the system's own processes have none to
-    // give, and a record without one is from a launch that this version did not write the moment down for.
-    if (since !== null && born !== null && born < since) continue;
-    // Under a number somebody else holds, a child whose moment cannot be read says nothing either way, and one born
-    // after that holder is the holder's own.
-    if (until !== null && (born === null || born >= until)) continue;
-    found.push(child);
+  const seen = new Set<number>([pid]);
+  // The queue grows while it is walked: a child pushed on it is a parent to look under in turn, and `seen` is what
+  // keeps a number out of it twice — Windows can hand a parent number back to one of that parent's own descendants.
+  const queue = [pid];
+  for (let at = 0; at < queue.length; at++) {
+    const parent = queue[at]!;
+    for (const child of table.children.get(parent) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      const born = ticks(table.born.get(child));
+      // Where the moment cannot be compared the child counts: only a few of the system's own processes have none to
+      // give, and a record without one is from a launch that this version did not write the moment down for.
+      if (since !== null && born !== null && born < since) continue;
+      // Under a number somebody else holds, a child whose moment cannot be read says nothing either way, and one born
+      // after that holder is the holder's own. Only at the first level: deeper down the parent is already known to be
+      // this run's, and what it started may well be younger than whoever picked the run's own number up.
+      if (parent === pid && until !== null && (born === null || born >= until)) continue;
+      found.push(child);
+      queue.push(child);
+    }
   }
   return found;
 }
+
+/**
+ * What the walk above found, for a test to read: which numbers a stopped run has left is the behaviour — `treeAlive`
+ * only says whether there are any and `terminate` only kills them — so something has to be able to say which.
+ */
+export const leftBehind = (pid: number, record?: string): true | number[] | null => orphans(pid, record);
 
 /**
  * Whether anything in the run's group is still going, null when we could not look. `record` is the file the launch was
