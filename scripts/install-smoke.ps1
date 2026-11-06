@@ -42,6 +42,19 @@ function Autoloop {
   & node --disable-warning=ExperimentalWarning (Program) @args
 }
 
+# The same thing, for a command that is meant to stop: what it says it says on stderr, and on Windows PowerShell every
+# line a native command writes there is an error of its own — which, where errors stop the script, would end this one
+# before the words could be read. So they are let through here and handed back as text.
+function AutoloopSaying {
+  $was = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    return (& node --disable-warning=ExperimentalWarning (Program) @args 2>&1 | Out-String)
+  } finally {
+    $ErrorActionPreference = $was
+  }
+}
+
 New-Item -ItemType Directory -Force (Join-Path $work "home") | Out-Null
 $env:USERPROFILE = Join-Path $work "home"
 $env:AGENT_AUTOLOOP_HOME = Join-Path $work "hub"
@@ -129,7 +142,7 @@ try {
 
   # Every other way a command stops is said the same way: a code left behind, not a process ended where it stands. This
   # one has talked to the hub and then turns the answer down, which is the path every `fail` in cli/main.ts takes.
-  $refused = (Autoloop "answer" "999999" "1" 2>&1) -join "`n"
+  $refused = AutoloopSaying "answer" "999999" "1"
   $refusedCode = $LASTEXITCODE
   Write-Host $refused
   if ($refusedCode -ne 1) { Fail "answering a card that isn't there left with $refusedCode, not 1" }
