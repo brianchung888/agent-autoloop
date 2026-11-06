@@ -1,7 +1,7 @@
 // Everything this machine does, in one process: the hub, the worker and its channels, whichever config.json says. They
 // speak the same protocol to each other here as they would across the world. A stop leaves agents running: they're
 // detached, and the worker finds them again when it's back.
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { loadChannel } from "./channels.ts";
 import { parseListen, readConfig, type ChannelConfig } from "./config.ts";
@@ -11,7 +11,20 @@ import { commitOf } from "./version.ts";
 import { hubClient } from "../protocol/client.ts";
 import { createWorker } from "../worker/worker.ts";
 
-const log = (who: string) => (line: string) => console.log(`${new Date().toISOString()} [${who}] ${line}`);
+/**
+ * Where what it says goes. launchd points this at a file and systemd at its journal; a scheduled task points it nowhere,
+ * so on Windows it is written down here instead — the same lines, in the same file launchd would have used.
+ */
+const LOG_FILE = process.platform === "win32" ? path.join(HOME, "logs", "up.log") : null;
+const log = (who: string) => (line: string) => {
+  const said = `${new Date().toISOString()} [${who}] ${line}`;
+  console.log(said);
+  if (LOG_FILE) {
+    try {
+      appendFileSync(LOG_FILE, `${said}\n`);
+    } catch {}
+  }
+};
 
 /** Only one of these per install: a second would take work beside the first. */
 function lock() {
@@ -62,6 +75,7 @@ function keepChannelRunning(id: string, { use, key, ...options }: ChannelConfig,
 export async function up() {
   const config = readConfig();
   mkdirSync(HOME, { recursive: true, mode: 0o700 });
+  if (LOG_FILE) mkdirSync(path.dirname(LOG_FILE), { recursive: true });
   const unlock = lock();
   // Plugins run in this process, and an `error` event or a promise nobody handled is theirs to answer for, not the hub's.
   // Everything that matters is in transactions, so the rest can carry on.

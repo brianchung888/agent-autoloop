@@ -9,7 +9,14 @@ import { hubClient } from "../protocol/client.ts";
 import { parseRules } from "../protocol/rules.ts";
 import { CONFIG_FILE, readConfig, writeConfig, type Config } from "../host/config.ts";
 import { HOME, RULES_FILE } from "../host/home.ts";
-import { installService, removeService, restartService, serviceRunning, systemUnit } from "../host/service.ts";
+import {
+  installService,
+  removeService,
+  restartService,
+  serviceNote,
+  serviceRunning,
+  systemUnit,
+} from "../host/service.ts";
 import { versionLine } from "../host/version.ts";
 import { spendLine } from "./spend.ts";
 import { attemptsOf, newFailure, waitingRetry } from "./try.ts";
@@ -485,8 +492,12 @@ async function doctor() {
       say(false, (error as Error).message);
     }
   }
-  if (serviceRunning()) say(true, "系统服务在跑");
-  else if (systemUnit()) say(true, "系统级服务在跑");
+  if (serviceRunning()) {
+    say(true, "系统服务在跑");
+    // What this platform's way of keeping it running doesn't promise. Not a red mark: it is there, it just comes back slower.
+    const note = serviceNote();
+    if (note) console.log(`○ ${note}`);
+  } else if (systemUnit()) say(true, "系统级服务在跑");
   else say(false, "系统服务没在跑：agent-autoloop service install");
   try {
     const health = await (await fetch(`${config.url}/healthz`, { signal: AbortSignal.timeout(5000) })).json();

@@ -1,4 +1,5 @@
-// Keeping it running: launchd on a Mac, systemd on Linux. Both start it at login and restart it if it stops.
+// Keeping it running: launchd on a Mac, systemd on Linux, a scheduled task on Windows. All three start it without an
+// administrator and bring it back when it stops; only how long that takes differs, and host/service-win.ts says why.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -6,6 +7,10 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { HOME } from "./home.ts";
 import { stablePath } from "./node-path.ts";
+import { installTask, removeTask, taskAtLogon, taskEnabled } from "./service-win.ts";
+
+/** Asked each time, not once: a test may be standing in for another platform by the time it is. */
+const windows = () => process.platform === "win32";
 
 const PROGRAM = path.join(import.meta.dirname, "..", "bin", "agent-autoloop.ts");
 /** Another install on this machine (another AGENT_AUTOLOOP_HOME) has a service of its own. */
@@ -79,8 +84,17 @@ const launchdHasIt = () =>
   spawnSync("launchctl", ["print", `${domain()}/${label()}`], { stdio: "ignore" }).status === 0;
 const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
+/** What the service starts, whichever platform describes it: this node, this install's program, `up`. */
+const taskOptions = () => ({
+  label: label(),
+  home: HOME,
+  executable: stablePath(process.execPath),
+  program: PROGRAM,
+});
+
 export function installService() {
   mkdirSync(path.join(HOME, "logs"), { recursive: true, mode: 0o700 });
+  if (windows()) return installTask(taskOptions());
   if (process.platform === "darwin") {
     mkdirSync(path.dirname(plistFile()), { recursive: true });
     writeFileSync(plistFile(), plist());
@@ -98,6 +112,8 @@ export function installService() {
 }
 
 export function removeService() {
+  // The task is its own record, so what it was registered with is read back from it rather than from a file beside it.
+  if (windows()) return removeTask(label(), HOME, PROGRAM);
   const file = process.platform === "darwin" ? plistFile() : unitFile();
   if (!existsSync(file)) return;
   const service = readFileSync(file, "utf8");
@@ -142,14 +158,28 @@ export function stopUp() {
 
 /** The service this program installs and can restart. */
 export function serviceRunning() {
+  if (windows()) return taskEnabled(label());
   if (process.platform === "darwin") return existsSync(plistFile()) && launchdHasIt();
   return spawnSync("systemctl", ["--user", "is-active", "--quiet", label()], { stdio: "ignore" }).status === 0;
 }
 
 /** The name of a system-level unit running this, as a server run by root might have. It's its owner's to restart. */
 export function systemUnit() {
-  if (process.platform === "darwin") return null;
+  // Windows has no second manager above this one: a task is a task, and there is nobody else's to leave alone.
+  if (windows() || process.platform === "darwin") return null;
   return spawnSync("systemctl", ["is-active", "--quiet", label()], { stdio: "ignore" }).status === 0 ? label() : null;
+}
+
+/**
+ * What this platform's way of keeping it running does not promise, in words a person can act on, or nothing when it
+ * promises what launchd and systemd do. Only Windows has something to say: a scheduled task is a moment coming round
+ * again, not a manager watching a process.
+ */
+export function serviceNote() {
+  if (!windows()) return null;
+  return taskAtLogon(label())
+    ? "Windows 上靠计划任务常驻：停了之后最多等 5 分钟才会自己回来。"
+    : "Windows 上靠计划任务常驻，而这台电脑不让登录时就启动（通常是加了域）：登录后和停了之后都最多等 5 分钟。";
 }
 
 /** New code counts once what's running starts again. What can't be restarted from here is said back, for the owner. */
