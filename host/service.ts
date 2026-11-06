@@ -184,14 +184,38 @@ export function claimUp() {
   };
 }
 
+/**
+ * Asking `up` to stop, in a way that reaches it on any platform. A file is the whole of it: Windows delivers no SIGTERM
+ * to a program, so a `process.kill` there ends it outright and the hub never gets to close what it had open.
+ *
+ * `up` takes this file away itself as it starts, so one left behind cannot stop the next one.
+ */
+export const stopFile = () => path.join(HOME, "stop");
+
 /** Stopping a service returns before its process is gone, and one started by hand has no service to stop it. */
 export function stopUp() {
   const pid = runningUp();
   if (pid === null) return;
   try {
-    process.kill(pid, "SIGTERM");
+    writeFileSync(stopFile(), `${new Date().toISOString()}\n`);
   } catch {}
+  // On POSIX the signal stays what does it, with the file beside it; there is nothing to send on Windows.
+  if (!windows()) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
+  }
   for (let tries = 0; tries < 50 && runningUp() !== null; tries++) pause(100);
+  // It was asked, and five seconds later it is still there. On Windows nothing but ending it outright does, and only
+  // this process: the agents under it are detached on purpose, and the worker finds them again when it is back.
+  if (windows() && runningUp() !== null) {
+    try {
+      process.kill(pid);
+    } catch {}
+    for (let tries = 0; tries < 50 && runningUp() !== null; tries++) pause(100);
+  }
+  // Whether or not it read it, it is no longer being asked.
+  rmSync(stopFile(), { force: true });
 }
 
 /** The service this program installs and can restart. */

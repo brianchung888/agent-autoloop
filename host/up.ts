@@ -1,12 +1,12 @@
 // Everything this machine does, in one process: the hub, the worker and its channels, whichever config.json says. They
 // speak the same protocol to each other here as they would across the world. A stop leaves agents running: they're
 // detached, and the worker finds them again when it's back.
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, rmSync, watch } from "node:fs";
 import path from "node:path";
 import { loadChannel } from "./channels.ts";
 import { parseListen, readConfig, type ChannelConfig } from "./config.ts";
 import { HOME } from "./home.ts";
-import { claimUp, runningUp } from "./service.ts";
+import { claimUp, runningUp, stopFile } from "./service.ts";
 import { commitOf } from "./version.ts";
 import { hubClient } from "../protocol/client.ts";
 import { createWorker } from "../worker/worker.ts";
@@ -33,6 +33,28 @@ function lock() {
   if (running !== null && running !== process.pid) throw new Error(`已经在跑了（进程 ${running}）`);
   // What anyone left behind is replaced here, which is what keeps a number nobody holds any more from standing for one.
   return claimUp();
+}
+
+/**
+ * The other way to be asked to stop: a file, which reaches this program wherever it runs. A signal does not — Windows
+ * delivers none, and what is sent there instead ends the process where it stands, with nothing closed and up.pid left
+ * behind. Whatever was left from before is taken away first: that was somebody else's asking, already answered.
+ */
+function watchStop(finish: () => void) {
+  const file = stopFile();
+  rmSync(file, { force: true });
+  const asked = () => {
+    if (existsSync(file)) finish();
+  };
+  try {
+    const watcher = watch(HOME, (_, name) => {
+      if (name === path.basename(file)) asked();
+    });
+    watcher.on("error", () => watcher.close());
+    watcher.unref();
+  } catch {}
+  // Watching a folder is not promised everywhere (a network drive, a container's mount), so it is also looked for.
+  setInterval(asked, 1000).unref();
 }
 
 /** secrets.env: what an adapter needs to check a webhook, kept out of rules.json. */
@@ -119,5 +141,6 @@ export async function up() {
   };
   process.on("SIGTERM", finish);
   process.on("SIGINT", finish);
+  watchStop(finish);
   await Promise.all(jobs);
 }
