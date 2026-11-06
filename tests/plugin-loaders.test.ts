@@ -3,7 +3,7 @@
 // nobody implements is taken for the default and the wrong thing runs; an `entry` reaches out of the plugin's folder.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -70,6 +70,35 @@ test("解析顺序没有变：这个安装目录里的同名插件，胜过随�
   assert.equal((await loadPlugin("command", "agent")).marker, 7);
   // 而找不到的那一句话，一个 loader 都没找到才说，用词和改动前一样。
   await assert.rejects(() => loadPlugin("nobody", "agent"), /没有 nobody 的插件（plugins\/nobody\/agent\.ts）/);
+});
+
+/**
+ * A copy of the engine's `host/` with no `bin/agent-autoloop.ts` beside it, which is exactly what host/self.ts asks
+ * about: such a tree is a packaged build as far as `fromSource()` can tell. Nothing can be faked here — the loaders
+ * read that answer themselves — so the branch is reached by giving them a tree where it is really false.
+ */
+async function packaged() {
+  const engine = join(home, "packaged");
+  mkdirSync(engine, { recursive: true });
+  cpSync(join(import.meta.dirname, "..", "host"), join(engine, "host"), { recursive: true });
+  return await import(pathToFileURL(join(engine, "host", "plugins.ts")).href);
+}
+
+test("打包版里，装在这里的源码插件要得到那句能照着做的话，而不是 Node 的原始错误", async () => {
+  const { loadPlugin } = await packaged();
+  // 真有这个插件，只是这个版本跑不了它的 .ts：external 退开，processLoader 才说得上话。
+  writeFileSync(join(plugin("their-source"), "agent.ts"), "export default { marker: 1 };");
+  await assert.rejects(() => loadPlugin("their-source", "agent"), /这个打包版跑不了外部的 \.ts 文件/);
+  // 而且那句话要指着这个插件自己的 plugin.json，说清楚改哪一个文件。
+  await assert.rejects(
+    () => loadPlugin("their-source", "agent"),
+    new RegExp(`${join(home, "plugins", "their-source", "plugin.json").replaceAll("\\", "\\\\")}.*runtime.*process`),
+  );
+  // 而源码模式下的同一个插件照旧 import 得到：这一句只属于打包版。
+  const here = await import("../host/plugins.ts");
+  assert.equal((await here.loadPlugin("their-source", "agent")).marker, 1);
+  // 两边都没有的插件，说的还是原来那一句。
+  await assert.rejects(() => loadPlugin("nobody-at-all", "agent"), /没有 nobody-at-all 的插件/);
 });
 
 test("内置清单覆盖 plugins/ 下所有的 agent/channel/source，一条都不少", async () => {

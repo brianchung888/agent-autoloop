@@ -18,17 +18,24 @@ import type { Found, PluginLoader } from "./plugins.ts";
 /** Where a plugin's entry file would be under a folder of plugin folders. The name is already known to be a name. */
 export const entryIn = (folder: string, name: string, kind: string) => join(folder, name, `${kind}.ts`);
 
-const fromFolder = (id: string, folder: () => string): PluginLoader => ({
+const fromFolder = (id: string, folder: () => string, able: () => boolean = () => true): PluginLoader => ({
   id,
   async resolve(name, kind): Promise<Found | null> {
+    if (!able()) return null;
     const file = entryIn(folder(), name, kind);
     if (!existsSync(file)) return null;
     return { plugin: (await import(pathToFileURL(file).href)).default };
   },
 });
 
-/** What `agent-autoloop add <git 地址>` put under this install: `~/.agent-autoloop/plugins/<name>/<kind>.ts`. */
-export const externalLoader = fromFolder("external", () => join(HOME, "plugins"));
+/**
+ * What `agent-autoloop add <git 地址>` put under this install: `~/.agent-autoloop/plugins/<name>/<kind>.ts`.
+ *
+ * Only in source mode. A packaged build has no way to run an external `.ts` file, and importing one there throws
+ * whatever Node happens to say about a file it cannot read — so this loader stands aside and `processLoader` below gets
+ * to say the one thing a person can act on. That sentence is the whole point of it being there.
+ */
+export const externalLoader = fromFolder("external", () => join(HOME, "plugins"), fromSource);
 
 /** The ones that ship with the engine, in the folder beside it. */
 export const shippedLoader = fromFolder("shipped", () => join(import.meta.dirname, "..", "plugins"));
@@ -61,7 +68,9 @@ export const processLoader: PluginLoader = {
     if (!existsSync(folder)) return null;
     const manifest = readManifest(folder, name);
     if (manifest.runtime !== "process") {
-      if (!fromSource() && existsSync(entryIn(folder, name, kind)))
+      // `folder` is already the plugin's own folder, so the entry file is named in it directly: `entryIn` takes the
+      // folder of plugin folders, and asking it here would look for `<name>/<name>/<kind>.ts` and never find one.
+      if (!fromSource() && existsSync(join(folder, `${kind}.ts`)))
         throw new Error(
           `${name} 是源码插件（plugins/${name}/${kind}.ts），这个打包版跑不了外部的 .ts 文件。` +
             `在 ${join(folder, "plugin.json")} 里写 {"runtime":"process","entry":"…"}，让它当一个独立程序被调用（见 docs/plugins.md）。`,
