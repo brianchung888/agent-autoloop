@@ -32,8 +32,16 @@ const isId: Check = (value) => typeof value === "string" && ID.test(value);
 const isCount: Check = (value) => Number.isInteger(value) && (value as number) > 0;
 const isTypes: Check = (value) => isSomeWords(value) && (value as string[]).every((type) => TYPE_PATTERN.test(type));
 const isCron: Check = (value) => typeof value === "string" && parseCron(value) !== null;
-const isFolder: Check = (value) => typeof value === "string" && /^(~\/|\/)/.test(value);
-const FOLDER = "要是以 ~/ 或 / 开头的目录";
+/**
+ * A folder is said from its root, so that what it means does not depend on where anything was started from. On Windows
+ * a root is a drive or a share, and the separator there is the other one — said only where that is what a path is, so
+ * rules written for one kind of machine are not quietly accepted on the other.
+ */
+const WINDOWS_ROOT = /^([A-Za-z]:[\\/]|\\\\[^\\/]|~\\)/;
+const isFolder: Check = (value) =>
+  typeof value === "string" && (/^(~\/|\/)/.test(value) || (process.platform === "win32" && WINDOWS_ROOT.test(value)));
+const FOLDER =
+  process.platform === "win32" ? "要是以 ~/、~\\、/ 或盘符（C:\\）开头的目录" : "要是以 ~/ 或 / 开头的目录";
 
 function isKeyOf(table: object): Check {
   return (value) => typeof value === "string" && value in table;
