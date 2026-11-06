@@ -1,7 +1,7 @@
 // What the kernel's doors need from this machine: the clock, a timer for the next deadline, long polls to wake, the
 // rules file to watch, the log as a stream and the webhook plugins.
 import { watch } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { RULES_FILE } from "./home.ts";
 import { loadPlugin } from "./plugins.ts";
 import * as hub from "./runtime.ts";
@@ -104,8 +104,13 @@ export function makeHandler(commit = "dev") {
     if (!justSeen || facts.some((fact) => fact.changes.some((change) => change.table === "cards"))) wake();
     arm();
   });
+  // Not splitting the path on "/": a Windows one is separated by something else, and its file names don't tell
+  // upper from lower case, so what the watch reports can differ from what the path says and mean the same file.
+  const rulesName = basename(RULES_FILE);
+  const sameName = (file: string) =>
+    process.platform === "win32" ? file.toLowerCase() === rulesName.toLowerCase() : file === rulesName;
   const watcher = watch(dirname(RULES_FILE), (_event, file) => {
-    if (file === RULES_FILE.split("/").at(-1)) fire();
+    if (file && sameName(file)) fire();
   });
   const handle = createHandler({
     commit,
