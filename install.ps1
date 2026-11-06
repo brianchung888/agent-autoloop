@@ -1,4 +1,4 @@
-# Installs Agent 自动化中台 on Windows: a clone in %USERPROFILE%\.agent-autoloop\app, with nothing to build and nothing
+﻿# Installs Agent 自动化中台 on Windows: a clone in %USERPROFILE%\.agent-autoloop\app, with nothing to build and nothing
 # else to install. The same decisions install.sh makes, said in the terms this platform has — a .cmd on PATH instead of a
 # symlink, icacls instead of a mode, and the user's own PATH instead of a profile file.
 #
@@ -39,16 +39,26 @@ function Have([string]$Name) {
 }
 
 # Every argument its own argument: nothing here is built into a line for a shell to read.
-function Git {
-  $output = & git @args 2>&1
-  if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') 没成功：$output" }
+function RunGit {
+  # git says things on its error output that are not errors (a warning about a local clone, say). What went wrong is
+  # what it leaves behind, so only that is read; while it runs, a line is a line.
+  $before = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $output = & git @args 2>&1 | ForEach-Object { "$_" }
+  } finally {
+    $ErrorActionPreference = $before
+  }
+  if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') 没成功：$(@($output) -join [Environment]::NewLine)" }
   return $output
 }
 
 if (-not (Have "git")) { Quit "需要 git。" }
 if (-not (Have "node")) { NeedNode "需要 Node.js 24 或更新，这台电脑上没找到。" }
-& node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)'
-if ($LASTEXITCODE -ne 0) { NeedNode "需要 Node.js 24 或更新，现在是 $(& node -v)。" }
+# Asked here rather than by running something in node: PowerShell does not pass a quote on to a program as it was typed.
+$said = (& node -v) | Out-String
+$major = [regex]::Match($said, '^v?(\d+)').Groups[1].Value
+if (-not $major -or [int]$major -lt 24) { NeedNode "需要 Node.js 24 或更新，现在是 $($said.Trim())。" }
 
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
 # What a mode does on POSIX: everyone else out, and what is written inside inherits it. host/permissions.ts says the same.
@@ -65,7 +75,7 @@ if (Test-Path (Join-Path $App ".git")) {
 $release = ""
 if ($from -eq $Published) {
   # On a line of its own: getting no answer must not look like there being no releases.
-  $tags = Git "ls-remote" "--refs" "--tags" $Published "v*"
+  $tags = RunGit "ls-remote" "--refs" "--tags" $Published "v*"
   $versions = @()
   foreach ($line in @($tags)) {
     $found = [regex]::Match([string]$line, 'refs/tags/(v(\d+)\.(\d+)\.(\d+))$')
@@ -85,15 +95,15 @@ if ($from -eq $Published) {
 
 if (-not (Test-Path (Join-Path $App ".git"))) {
   if ($release) {
-    Git "-c" "advice.detachedHead=false" "clone" "--quiet" "--depth" "1" "--branch" $release "--" $Repo $App | Out-Null
+    RunGit "-c" "advice.detachedHead=false" "clone" "--quiet" "--depth" "1" "--branch" $release "--" $Repo $App | Out-Null
   } else {
-    Git "-c" "advice.detachedHead=false" "clone" "--quiet" "--depth" "1" "--" $Repo $App | Out-Null
+    RunGit "-c" "advice.detachedHead=false" "clone" "--quiet" "--depth" "1" "--" $Repo $App | Out-Null
   }
 } elseif ($release) {
-  Git "-C" $App "fetch" "--quiet" "--depth" "1" "origin" "refs/tags/$($release):refs/tags/$($release)" | Out-Null
-  Git "-C" $App "checkout" "--quiet" "--detach" $release | Out-Null
+  RunGit "-C" $App "fetch" "--quiet" "--depth" "1" "origin" "refs/tags/$($release):refs/tags/$($release)" | Out-Null
+  RunGit "-C" $App "checkout" "--quiet" "--detach" $release | Out-Null
 } else {
-  Git "-C" $App "pull" "--ff-only" "--quiet" | Out-Null
+  RunGit "-C" $App "pull" "--ff-only" "--quiet" | Out-Null
 }
 
 # Only a folder on PATH makes `agent-autoloop` work. There are no links to make here: a .cmd naming this program is what
@@ -102,7 +112,8 @@ $ShimFolder = Join-Path $env:USERPROFILE ".local\bin"
 $Shim = Join-Path $ShimFolder "agent-autoloop.cmd"
 $Wanted = @"
 @echo off
-rem agent-autoloop，由 install.ps1 写的。删掉它就等于把它从 PATH 上拿掉。
+rem agent-autoloop, written by install.ps1. Deleting this file is how it leaves PATH. (ASCII on purpose: a .cmd is read
+rem in whatever code page the console has, and this file has to be the same in all of them.)
 setlocal
 node --disable-warning=ExperimentalWarning "$Program" %*
 exit /b %ERRORLEVEL%
