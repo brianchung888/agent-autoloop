@@ -283,8 +283,11 @@ function howToRun() {
     )
       return "agent-autoloop";
   } catch {}
-  if (!/\s/.test(PROGRAM)) return PROGRAM;
-  return windows ? `"${PROGRAM}"` : `'${PROGRAM}'`;
+  // The program itself is a .ts, and Windows reads no shebang: what runs it there is the .cmd beside it.
+  const cmd = path.join(ROOT, "bin", "agent-autoloop.cmd");
+  const shown = windows && existsSync(cmd) ? cmd : PROGRAM;
+  if (!/\s/.test(shown)) return shown;
+  return windows ? `"${shown}"` : `'${shown}'`;
 }
 
 /** What was asked for on the command line, or whichever of the usual Agents is installed. */
