@@ -806,6 +806,12 @@ function service(args: string[]) {
 /** A plugin is a folder of its own under this install, named after its repository. */
 function addPlugin(args: string[]) {
   const url = args[0] ?? fail(TAKES.add.usage);
+  // A bare drive designator is not an address of anything in particular: on Windows `C:` means "wherever this shell
+  // happens to be on drive C", so `git clone -- C: …` clones the current folder — and the last part of `C:` is the
+  // letter, so it would be cloned under the name `c`. There is no address here to refuse later, only a letter, so it
+  // is refused here and the one thing a person can do about it is said.
+  if (/^[a-zA-Z]:[\\/]*$/.test(url))
+    fail(`「${url}」只是一个盘符，不是一个地址：写全要装的那个仓库的路径或 URL（比如 ${url[0]}:/path/to/plugin）。`);
   // The last part of wherever it came from: a URL, an SSH address, or a path on this machine — which on Windows is
   // separated by backslashes, and whose drive letter is a colon that is not a separator at all. Every separator there
   // is, then, with the empty parts a trailing one leaves dropped. An address that is nothing but separators has no

@@ -253,6 +253,14 @@ test("插件名字是来处的最后一段：Windows 路径的反斜线也算分
   assert.match(name("C:/tmp/plugins/Bad_Name/").stderr, /插件名字「bad_name」不能用/);
   assert.match(name("git@example.com:me/Bad_Name.git").stderr, /插件名字「bad_name」不能用/);
   assert.match(name("https://example.com/me/Bad_Name/").stderr, /插件名字「bad_name」不能用/);
+  // 光一个盘符不是地址：Windows 上 `C:` 是「这个 shell 现在在 C 盘的哪里」，git clone 会把当前目录
+  // 整个克隆过来，而它的最后一段是那个字母，于是装出一个叫 c 的插件。这个要在克隆之前就拒掉。
+  for (const drive of ["C:", "c:", "D:/", "D:\\", "z:////"]) {
+    const said = name(drive);
+    assert.match(said.stderr, /只是一个盘符/, drive);
+    assert.equal(said.status, 1, drive);
+  }
+
   // 一个全是分隔符的地址根本没有最后一段：那也是一个不能用的名字，不是一句崩溃。
   for (const nothing of ["///", "/", ":", "\\", "::\\\\//"]) {
     const said = name(nothing);
