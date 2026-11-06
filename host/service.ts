@@ -8,7 +8,7 @@ import path from "node:path";
 import { HOME } from "./home.ts";
 import { secureDir } from "./permissions.ts";
 import { stablePath } from "./node-path.ts";
-import { alive, running } from "../worker/process.ts";
+import { alive, bornAt, running } from "../worker/process.ts";
 import { installTask, removeTask, taskAtLogon, taskEnabled } from "./service-win.ts";
 
 /** Asked each time, not once: a test may be standing in for another platform by the time it is. */
@@ -163,6 +163,8 @@ function commandOf(pid: number) {
  * ever starting again. On Windows there is no command line to read back, and taking "could not look" for "nobody's" is
  * what lets `tasklist` failing for a moment put two hubs on one database — so there the answer is `"unknown"`, and `up`
  * would rather come back five minutes later (the task's trigger comes round again, and IgnoreNew drops the repeat).
+ * What makes that affordable there is the third thing asked: the moment the number came into being, which says outright
+ * whether the file was left by the process that still holds it, so "could not look" stays the rare answer it should be.
  */
 export function runningUp(): number | null | "unknown" {
   const claim = readClaim();
@@ -176,7 +178,13 @@ export function runningUp(): number | null | "unknown" {
     const image = alive(claim.pid, "");
     if (image === null) return "unknown";
     if (image === false) return null;
-    return claim.token !== null && claim.token === token ? claim.pid : null;
+    if (claim.token === null || claim.token !== token) return null;
+    // And the number has to have come into being when the claim says it did. `uninstall --yes` leaves both files
+    // behind by itself (the forced stop never reaches the release), and everything above matches such a leftover as
+    // soon as any node of this machine's is given that number: the lock then sticks for as long as that one runs.
+    const born = bornAt(claim.pid);
+    if (born === null) return running(claim.pid) === false ? null : "unknown";
+    return born === claim.born ? claim.pid : null;
   }
   if (running(claim.pid) !== true) return null;
   // Where there is a `ps` the command line is read for a file left by a version that wrote no token at all.
@@ -185,7 +193,7 @@ export function runningUp(): number | null | "unknown" {
 }
 
 /** What up.pid says, whichever version wrote it: the shape below, or a bare number from one that wrote only that. */
-function readClaim(): { pid: number; token: string | null } | null {
+function readClaim(): { pid: number; token: string | null; born: string | null } | null {
   let written: string;
   try {
     written = readFileSync(pidFile(), "utf8").trim();
@@ -194,17 +202,19 @@ function readClaim(): { pid: number; token: string | null } | null {
   }
   let pid = Number(written);
   let token: string | null = null;
+  let born: string | null = null;
   if (!Number.isInteger(pid)) {
     try {
-      const claim = JSON.parse(written) as { pid?: unknown; token?: unknown };
+      const claim = JSON.parse(written) as { pid?: unknown; token?: unknown; born?: unknown };
       pid = Number(claim.pid);
       token = typeof claim.token === "string" && claim.token ? claim.token : null;
+      born = typeof claim.born === "string" && /^\d+$/.test(claim.born) ? claim.born : null;
     } catch {
       return null;
     }
   }
   if (!Number.isInteger(pid) || pid <= 0) return null;
-  return { pid, token };
+  return { pid, token, born };
 }
 
 const readToken = () => {
@@ -222,7 +232,9 @@ const readToken = () => {
  */
 export function claimUp() {
   const token = randomUUID();
-  const claim = { pid: process.pid, token, startedAt: new Date().toISOString() };
+  // `born` is what the machine says about the moment this number came into being, and only Windows has anything to
+  // say: it is what tells this lock from a file left behind by an `up` whose number something else holds by now.
+  const claim = { pid: process.pid, token, born: bornAt(process.pid), startedAt: new Date().toISOString() };
   writeFileSync(tokenFile(), `${token}\n`, { mode: 0o600 });
   writeFileSync(pidFile(), `${JSON.stringify(claim)}\n`);
   return () => {

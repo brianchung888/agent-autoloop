@@ -141,10 +141,16 @@ test("`up` is running only when its number is a live process that left a token",
   assert.equal(runningUp(), null);
 
   const release = claimUp();
-  const claim = JSON.parse(readFileSync(pid, "utf8")) as { pid: number; token: string; startedAt: string };
+  const claim = JSON.parse(readFileSync(pid, "utf8")) as {
+    pid: number;
+    token: string;
+    born: string | null;
+    startedAt: string;
+  };
   assert.equal(claim.pid, process.pid, "the number stays readable by a person");
   assert.equal(claim.token, readFileSync(token, "utf8").trim(), "and a token says who left it");
   assert.ok(Date.parse(claim.startedAt) > 0, "and when");
+  if (WINDOWS) assert.match(String(claim.born), /^\d+$/, "连这个号是什么时候来的也记下来，不然留下的文件认不出来");
   assert.equal(runningUp(), process.pid);
   release();
   assert.equal(existsSync(pid), false, "letting go takes both away");
@@ -169,6 +175,14 @@ test("what a killed `up` leaves behind never stops the next one", notWindows, as
   assert.equal(runningUp(), null, "a token that doesn't match is nobody's lock");
   writeFileSync(pid, String(process.pid));
   assert.equal(runningUp(), null, "and a bare number from an older version is not a lock on Windows either");
+
+  // 而且那个号可以是一个真正的 node.exe：`uninstall --yes` 自己就会留下这两个文件（硬杀在 release 之前），等机器上
+  // 随便哪个 node 捡到这个号，「活着」「是本程序的运行时」「token 也对」就全都成立——锁于是黏住，hub 再也起不来。
+  const node = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+  t.after(() => node.kill());
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  writeFileSync(pid, JSON.stringify({ pid: node.pid, token: "left-behind", born: "1" }));
+  assert.equal(runningUp(), null, "号是个真 node.exe、token 也对，但这个号不是那时候来的");
 
   // Taking the lock is what replaces all of it, so nothing has to be cleaned up by hand first.
   const release = claimUp();
