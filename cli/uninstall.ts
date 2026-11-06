@@ -1,6 +1,6 @@
 // `agent-autoloop uninstall`: takes away what the install put on this computer and nothing else. A link is ours only if it really
 // leads to this program: someone else's agent-autoloop, or a folder of their own by that name, stays where it is.
-import { existsSync, lstatSync, realpathSync, rmSync, unlinkSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { HOME } from "../host/home.ts";
@@ -20,11 +20,41 @@ function removeLink(link: string, target: string) {
   console.log(`删掉了 ${link}`);
 }
 
+/**
+ * A shim is not a link: Windows cannot make one without being allowed to, so the install writes a little file that
+ * names this program instead. It is ours only if that is the program it names — someone else's by that name stays.
+ */
+function removeShim(shim: string, program: string) {
+  if (!existsSync(shim)) return;
+  try {
+    if (!readFileSync(shim, "utf8").includes(program)) return;
+  } catch {
+    return;
+  }
+  rmSync(shim, { force: true });
+  console.log(`删掉了 ${shim}`);
+}
+
+/** Where an install puts something on PATH. The two Homebrew folders mean nothing off a Mac, and no shim goes there. */
+const placesOnPath = () => {
+  const onPath = (process.env.PATH ?? "").split(path.delimiter).filter((place) => path.isAbsolute(place));
+  const usual =
+    process.platform === "win32"
+      ? [path.join(homedir(), ".local", "bin")]
+      : [path.join(homedir(), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+  return new Set([...usual, ...onPath]);
+};
+
 function removeLinks() {
   const program = path.join(ROOT, "bin", "agent-autoloop.ts");
-  const onPath = (process.env.PATH ?? "").split(path.delimiter).filter((place) => path.isAbsolute(place));
-  const places = [path.join(homedir(), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", ...onPath];
-  for (const place of new Set(places)) removeLink(path.join(place, "agent-autoloop"), program);
+  const places = placesOnPath();
+  for (const place of places) {
+    if (process.platform === "win32") {
+      // What install.ps1 writes, and what npm would have written beside it.
+      for (const shim of ["agent-autoloop.cmd", "agent-autoloop.ps1"]) removeShim(path.join(place, shim), program);
+    }
+    removeLink(path.join(place, "agent-autoloop"), program);
+  }
   const skill = path.join(ROOT, "skills", "agent-autoloop");
   for (const agent of [".claude", ".codex"]) removeLink(path.join(homedir(), agent, "skills", "agent-autoloop"), skill);
 }

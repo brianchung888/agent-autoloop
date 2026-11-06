@@ -215,11 +215,28 @@ function linkSkill() {
   }
 }
 
-/** What to type to run this program: its name if that's what a shell finds, otherwise where it is. */
+/**
+ * What to type to run this program: its name if that's what a shell finds, otherwise where it is. Windows has no
+ * `command -v`, and nothing is found by a shell that isn't there — `where.exe` is what answers the same question. A
+ * path with a space in it is quoted the way the shell being typed into reads it, which is not the same quote.
+ */
 function howToRun() {
-  const found = spawnSync("/bin/sh", ["-c", "command -v agent-autoloop"], { encoding: "utf8" }).stdout.trim();
-  if (found && realpathSync(found) === realpathSync(PROGRAM)) return "agent-autoloop";
-  return /\s/.test(PROGRAM) ? `'${PROGRAM}'` : PROGRAM;
+  const windows = process.platform === "win32";
+  const asked = windows
+    ? spawnSync("where.exe", ["agent-autoloop"], { encoding: "utf8" })
+    : spawnSync("/bin/sh", ["-c", "command -v agent-autoloop"], { encoding: "utf8" });
+  // A command that could not be run leaves no output at all, which is not the same as finding nothing.
+  const found = (asked.stdout ?? "").trim().split(/\r?\n/)[0]?.trim() ?? "";
+  try {
+    // On Windows what is on PATH is a shim that names this program rather than a link that leads to it.
+    if (
+      found &&
+      (windows ? readFileSync(found, "utf8").includes(PROGRAM) : realpathSync(found) === realpathSync(PROGRAM))
+    )
+      return "agent-autoloop";
+  } catch {}
+  if (!/\s/.test(PROGRAM)) return PROGRAM;
+  return windows ? `"${PROGRAM}"` : `'${PROGRAM}'`;
 }
 
 /** What was asked for on the command line, or whichever of the usual Agents is installed. */
