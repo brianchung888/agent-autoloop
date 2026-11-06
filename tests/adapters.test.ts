@@ -17,14 +17,25 @@ import { setup } from "./helpers.ts";
 
 process.env.PATH = `/nonexistent:${process.env.PATH}`;
 const { findProgram } = await import("../worker/agents.ts");
-// Command construction must also run on CI machines without Codex installed.
-const shell = process.env.SHELL;
-const lookup = join(setup("adapters"), "lookup.sh");
-writeFileSync(lookup, '#!/bin/sh\nprintf "%s\\n" /test/codex\n', { mode: 0o755 });
-process.env.SHELL = lookup;
-findProgram("codex");
-if (shell === undefined) delete process.env.SHELL;
-else process.env.SHELL = shell;
+const dir = setup("adapters");
+// Command construction must also run on a machine without Codex installed, so the lookup is primed with a stand-in —
+// and what counts as one differs by platform. POSIX asks the login shell where the program is, so the stand-in is a
+// shell that answers. Windows asks where.exe, which answers with files on PATH, and only a real executable among them
+// can be started at all (worker/agents.ts): so the stand-in is a file by that name, which is the whole of what the
+// lookup goes by.
+if (process.platform === "win32") {
+  writeFileSync(join(dir, "codex.exe"), "");
+  process.env.PATH = `${dir};${process.env.PATH}`;
+  findProgram("codex");
+} else {
+  const shell = process.env.SHELL;
+  const lookup = join(dir, "lookup.sh");
+  writeFileSync(lookup, '#!/bin/sh\nprintf "%s\\n" /test/codex\n', { mode: 0o755 });
+  process.env.SHELL = lookup;
+  findProgram("codex");
+  if (shell === undefined) delete process.env.SHELL;
+  else process.env.SHELL = shell;
+}
 type Adapter = import("../worker/agents.ts").Adapter;
 const claude: Adapter = (await import("../plugins/claude/agent.ts")).default;
 const codex: Adapter = (await import("../plugins/codex/agent.ts")).default;
