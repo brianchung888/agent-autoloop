@@ -40,8 +40,10 @@ function plugin(name: string, body: string) {
       args: ["--disable-warning=ExperimentalWarning", "handler.mjs"],
     };
   } else {
+    // 这一行真的是 shell，所以两个路径都加引号。写出来的是 handler.mjs 的路径，不是这个文件里那个同名的函数。
     const wrapper = join(folder, "run");
-    writeFileSync(wrapper, `#!/bin/sh\nexec ${process.execPath} ${handler} "$@"\n`, { mode: 0o755 });
+    const script = `#!/bin/sh\nexec "${process.execPath}" "${join(folder, "handler.mjs")}" "$@"\n`;
+    writeFileSync(wrapper, script, { mode: 0o755 });
     manifest = { runtime: "process", entry: "run", args: [] };
   }
   writeFileSync(join(folder, "plugin.json"), JSON.stringify(manifest));
