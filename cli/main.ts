@@ -169,9 +169,22 @@ function flags(args: string[]) {
   return { named, rest };
 }
 const text = (value: string | true | undefined) => (typeof value === "string" ? value : undefined);
+/**
+ * What `fail` leaves behind. Not `process.exit`: a command that has talked to the hub more than once is still closing
+ * those connections, and ending the process outright while more than one of them is makes libuv abort on Windows
+ * (uv/src/win/async.c:76 — the exit code is then 127 and what was said is lost). So the words are carried out to the
+ * one place that says them, and what is left behind is an exit code.
+ */
+class Failed extends Error {}
+
 const fail = (words: string): never => {
-  console.error(words);
-  process.exit(1);
+  throw new Failed(words);
+};
+
+/** The end of every command: what went wrong is said once, and the loop is let go of rather than cut short. */
+const report = (error: unknown) => {
+  console.error(error instanceof Failed ? error.message : ((error as Error)?.message ?? String(error)));
+  process.exitCode = 1;
 };
 
 /**
@@ -852,10 +865,12 @@ const commands: Record<string, () => unknown> = {
 };
 if (!command || !commands[command]) {
   console.log(HELP);
-  if (command) process.exit(1);
+  if (command) process.exitCode = 1;
 } else {
-  if (TAKES[command]) refuseUnknownFlags(command === "resolve" ? args.slice(0, 1) : args, TAKES[command]);
   Promise.resolve()
-    .then(commands[command])
-    .catch((error) => fail(error.message ?? String(error)));
+    .then(() => {
+      if (TAKES[command]) refuseUnknownFlags(command === "resolve" ? args.slice(0, 1) : args, TAKES[command]);
+      return commands[command]();
+    })
+    .catch(report);
 }

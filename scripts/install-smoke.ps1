@@ -127,6 +127,14 @@ try {
   if (-not $checked.Contains("桌面通知不可用")) { Fail "doctor doesn't say that notifications don't arrive here" }
   if ($checked -match "连不上中台") { Fail "doctor can't reach the hub that is running" }
 
+  # Every other way a command stops is said the same way: a code left behind, not a process ended where it stands. This
+  # one has talked to the hub and then turns the answer down, which is the path every `fail` in cli/main.ts takes.
+  $refused = (Autoloop "answer" "999999" "1" 2>&1) -join "`n"
+  $refusedCode = $LASTEXITCODE
+  Write-Host $refused
+  if ($refusedCode -ne 1) { Fail "answering a card that isn't there left with $refusedCode, not 1" }
+  if ($refused -match "Assertion failed") { Fail "answering a card that isn't there aborted instead of leaving" }
+
   Autoloop "uninstall" "--yes" | Write-Host
   if (-not (Test-Path (Join-Path $work "hub\config.json"))) { Fail "uninstall deleted the data" }
   if (Test-Path (Join-Path $work "hub\app")) { Fail "uninstall left the program" }
