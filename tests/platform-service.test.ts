@@ -23,7 +23,7 @@ const notWindows = {
 
 const home = setup("platform-service");
 const { claimUp, runningUp, stopFile, stopUp } = await import("../host/service.ts");
-const { environment, installTask, registeredXml, removeTask, taskEnabled, taskOwned, taskXml } =
+const { environment, installMark, installTask, registeredXml, removeTask, taskEnabled, taskOwned, taskXml } =
   await import("../host/service-win.ts");
 
 const ordinary = {
@@ -45,6 +45,12 @@ test("a task runs this node with this program, each path one argument", () => {
     written,
   );
   assert.ok(written.includes(`<WorkingDirectory>${ordinary.home}</WorkingDirectory>`));
+  // And it carries what this install knows itself by, in characters that survive every console code page.
+  const mark = installMark(ordinary.home, ordinary.program);
+  assert.match(mark, /^install:[0-9a-f]{16}$/);
+  assert.ok(written.includes(`[${mark}]</Description>`), written);
+  assert.notEqual(mark, installMark(String.raw`C:\another\home`, ordinary.program), "另一个 HOME 是另一个安装");
+  assert.notEqual(mark, installMark(ordinary.home, String.raw`C:\another\program.ts`), "另一个程序也是");
 });
 
 test("the trigger comes round again and never starts a second one", () => {
@@ -87,10 +93,13 @@ test("a task of ours is registered, found, and taken away again", notWindows, ()
       false,
       "not anyone's",
     );
+    // 另一个安装（另一个 HOME）用同一个名字注册的任务，不是这一个的。只要「同名任务存在」加「本机 service.xml 提到
+    // 自己的 program」就算自己的话，这两件事同时成立太容易了，uninstall 会把别人的常驻删掉。
+    assert.equal(taskOwned(options.label, join(home, "另一个安装"), options.program), false, "别的安装写的不是自己的");
     assert.equal(taskEnabled(options.label), true);
     assert.ok(existsSync(join(where, "service.env")), "the home it runs with is beside it");
 
-    // Somebody else's task by that name stays: nothing but its own command line says it is ours.
+    // Somebody else's task by that name stays: nothing but the mark in its description says it is ours.
     removeTask(options.label, where, String.raw`C:\somewhere\else\agent-autoloop.ts`);
     assert.notEqual(registeredXml(options.label), null, "a task that names another program is left alone");
 

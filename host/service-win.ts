@@ -8,7 +8,8 @@
 // to node in an env file instead of being set by one; the program and its arguments go into the XML as they are, and a
 // Windows path can hold no quote, so quoting each path is unambiguous.
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export type TaskOptions = {
@@ -30,6 +31,17 @@ const localTime = (at: Date) =>
 
 export const taskFile = (home: string) => path.join(home, "service.xml");
 export const envFile = (home: string) => path.join(home, "service.env");
+
+/**
+ * What one install knows itself by inside the registered task: this home and this program, said in hexadecimal.
+ *
+ * It goes into the task's description, which is where something can be written that comes back as itself. A registered
+ * task arrives in whatever code page the console is in, so a path with 我的文件 in it comes back mangled and matches
+ * nothing — and the file beside the task cannot answer for the task either: it says what this install would register,
+ * not what is registered. Every byte of this is ASCII, which is itself in all of those code pages.
+ */
+export const installMark = (home: string, program: string) =>
+  `install:${createHash("sha256").update(`${home}\u0000${program}`).digest("hex").slice(0, 16)}`;
 
 const xml = (text: string) =>
   text
@@ -62,7 +74,7 @@ export function taskXml(options: TaskOptions) {
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Agent 自动化中台（${xml(options.label)}）</Description>
+    <Description>Agent 自动化中台（${xml(options.label)}）[${installMark(options.home, options.program)}]</Description>
     <URI>\\${xml(options.label)}</URI>
   </RegistrationInfo>
   <Triggers>${options.atLogon ? "\n    <LogonTrigger><Enabled>true</Enabled></LogonTrigger>" : ""}
@@ -167,18 +179,13 @@ export function registeredXml(label: string) {
 /**
  * Whether the task that is registered is the one this install wrote, rather than another install's by that name.
  *
- * What says so is the file the task was registered from, which is this install's own and in a known encoding — the
- * same way the launchd and systemd branches read the plist and the unit beside them. Reading the path back out of the
- * registered task cannot say it: through the console's code page an install under 我的文件 comes back mangled, nothing
- * matches, and `uninstall` then leaves a scheduled task behind for good. Where that file has gone the registered XML
- * is still asked, which is an answer for every install whose path is plain ASCII.
+ * What says so is the mark this install put in the task's description. Nothing else registered under that name has it:
+ * not another install of this program (its home or its program path differs, and so does the mark), and not somebody
+ * else's task that happens to share the name. The file beside the task was what said it before, and it could not: it
+ * says what this install would register, which is true of a task somebody else registered under the same name.
  */
 export function taskOwned(label: string, home: string, program: string) {
-  if (registeredXml(label) === null) return false;
-  try {
-    if (readFileSync(taskFile(home), "utf16le").includes(program)) return true;
-  } catch {}
-  return registeredXml(label)?.includes(program) === true;
+  return registeredXml(label)?.includes(installMark(home, program)) === true;
 }
 
 export function removeTask(label: string, home: string, program: string) {
