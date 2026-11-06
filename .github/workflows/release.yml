@@ -1,0 +1,104 @@
+name: release
+# The single executable, one per platform, attached to the Release for the tag. Source install stays the default way in
+# (INSTALL.md); this is the extra channel, for a machine with no Node on it.
+run-name: ${{ inputs.release || github.ref_name }}
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 要建置的 tag，不填就是这个分支最新的提交（产出不会上传）
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  binary:
+    strategy:
+      # One platform failing must not take the others' artifacts away: a Mac build nobody can make is still a
+      # Windows build somebody can download.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x64
+          - os: macos-latest
+            name: macos-arm64
+          - os: windows-latest
+            name: windows-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release || github.ref }}
+          # The build writes this commit into the binary, there being no checkout inside one to ask (host/version.ts).
+          fetch-depth: 0
+      # The runtime the binary is made of is this one: a SEA is this node with a blob injected into it. 25, not the 24
+      # the other jobs use, because `node:sqlite` stopped being experimental there — see host/warnings.ts.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 25
+          package-manager-cache: false
+      - run: npm ci
+      # Nothing is installed to build it: esbuild and postject come in through `npx --yes`, pinned
+      # (scripts/build-binary.ts: TOOLS), and package.json is untouched.
+      - if: runner.os == 'Windows'
+        run: pwsh -NoProfile -File scripts/build-binary.ps1
+      - if: runner.os != 'Windows'
+        run: sh scripts/build-binary.sh
+      # It has to say which code it is, out of its own insides. A binary that answers `dev` is a bug report nobody can
+      # place (计划 plan-c 3.6), so the tag being built is the thing checked here.
+      - name: what it says it is
+        shell: bash
+        # `set -e` is on, so every test here is an `if`: a plain `[ … ] && x=y` that does not match leaves 1 behind and
+        # ends the step, which would say the build failed on the two platforms it was not about.
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then out=build/agent-autoloop.exe; else out=build/agent-autoloop; fi
+          said=$("$out" --version)
+          echo "$said"
+          echo "$said" | grep -q "$(git rev-parse HEAD | cut -c1-12)" || { echo "没有说出这次建置的提交"; exit 1; }
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "$said" | grep -q "${{ github.ref_name }}" || { echo "没有说出这个 tag"; exit 1; }
+          fi
+      - name: rename for the release
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then suffix=".exe"; else suffix=""; fi
+          named="agent-autoloop-${{ matrix.name }}$suffix"
+          mv "build/agent-autoloop$suffix" "build/$named"
+          # The sum is of the file, not of its name, so it is written again beside the name it now has. macOS
+          # has `shasum` and not `sha256sum`; the line written is the same either way.
+          cd build
+          if command -v sha256sum >/dev/null 2>&1; then sha256sum "$named" > "$named.sha256";
+          else shasum -a 256 "$named" > "$named.sha256"; fi
+          cat "$named.sha256"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: agent-autoloop-${{ matrix.name }}
+          path: |
+            build/agent-autoloop-${{ matrix.name }}*
+          if-no-files-found: error
+
+  # Attaching them is its own step, so that a Release gets all three at once or none: a Release with one platform's
+  # binary on it is a download page that is wrong for two thirds of the people reading it.
+  attach:
+    needs: binary
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: assets
+          merge-multiple: true
+      - run: ls -l assets
+      - name: 上传到 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" assets/* --clobber --repo "$GITHUB_REPOSITORY"
