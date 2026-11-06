@@ -177,3 +177,18 @@ test("交进来一张清单，内置就从清单里拿——这是打包版走�
   // 清单里没有、目录里也没有，还是原来那一句话。
   await assert.rejects(() => loadPlugin("neither", "source"), /没有 neither 的插件（plugins\/neither\/source\.ts）/);
 });
+
+test("插件名字是来处的最后一段：Windows 路径的反斜线也算分隔", () => {
+  const bin = join(import.meta.dirname, "..", "bin", "agent-autoloop.ts");
+  // 不跑 git，只看它把名字算成什么：名字不对就在克隆之前拒掉，这句话里会把算出的名字说出来。
+  const name = (url: string) =>
+    spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", bin, "add", url], {
+      encoding: "utf8",
+      env: { ...process.env, AGENT_AUTOLOOP_HOME: join(home, "不存在的安装") },
+      timeout: 30_000,
+    });
+  assert.match(name(String.raw`C:	mp\plugins\Bad_Name`).stderr, /插件名字「bad_name」不能用/);
+  assert.match(name("C:/tmp/plugins/Bad_Name/").stderr, /插件名字「bad_name」不能用/);
+  assert.match(name("git@example.com:me/Bad_Name.git").stderr, /插件名字「bad_name」不能用/);
+  assert.match(name("https://example.com/me/Bad_Name/").stderr, /插件名字「bad_name」不能用/);
+});

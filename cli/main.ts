@@ -806,9 +806,12 @@ function service(args: string[]) {
 /** A plugin is a folder of its own under this install, named after its repository. */
 function addPlugin(args: string[]) {
   const url = args[0] ?? fail(TAKES.add.usage);
+  // The last part of wherever it came from: a URL, an SSH address, or a path on this machine — which on Windows is
+  // separated by backslashes, and whose drive letter is a colon that is not a separator at all. Every separator there
+  // is, then, with the empty parts a trailing one leaves dropped.
   const name = url
-    .replace(/\/$/, "")
-    .split(/[/:]/)
+    .split(/[/:\\]/)
+    .filter(Boolean)
     .at(-1)!
     .replace(/\.git$/, "")
     .toLowerCase();
