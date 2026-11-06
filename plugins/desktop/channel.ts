@@ -21,8 +21,11 @@ export function notifyCommand(title: string, platform: string = process.platform
 
 function hasDesktop() {
   if (process.platform === "darwin") {
-    return spawnSync("launchctl", ["print", `gui/${process.getuid!()}`], { stdio: "ignore" }).status === 0;
+    // getuid is a POSIX call and missing on some platforms; this branch is the only one that asks for it.
+    return spawnSync("launchctl", ["print", `gui/${process.getuid?.() ?? -1}`], { stdio: "ignore" }).status === 0;
   }
+  // Windows has a graphical session but no notifier this takes: saying so sends cards down the skipped path, which is
+  // right and quiet, rather than failing each one on a command that isn't there.
   return process.platform === "linux" && Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
 }
 
