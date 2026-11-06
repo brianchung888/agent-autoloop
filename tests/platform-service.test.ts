@@ -7,6 +7,7 @@
 // somebody else registered under the same name is taken for ours and deleted; `up` is said to be running because its
 // number is a number, or said not to be because `ps` is not there to ask; what `up` leaves behind stops the next one.
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -111,13 +112,39 @@ test("`up` is running only when its number is a live process that left a token",
   assert.equal(runningUp(), null);
 
   const release = claimUp();
-  assert.equal(readFileSync(pid, "utf8").trim(), String(process.pid), "the number stays readable by a person");
-  assert.ok(existsSync(token), "and a token says who left it");
+  const claim = JSON.parse(readFileSync(pid, "utf8")) as { pid: number; token: string; startedAt: string };
+  assert.equal(claim.pid, process.pid, "the number stays readable by a person");
+  assert.equal(claim.token, readFileSync(token, "utf8").trim(), "and a token says who left it");
+  assert.ok(Date.parse(claim.startedAt) > 0, "and when");
   assert.equal(runningUp(), process.pid);
   release();
   assert.equal(existsSync(pid), false, "letting go takes both away");
   assert.equal(existsSync(token), false);
   assert.equal(runningUp(), null);
+});
+
+test("what a killed `up` leaves behind never stops the next one", notWindows, async (t) => {
+  const pid = join(home, "up.pid");
+  const token = join(home, "up.token");
+  // Exactly what a forced stop leaves: both files, and a number that something else holds by now. A whole number is
+  // the one thing that cannot be taken as proof, or a hub stops coming back for as long as that number is in use.
+  const other = spawn("cmd.exe", ["/c", "ping -n 30 127.0.0.1 > NUL"], { stdio: "ignore" });
+  t.after(() => other.kill());
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  writeFileSync(token, "left-behind");
+  writeFileSync(pid, JSON.stringify({ pid: other.pid, token: "left-behind", startedAt: new Date().toISOString() }));
+  assert.equal(runningUp(), null, "somebody else's number, token or no token");
+
+  // And this very process, which is this program's runtime, with a token that does not go with the one beside it.
+  writeFileSync(pid, JSON.stringify({ pid: process.pid, token: "another run's", startedAt: "2020-01-01T00:00:00Z" }));
+  assert.equal(runningUp(), null, "a token that doesn't match is nobody's lock");
+  writeFileSync(pid, String(process.pid));
+  assert.equal(runningUp(), null, "and a bare number from an older version is not a lock on Windows either");
+
+  // Taking the lock is what replaces all of it, so nothing has to be cleaned up by hand first.
+  const release = claimUp();
+  t.after(release);
+  assert.equal(runningUp(), process.pid);
 });
 
 test("stopping nothing writes nothing and leaves nothing", () => {

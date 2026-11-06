@@ -71,7 +71,10 @@ test("a number left in up.pid that is now its own doesn't stop it starting; a se
     if (!ready) await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(ready, "it started");
-  assert.equal(readFileSync(join(home, "up.pid"), "utf8"), String(up.pid));
+  // What it took the lock with: its own number, and the token that says the number is its own rather than a leftover.
+  const claim = JSON.parse(readFileSync(join(home, "up.pid"), "utf8")) as { pid: number; token: string };
+  assert.equal(claim.pid, up.pid);
+  assert.equal(claim.token, readFileSync(join(home, "up.token"), "utf8").trim());
 
   const second = spawnSync(process.execPath, [...program, "up"], { env, encoding: "utf8", timeout: 30_000 });
   assert.notEqual(second.status, 0);

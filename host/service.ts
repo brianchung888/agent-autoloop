@@ -8,7 +8,7 @@ import path from "node:path";
 import { HOME } from "./home.ts";
 import { secureDir } from "./permissions.ts";
 import { stablePath } from "./node-path.ts";
-import { running } from "../worker/process.ts";
+import { alive, running } from "../worker/process.ts";
 import { installTask, removeTask, taskAtLogon, taskEnabled } from "./service-win.ts";
 
 /** Asked each time, not once: a test may be standing in for another platform by the time it is. */
@@ -155,27 +155,75 @@ function commandOf(pid: number) {
  *
  * Two things have to hold. The number is a live process — asked the same three ways a run is, and anything but a plain
  * yes counts as nothing running, because what this answers is a lock and a lock may never be taken on a guess. And the
- * number was left by an `up` of this install, which is what up.token beside it says: a number alone is worth little,
- * being pid 1 every time in a container and a matter of luck after a restart. Where there is a `ps` the command line is
- * still read, for a file left by a version that wrote no token.
+ * number was left by an `up` of this install, which is what the token in up.pid and the one beside it say together: a
+ * number alone is worth little, being pid 1 every time in a container and a matter of luck after a restart.
  *
- * What is left unanswered: a number that was recycled between an `up` being killed outright and this being asked. The
- * token is a file, not a hold on the process, so it cannot tell that apart — `up` clearing both files as it starts is
- * what keeps that window short.
+ * Whichever of the two cannot be confirmed, the lock is free. That is the only safe way round: a lock nobody can be
+ * shown to hold stops `up` from ever starting again, and `up` is what a scheduled task or a service brings back.
+ *
+ * What is left unanswered: a number recycled between an `up` being killed outright and this being asked, by something
+ * that is also this program's runtime. The token is a file, not a hold on the process, so it cannot tell that apart —
+ * `up` replacing both files as it starts is what keeps that window short.
  */
 export function runningUp() {
-  if (!existsSync(pidFile())) return null;
-  const pid = Number(readFileSync(pidFile(), "utf8").trim());
-  if (!Number.isInteger(pid) || pid <= 0) return null;
-  if (running(pid) !== true) return null;
-  if (existsSync(tokenFile())) return pid;
-  return /agent-autoloop(\.ts)? up\b/.test(commandOf(pid)) ? pid : null;
+  const claim = readClaim();
+  if (claim === null) return null;
+  if (running(claim.pid) !== true) return null;
+  const token = readToken();
+  if (windows()) {
+    // Nothing can be read back off a Windows process to say what it is running, so two cheaper things are asked
+    // instead. The number has to be held by this program's own runtime — a stopped `up` whose number was taken over by
+    // explorer.exe is the number of something else now, and treating it as a lock is how a hub never starts again. And
+    // the number has to come with the token this install left beside it, written in the same breath.
+    if (alive(claim.pid, "") !== true) return null;
+    return claim.token !== null && claim.token === token ? claim.pid : null;
+  }
+  // Where there is a `ps` the command line is read for a file left by a version that wrote no token at all.
+  if (token === null) return /agent-autoloop(\.ts)? up\b/.test(commandOf(claim.pid)) ? claim.pid : null;
+  return claim.token === null || claim.token === token ? claim.pid : null;
 }
 
-/** This process takes the install's one place to run. The number stays as it was written: a person may read it. */
+/** What up.pid says, whichever version wrote it: the shape below, or a bare number from one that wrote only that. */
+function readClaim(): { pid: number; token: string | null } | null {
+  let written: string;
+  try {
+    written = readFileSync(pidFile(), "utf8").trim();
+  } catch {
+    return null;
+  }
+  let pid = Number(written);
+  let token: string | null = null;
+  if (!Number.isInteger(pid)) {
+    try {
+      const claim = JSON.parse(written) as { pid?: unknown; token?: unknown };
+      pid = Number(claim.pid);
+      token = typeof claim.token === "string" && claim.token ? claim.token : null;
+    } catch {
+      return null;
+    }
+  }
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  return { pid, token };
+}
+
+const readToken = () => {
+  try {
+    return readFileSync(tokenFile(), "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * This process takes the install's one place to run. Whatever anybody left here is replaced rather than read twice:
+ * `up` has already been told the lock is free by the time it asks for it, and a file that outlived its process may not
+ * stand for one. The number is still there to be read by a person, beside the token that says whose it is.
+ */
 export function claimUp() {
-  writeFileSync(pidFile(), String(process.pid));
-  writeFileSync(tokenFile(), `${randomUUID()}\n`, { mode: 0o600 });
+  const token = randomUUID();
+  const claim = { pid: process.pid, token, startedAt: new Date().toISOString() };
+  writeFileSync(tokenFile(), `${token}\n`, { mode: 0o600 });
+  writeFileSync(pidFile(), `${JSON.stringify(claim)}\n`);
   return () => {
     for (const file of [tokenFile(), pidFile()]) {
       try {
