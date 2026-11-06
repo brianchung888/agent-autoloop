@@ -27,7 +27,7 @@ const CALL_TIMEOUT = 30_000;
 const MOST = 32 * 1024 * 1024;
 
 /** One run of the plugin's program: a line in, a line out. Throws what the plugin said, or what went wrong instead. */
-function ask(name: string, argv: string[], request: Record<string, unknown>): unknown {
+function ask(name: string, folder: string, argv: string[], request: Record<string, unknown>): unknown {
   const [program, ...args] = argv;
   const ran = spawnSync(program!, args, {
     input: `${JSON.stringify(request)}\n`,
@@ -35,6 +35,9 @@ function ask(name: string, argv: string[], request: Record<string, unknown>): un
     timeout: CALL_TIMEOUT,
     maxBuffer: MOST,
     windowsHide: true,
+    // Its own folder, so that an argument naming a file of its own is a path the plugin can write down: it cannot
+    // know where it was installed, and the folder it was installed in is the one place it can be sure of.
+    cwd: folder,
   });
   if (ran.error) throw new Error(`${name} 插件的程序起不来（${program}）：${ran.error.message}`);
   if (ran.signal) throw new Error(`${name} 插件的程序被 ${ran.signal} 结束了，没有答复 ${request.call}`);
@@ -63,8 +66,8 @@ function ask(name: string, argv: string[], request: Record<string, unknown>): un
 }
 
 /** What the plugin answers `describe` with, which is the one call every one of them has to have. */
-function describe(name: string, argv: string[]) {
-  const value = ask(name, argv, { call: "describe" }) as Described | null;
+function describe(name: string, folder: string, argv: string[]) {
+  const value = ask(name, folder, argv, { call: "describe" }) as Described | null;
   const calls = Array.isArray(value?.calls)
     ? value.calls.filter((call): call is string => typeof call === "string")
     : [];
@@ -76,7 +79,13 @@ function describe(name: string, argv: string[]) {
  * inside the plugin's own folder; `describe` is asked here, which is where a process plugin first runs — the same
  * moment a source plugin would first be imported and run.
  */
-export function processPlugin(name: string, kind: PluginKind, entry: string, args: readonly string[]): unknown {
+export function processPlugin(
+  name: string,
+  kind: PluginKind,
+  folder: string,
+  entry: string,
+  args: readonly string[],
+): unknown {
   if (kind === "channel")
     throw new Error(
       `${name} 是通道插件，现在还不能用 runtime: "process"：通道是和中台一样长命的循环，不是一次一答的翻译。` +
@@ -84,14 +93,15 @@ export function processPlugin(name: string, kind: PluginKind, entry: string, arg
     );
   if (!existsSync(entry)) throw new Error(`${name} 的 plugin.json 指的程序不在：${entry}`);
   const argv = [entry, ...args];
-  const has = describe(name, argv);
-  if (kind === "source") return (input: unknown) => ask(name, argv, { call: "translate", ...(input as object) });
+  const has = describe(name, folder, argv);
+  if (kind === "source")
+    return (input: unknown) => ask(name, folder, argv, { call: "translate", ...(input as object) });
   const adapter: Record<string, unknown> = {
-    command: (turn: unknown) => ask(name, argv, { call: "command", turn }),
+    command: (turn: unknown) => ask(name, folder, argv, { call: "command", turn }),
     read: (stdout: string, code: number | null, stderr: string) =>
-      ask(name, argv, { call: "read", stdout, code, stderr }),
+      ask(name, folder, argv, { call: "read", stdout, code, stderr }),
   };
-  if (has.has("link")) adapter.link = (session: string) => ask(name, argv, { call: "link", session });
-  if (has.has("check")) adapter.check = () => ask(name, argv, { call: "check" });
+  if (has.has("link")) adapter.link = (session: string) => ask(name, folder, argv, { call: "link", session });
+  if (has.has("check")) adapter.check = () => ask(name, folder, argv, { call: "check" });
   return adapter;
 }

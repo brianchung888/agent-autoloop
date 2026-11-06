@@ -39,7 +39,7 @@ node --disable-warning=ExperimentalWarning --test --test-name-pattern='agent-aut
 { "runtime": "process", "entry": "bin/my-plugin", "args": ["--quiet"] }
 ```
 
-`entry` 是插件目录内的相对路径，走不出去；`args` 可选，每次调用都在最前面，是参数而不是 shell 词（不经 shell，也不做字符串拼接）。Windows 上 `entry` 要是真正的可执行文件，和 Agent 程序一样，`.cmd` 包装起不了。
+`entry` 是插件目录内的相对路径，走不出去；`args` 可选，每次调用都在最前面，是参数而不是 shell 词（不经 shell，也不做字符串拼接）。程序跑起来时的当前目录就是插件自己的目录，所以 `args` 里写相对路径就能指到自己的文件（插件不可能知道自己被装在哪里）。Windows 上 `entry` 要是真正的可执行文件，和 Agent 程序一样，`.cmd` 包装起不了。
 
 调用方式：每次起一个进程，标准输入给一行 JSON 请求，标准输出的**最后一行**是 JSON 答复，然后退出。答复是 `{"ok":true,"value":…}` 或 `{"ok":false,"error":"一句人能照着做的话"}`；中间想打印别的东西可以，只要答复在最后一行。
 

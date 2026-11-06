@@ -24,8 +24,7 @@ const WINDOWS = process.platform === "win32";
 function plugin(name: string, body: string) {
   const folder = join(home, "plugins", name);
   mkdirSync(folder, { recursive: true });
-  const handler = join(folder, "handler.mjs");
-  writeFileSync(handler, body);
+  writeFileSync(join(folder, "handler.mjs"), body);
   let manifest: { runtime: string; entry: string; args: string[] };
   if (WINDOWS) {
     const runtime = join(folder, "runtime.exe");
@@ -34,7 +33,12 @@ function plugin(name: string, body: string) {
     } catch {
       copyFileSync(process.execPath, runtime);
     }
-    manifest = { runtime: "process", entry: "runtime.exe", args: ["--disable-warning=ExperimentalWarning", handler] };
+    // 相对路径：插件程序的 cwd 就是它自己的目录，否则插件没办法指到自己的文件。
+    manifest = {
+      runtime: "process",
+      entry: "runtime.exe",
+      args: ["--disable-warning=ExperimentalWarning", "handler.mjs"],
+    };
   } else {
     const wrapper = join(folder, "run");
     writeFileSync(wrapper, `#!/bin/sh\nexec ${process.execPath} ${handler} "$@"\n`, { mode: 0o755 });
