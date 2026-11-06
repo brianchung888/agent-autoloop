@@ -26,7 +26,7 @@ import { secureDir } from "../host/permissions.ts";
 import type { Job } from "../protocol/job.ts";
 import { addUsage, type Notice, type Result } from "../protocol/validate.ts";
 import { adapterFor, type Adapter, type Reading, type Turn, type Usage } from "./agents.ts";
-import { alive, forgetProcesses, terminate, treeAlive } from "./process.ts";
+import { alive, bornAt, forgetProcesses, terminate, treeAlive } from "./process.ts";
 import { promptFor, readMessage, repairPrompt, resultFrom } from "./contract.ts";
 import { loadUsage, saveUsage, usageDelta } from "./usage.ts";
 
@@ -245,7 +245,10 @@ export function createWorker({
     // Where the command line can't be read back, this is what says whose number that is.
     if (WINDOWS) {
       try {
-        const written = { pid: child.pid, startedAt: entry.launchedAt, marker: marker(entry) };
+        // `born` is what the machine says about the moment this very number came into being: a number given back
+        // and taken by another process of this runtime would answer differently, and that is the only thing that can
+        // tell them apart here. Nothing on Windows reads a command line back off a process.
+        const written = { pid: child.pid, startedAt: entry.launchedAt, marker: marker(entry), born: bornAt(child.pid) };
         writeFileSync(record, `${JSON.stringify(written)}\n`, { mode: 0o600 });
       } catch (error) {
         log(`run ${entry.run}: couldn't write ${record}: ${error}`);
@@ -415,7 +418,7 @@ export function createWorker({
     }
     if (existsSync(exit)) return conclude(entry, adapter, exitCode());
     // The shell can publish its exit between the first file check and ps returning.
-    const looking = alive(entry.pid, marker(entry));
+    const looking = alive(entry.pid, marker(entry), files(entry).launch);
     if (looking === false) return conclude(entry, adapter, exitCode());
     // Unable to look, the run counts as still going, so its timeout and its finished turn still end it.
     if (looking === null && !blind) log(`couldn't look at the run; runs count as going until they end or time out`);

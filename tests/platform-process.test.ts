@@ -7,12 +7,22 @@
 // outlives the stop it was asked for; a number that is nobody's is taken for somebody.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { test } from "node:test";
-import { alive, forgetProcesses, running, terminate, treeAlive } from "../worker/process.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
+import { alive, bornAt, forgetProcesses, running, terminate, treeAlive } from "../worker/process.ts";
 
 const WINDOWS = process.platform === "win32";
 /** Long enough that nothing here finishes by itself; the test ends it. */
 const SLEEP = "setTimeout(() => {}, 600000)";
+
+const ONLY_WINDOWS = {
+  skip: !WINDOWS && "这一条讲的是 Windows 把进程号还回去以后拿什么认人；POSIX 读 ps 的命令行，上面一条已经覆盖",
+};
+
+const dir = mkdtempSync(join(tmpdir(), "agent-autoloop-process-"));
+after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 3 }));
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -106,3 +116,29 @@ test(
     assert.notEqual(treeAlive(nobody), true);
   },
 );
+
+test("号被别人捡走就不是这个 run 了：比对 launch-N.json 记下的创建时刻", ONLY_WINDOWS, async (t) => {
+  const child = started(SLEEP);
+  t.after(() => terminate(child.pid, true));
+  await until("it started", () => running(child.pid!));
+  const born = bornAt(child.pid);
+  assert.match(String(born), /^\d+$/, "这台机器说得出这个号是什么时候来的");
+
+  const record = join(dir, "launch-1.json");
+  // 先问不对的：一个同号、但创建时刻是别人的记录。tasklist 只会说「这个号是个 node.exe」，那还不够。
+  writeFileSync(record, JSON.stringify({ pid: child.pid, startedAt: 0, marker: "x", born: "1" }));
+  assert.equal(alive(child.pid, "", record), false, "创建时刻对不上，这个号已经是别人的了");
+
+  forgetProcesses();
+  writeFileSync(record, JSON.stringify({ pid: child.pid, startedAt: 0, marker: "x", born }));
+  assert.equal(alive(child.pid, "", record), true, "对得上就是它");
+
+  // 旧版本写下的记录没有这一项，记错号的记录说的也不是这个 run：两者都不能当成「它没了」。
+  forgetProcesses();
+  writeFileSync(record, JSON.stringify({ pid: child.pid, startedAt: 0, marker: "x" }));
+  assert.equal(alive(child.pid, "", record), true);
+  writeFileSync(record, JSON.stringify({ pid: child.pid! + 100000, born: "1" }));
+  assert.equal(alive(child.pid, "", record), true);
+  // 没有记录可读时，和改动前一样只看号与映像名。
+  assert.equal(alive(child.pid, "", join(dir, "没有这个文件")), true);
+});

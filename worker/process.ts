@@ -8,15 +8,20 @@
 // Windows does keep is the parent each process was started by, for ever, even after that parent is gone: the tree can be
 // walked from the whole table of processes, and a table that can't be read means the answer is "could not look".
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const WINDOWS = process.platform === "win32";
 /** What started the run is this program's own runtime, so a number now held by anything else is not the run. */
 const LAUNCHER_IMAGE = path.basename(process.execPath);
-/** One line per process: its number and its parent's. Nothing else is read, so the query stays cheap to parse. */
+/**
+ * One line per process: its number, its parent's, and the moment it was created. Nothing else is read, so the query
+ * stays cheap to parse — and the third field costs nothing over the first two, which is what makes telling one holder
+ * of a number from the next affordable at all.
+ */
 const PROCESS_TABLE_QUERY =
-  "Get-CimInstance -ClassName Win32_Process -Property ProcessId,ParentProcessId |" +
-  ' ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }';
+  "Get-CimInstance -ClassName Win32_Process -Property ProcessId,ParentProcessId,CreationDate |" +
+  ' ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.CreationDate.Ticks)" }';
 
 /**
  * tasklist leaves with 0 whether or not anything matched, and says that it found nothing in the console's own language.
@@ -38,8 +43,8 @@ function tasklistRows(filters: string[]): string[][] | null {
   }
 }
 
-/** Every live process and the parent each was started by. */
-type Table = { live: Set<number>; children: Map<number, number[]> };
+/** Every live process, the parent each was started by, and the moment each was created. */
+type Table = { live: Set<number>; children: Map<number, number[]>; born: Map<number, string> };
 
 /**
  * The whole table is one process to ask for and the best part of a second to wait for, and the worker asks about every
@@ -75,26 +80,84 @@ function readProcessTable(): Table | null {
     );
     const live = new Set<number>();
     const children = new Map<number, number[]>();
+    const born = new Map<number, string>();
     for (const line of printed.split(/\r?\n/)) {
-      const [child, parent] = line.trim().split(/\s+/).map(Number);
+      const [first, second, third] = line.trim().split(/\s+/);
+      const child = Number(first);
+      const parent = Number(second);
       if (!Number.isInteger(child) || !Number.isInteger(parent)) continue;
       live.add(child);
       children.set(parent, [...(children.get(parent) ?? []), child]);
+      // A few of the system's own processes have no creation date to give. None of them was launched by this program.
+      if (third && /^\d+$/.test(third)) born.set(child, third);
     }
     // An empty table is not an answer: this very process is in it, so nothing at all means the query said nothing.
-    return live.size ? { live, children } : null;
+    return live.size ? { live, children, born } : null;
   } catch {
     return null;
   }
 }
 
-/** Whether the run's own process is still going: false when it is gone, null when we could not look. */
-export function alive(pid: number | undefined, marker: string): boolean | null {
+/** What the worker wrote down about one launch, where no command line can be read back off the process. */
+export type Launch = { pid?: number; startedAt?: number; marker?: string; born?: string };
+
+/** The moment the process at this number was created, as this machine counts it, for writing down beside a launch. */
+export function bornAt(pid: number | undefined): string | null {
+  if (!pid || !WINDOWS) return null;
+  // Only ever asked about a process that has just this moment started, which is in no table from before it: what was
+  // kept would answer "nothing by that number", and a launch with nothing written down can never be told apart later.
+  forgetProcesses();
+  return processTable()?.born.get(pid) ?? null;
+}
+
+/**
+ * Numbers already shown to be held by the process their record was written for. A number cannot be given to anything
+ * else while the process holding it is alive, so this is asked once per number and not every tick: what it saves is a
+ * second of the hub's own time, every tick, for as long as a run goes on.
+ */
+const confirmed = new Set<number>();
+
+/**
+ * Whether the number in a launch record is held by the process that record was written for. Windows gives a number
+ * back once its process is gone, and `tasklist` would then say yes about whatever took it — so what the record says
+ * about the moment of creation is compared with what the machine says now. Where that cannot be compared (an older
+ * record, a table that would not be read) the answer stays yes: this is only ever asked about a number that is a live
+ * process of this program's own runtime, and calling such a run gone would throw away work that is going on.
+ */
+function sameAsRecorded(pid: number, record: string | undefined) {
+  if (!record || confirmed.has(pid)) return true;
+  const born = processTable()?.born.get(pid);
+  if (born === undefined) return true;
+  if (born !== record) return false;
+  confirmed.add(pid);
+  return true;
+}
+
+/** What the worker wrote down at launch, or nothing where there is nothing to read. */
+function launchRecord(file: string | undefined): Launch | null {
+  if (!file) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Launch;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether the run's own process is still going: false when it is gone, null when we could not look. `record` is the
+ * file the launch was written down in (worker/worker.ts: launch-N.json), which is what Windows has instead of a
+ * command line to read back.
+ */
+export function alive(pid: number | undefined, marker: string, record?: string): boolean | null {
   if (!pid) return false;
   if (WINDOWS) {
     const rows = tasklistRows([`PID eq ${pid}`, `IMAGENAME eq ${LAUNCHER_IMAGE}`]);
     if (rows === null) return null;
-    return rows.some((row) => Number(row[1]) === pid);
+    if (!rows.some((row) => Number(row[1]) === pid)) return false;
+    const written = launchRecord(record);
+    // A record that names another number is not about this run at all, so it says nothing either way.
+    if (written && written.pid !== undefined && written.pid !== pid) return true;
+    return sameAsRecorded(pid, written?.born);
   }
   try {
     const command = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" });
