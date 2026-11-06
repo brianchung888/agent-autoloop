@@ -60,8 +60,8 @@ AGENT_AUTOLOOP_REPO=/path/to/agent-autoloop sh /path/to/agent-autoloop/install.s
 
 ```powershell
 # Windows
-certutil -hashfile .gent-autoloop-windows-x64.exe SHA256
-.gent-autoloop-windows-x64.exe init
+certutil -hashfile .\agent-autoloop-windows-x64.exe SHA256
+.\agent-autoloop-windows-x64.exe init
 ```
 
 ```bash
