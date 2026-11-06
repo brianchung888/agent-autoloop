@@ -73,7 +73,8 @@ WantedBy=default.target
 `;
 }
 
-const domain = () => `gui/${process.getuid!()}`;
+/** Only the launchd branch asks for this: getuid is a POSIX call, and on a platform without one it isn't there. */
+const domain = () => `gui/${process.getuid?.() ?? -1}`;
 const launchdHasIt = () =>
   spawnSync("launchctl", ["print", `${domain()}/${label()}`], { stdio: "ignore" }).status === 0;
 const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
