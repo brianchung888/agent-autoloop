@@ -5,10 +5,7 @@
 // The order is the behaviour, so it does not change: this install's folder first, then the ones that ship. A loader
 // finds a plugin or says it has none; the first that finds one wins, and the lot of them coming up empty is the one
 // error below. Finding is what loads it, at the moment it is found — importing a plugin runs it, as it always has.
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { HOME } from "./home.ts";
+import { externalLoader, shippedLoader } from "./plugin-loaders.ts";
 
 export type PluginKind = "agent" | "channel" | "source";
 /**
@@ -22,20 +19,7 @@ export type PluginLoader = {
   resolve(name: string, kind: PluginKind): Promise<Found | null>;
 };
 
-/** A folder of plugin folders: `<folder>/<name>/<kind>.ts`, imported the moment it is found to be there. */
-const fromFolder = (id: string, folder: () => string): PluginLoader => ({
-  id,
-  async resolve(name, kind) {
-    const file = join(folder(), name, `${kind}.ts`);
-    if (!existsSync(file)) return null;
-    return { plugin: (await import(pathToFileURL(file).href)).default };
-  },
-});
-
-const loaders: PluginLoader[] = [
-  fromFolder("home", () => join(HOME, "plugins")),
-  fromFolder("shipped", () => join(import.meta.dirname, "..", "plugins")),
-];
+const loaders: PluginLoader[] = [externalLoader, shippedLoader];
 
 // What it hands back is what it always did: the plugin's default export, which each caller reads as the shape its kind
 // requires (worker/agents.ts: `Adapter`, host/channels.ts: the channel function, host/server.ts: the source function).
