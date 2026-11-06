@@ -20,9 +20,9 @@ Most of us use command-line agents like Claude Code or Codex by babysitting a te
 
 ## Get started
 
-Works on macOS and Linux. You need Node 24, Git, curl, and at least one command-line agent already signed in; no GitHub account required. You can also hand the [installation guide](INSTALL.md) to your agent and let it install everything for you.
+Works on macOS, Linux and Windows 11. You need Node 24, Git, curl, and at least one command-line agent already signed in; no GitHub account required. You can also hand the [installation guide](INSTALL.md) to your agent and let it install everything for you.
 
-> **Windows: pending.** Many of you have asked for a Windows version, and I've seen every request. I'm away on a work trip without a Windows machine, so I can't build or test it on real hardware, and it doesn't run on Windows yet. When I get home this weekend (November 7–8), I'll finish it, run compatibility tests, and then release it properly. Progress will be posted in [#17](https://github.com/KKKKhazix/agent-autoloop/issues/17). If you can't wait, WSL2 works for now; see [INSTALL](INSTALL.md) for what to expect.
+> **Windows: supported natively, no WSL2 needed.** Install from PowerShell, no administrator required: `irm https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.ps1 | iex`. Three things are less than they are elsewhere: desktop notifications are always skipped (cards still reach `agent-autoloop status` and any other channel); it is kept running by a scheduled task rather than a service manager, so after it stops it can take up to five minutes to come back; and an agent has to be a real executable — the `.cmd` wrapper npm writes cannot be started as a program. See [INSTALL](INSTALL.md) for the details.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.sh | sh
@@ -245,7 +245,7 @@ For automated workloads, providers generally recommend using API keys rather tha
 | `skills/agent-autoloop/` | The hub's configuration and operation manual, also made available to agents during installation |
 | `docs/` | Protocol, plugin guide, and Chinese / English architecture diagrams |
 | `tests/`, `sim/` | Everyday behavior tests, simulation, enumeration, crash tests, and mutation checks |
-| `scripts/`, `.github/workflows/` | Performance and real-agent checks, installation smoke scripts, and Linux / macOS CI |
+| `scripts/`, `.github/workflows/` | Performance and real-agent checks, installation smoke scripts (one for POSIX, one for Windows), and Linux / macOS / Windows CI |
 | Root documents and `install.sh` | Chinese / English READMEs, installation, security, development guidelines, license, and installer |
 
 Start reading at `bin/agent-autoloop.ts` → `cli/main.ts`, then follow the feature into `host/`, `worker/`, or `plugins/`. Read the [protocol](docs/protocol.md) for kernel design. Similarly named files serve different layers: `host/http.ts` adapts Node requests while `kernel/http.ts` defines endpoint behavior; `protocol/rules.ts` validates input while `kernel/rules.ts` defines rule types and matching.
