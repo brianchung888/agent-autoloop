@@ -56,7 +56,7 @@ AGENT_AUTOLOOP_REPO=/path/to/agent-autoloop sh /path/to/agent-autoloop/install.s
 agent-autoloop up
 ```
 
-`up` 会一直运行。Windows 上停它别直接杀进程：往 `AGENT_AUTOLOOP_HOME` 下写一个空的 `stop` 文件，中台看到就自己收尾（`agent-autoloop uninstall` 也是这么停的）。Windows 没有 SIGTERM 可送，硬杀会留下 `up.pid` 和没关的连接。在 Agent 的命令工具里保留它返回的运行中会话，再用另一条命令完成验证；不要用 `nohup … &` 代替，命令工具可能在退出时清理后台进程。看到监听地址后再运行验证命令；启动失败就先处理该会话里的错误。
+`up` 会一直运行。Windows 上停它别直接杀进程：往 `AGENT_AUTOLOOP_HOME` 下写一个空的 `stop` 文件，中台看到就自己收尾（`agent-autoloop uninstall` 也是这么停的）。Windows 没有 SIGTERM 可送，硬杀会留下 `up.pid` 和没关的连接（留下的 `up.pid` 挡不住下一次 `up`：里面记着那个进程的创建时刻，认得出是遗留的）。在 Agent 的命令工具里保留它返回的运行中会话，再用另一条命令完成验证；不要用 `nohup … &` 代替，命令工具可能在退出时清理后台进程。看到监听地址后再运行验证命令；启动失败就先处理该会话里的错误。
 
 PATH 没有命令时，把 `agent-autoloop` 换成安装器打印的完整路径。临时测试使用假的 `osascript`、`notify-send`，不要发送真实消息；不要给已在线的飞书应用再开监听。
 
