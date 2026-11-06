@@ -7,7 +7,7 @@
 // somebody else registered under the same name is taken for ours and deleted; `up` is said to be running because its
 // number is a number, or said not to be because `ps` is not there to ask; what `up` leaves behind stops the next one.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -81,8 +81,12 @@ test("a task of ours is registered, found, and taken away again", notWindows, ()
   try {
     installTask(options);
     assert.notEqual(registeredXml(options.label), null, "it is registered");
-    assert.equal(taskOwned(options.label, options.program), true, "and it is the one this install wrote");
-    assert.equal(taskOwned(options.label, String.raw`C:\somewhere\else\agent-autoloop.ts`), false, "not anyone's");
+    assert.equal(taskOwned(options.label, where, options.program), true, "and it is the one this install wrote");
+    assert.equal(
+      taskOwned(options.label, where, String.raw`C:\somewhere\else\agent-autoloop.ts`),
+      false,
+      "not anyone's",
+    );
     assert.equal(taskEnabled(options.label), true);
     assert.ok(existsSync(join(where, "service.env")), "the home it runs with is beside it");
 
@@ -95,6 +99,31 @@ test("a task of ours is registered, found, and taken away again", notWindows, ()
     assert.equal(existsSync(join(where, "service.env")), false);
   } finally {
     removeTask(options.label, where, options.program);
+  }
+});
+
+test("安装路径里有中文时，卸载照样认得出这个任务是自己的", notWindows, () => {
+  // Through the console's code page a path with characters like these in it comes back as something else, so nothing
+  // in the registered XML matches what this install knows itself by, and `uninstall` leaves a scheduled task behind
+  // for good. What says whose the task is has to be something written in an encoding this program chose.
+  const where = join(home, "我的文件 任务");
+  mkdirSync(where, { recursive: true });
+  const options = {
+    ...ordinary,
+    label: "agent-autoloop-platform-test-cn",
+    home: where,
+    executable: process.execPath,
+    program: join(where, "app", "bin", "agent-autoloop.ts"),
+  };
+  try {
+    installTask(options);
+    assert.notEqual(registeredXml(options.label), null, "it is registered");
+    assert.equal(taskOwned(options.label, where, options.program), true, "中文路径也认得出来");
+    removeTask(options.label, where, options.program);
+    assert.equal(registeredXml(options.label), null, "拿掉了，没有留下计划任务");
+  } finally {
+    // Whatever went wrong above, nothing of this test may be left registered on the machine.
+    spawnSync("schtasks", ["/Delete", "/TN", options.label, "/F"], { stdio: "ignore", timeout: 60_000 });
   }
 });
 

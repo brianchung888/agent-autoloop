@@ -8,7 +8,7 @@
 // to node in an env file instead of being set by one; the program and its arguments go into the XML as they are, and a
 // Windows path can hold no quote, so quoting each path is unambiguous.
 import { execFileSync, spawnSync } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export type TaskOptions = {
@@ -147,25 +147,42 @@ export function taskAtLogon(label: string) {
   return registeredXml(label)?.includes("<LogonTrigger>") === true;
 }
 
-/** The XML of the registered task, or null when there is no such task. In the console's own encoding: read paths only. */
+/**
+ * The XML of the registered task, or null when there is no such task.
+ *
+ * It arrives in whatever code page the console is in, and that is not something to guess at: on a Chinese Windows a
+ * path or a description comes back as something else entirely. So the bytes are taken as they are — every ASCII byte
+ * is itself in all of these code pages, which is all the tag names and all the words this file goes on to look for.
+ * Anything with a character outside ASCII in it is read from the file this install wrote, never from here.
+ */
 export function registeredXml(label: string) {
   const asked = spawnSync("schtasks", ["/Query", "/TN", label, "/XML", "ONE"], {
-    encoding: "utf8",
+    encoding: "latin1",
     timeout: 60_000,
     stdio: ["ignore", "pipe", "ignore"],
   });
   return asked.status === 0 && asked.stdout.includes("<Task") ? asked.stdout : null;
 }
 
-/** Whether the task that is registered is the one this install wrote, rather than another install's by that name. */
-export function taskOwned(label: string, program: string) {
-  const registered = registeredXml(label);
-  // The console's encoding may not carry the description, but a path out of this file system round-trips.
-  return registered !== null && registered.includes(program);
+/**
+ * Whether the task that is registered is the one this install wrote, rather than another install's by that name.
+ *
+ * What says so is the file the task was registered from, which is this install's own and in a known encoding — the
+ * same way the launchd and systemd branches read the plist and the unit beside them. Reading the path back out of the
+ * registered task cannot say it: through the console's code page an install under 我的文件 comes back mangled, nothing
+ * matches, and `uninstall` then leaves a scheduled task behind for good. Where that file has gone the registered XML
+ * is still asked, which is an answer for every install whose path is plain ASCII.
+ */
+export function taskOwned(label: string, home: string, program: string) {
+  if (registeredXml(label) === null) return false;
+  try {
+    if (readFileSync(taskFile(home), "utf16le").includes(program)) return true;
+  } catch {}
+  return registeredXml(label)?.includes(program) === true;
 }
 
 export function removeTask(label: string, home: string, program: string) {
-  if (!taskOwned(label, program)) return;
+  if (!taskOwned(label, home, program)) return;
   spawnSync("schtasks", ["/End", "/TN", label], { stdio: "ignore", timeout: 60_000 });
   spawnSync("schtasks", ["/Delete", "/TN", label, "/F"], { stdio: "ignore", timeout: 60_000 });
   for (const file of [taskFile(home), envFile(home)]) rmSync(file, { force: true });
