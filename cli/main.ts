@@ -808,11 +808,14 @@ function addPlugin(args: string[]) {
   const url = args[0] ?? fail(TAKES.add.usage);
   // The last part of wherever it came from: a URL, an SSH address, or a path on this machine — which on Windows is
   // separated by backslashes, and whose drive letter is a colon that is not a separator at all. Every separator there
-  // is, then, with the empty parts a trailing one leaves dropped.
-  const name = url
-    .split(/[/:\\]/)
-    .filter(Boolean)
-    .at(-1)!
+  // is, then, with the empty parts a trailing one leaves dropped. An address that is nothing but separators has no
+  // last part at all: that is a name of "", which is refused below like any other name that cannot be one.
+  const name = (
+    url
+      .split(/[/:\\]/)
+      .filter(Boolean)
+      .at(-1) ?? ""
+  )
     .replace(/\.git$/, "")
     .toLowerCase();
   if (!/^[a-z][a-z0-9-]*$/.test(name))

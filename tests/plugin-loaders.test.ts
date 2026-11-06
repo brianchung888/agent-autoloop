@@ -221,4 +221,10 @@ test("插件名字是来处的最后一段：Windows 路径的反斜线也算分
   assert.match(name("C:/tmp/plugins/Bad_Name/").stderr, /插件名字「bad_name」不能用/);
   assert.match(name("git@example.com:me/Bad_Name.git").stderr, /插件名字「bad_name」不能用/);
   assert.match(name("https://example.com/me/Bad_Name/").stderr, /插件名字「bad_name」不能用/);
+  // 一个全是分隔符的地址根本没有最后一段：那也是一个不能用的名字，不是一句崩溃。
+  for (const nothing of ["///", "/", ":", "\\", "::\\\\//"]) {
+    const said = name(nothing);
+    assert.match(said.stderr, /插件名字「」不能用/, nothing);
+    assert.equal(said.status, 1, nothing);
+  }
 });
