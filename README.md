@@ -20,9 +20,9 @@
 
 ## 上手
 
-支持 macOS、Linux 和 Windows 11。运行前需要装好 Node 24、Git、curl，以及任意一个你已经登录好的命令行 Agent，不需要 GitHub 账号。也可以直接把[安装说明](INSTALL.md)丢给你的 Agent，让它替你装好。
+支持 macOS、Linux 和 Windows 11。运行前需要装好 Node 24、Git（macOS / Linux 还要 curl，Windows 用 PowerShell 自带的 irm），以及任意一个你已经登录好的命令行 Agent，不需要 GitHub 账号。也可以直接把[安装说明](INSTALL.md)丢给你的 Agent，让它替你装好。
 
-> **Windows：原生支持，不需要 WSL2。** 用 PowerShell 装，不要管理员权限：`irm https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.ps1 | iex`。有三处降级：桌面通知一律跳过（卡片还在 `agent-autoloop status` 和别的通道里）；常驻用的是计划任务，停了之后最多等 5 分钟才自己回来；Agent 得是真正的可执行文件，npm 装的 `.cmd` 包装脚本起不了。细节见 [INSTALL](INSTALL.md)。
+> **Windows：原生支持，不需要 WSL2。** 用 PowerShell 装，不要管理员权限：`irm https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.ps1 | iex`。有四处降级：桌面通知一律跳过（卡片还在 `agent-autoloop status` 和别的通道里）；常驻用的是计划任务，停了之后最多等 5 分钟才自己回来；文件权限用 `icacls` 锁到当前用户，锁不上（网络盘、FAT32、域策略）不拦着启动，`agent-autoloop doctor` 会报一条降级；Agent 得是真正的可执行文件，npm 装的 `.cmd` 包装脚本起不了。细节见 [INSTALL](INSTALL.md)。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.sh | sh

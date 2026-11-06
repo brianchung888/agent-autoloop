@@ -4,9 +4,9 @@
 
 ## 安装
 
-支持 macOS、Linux、Windows 11。Windows 是原生安装，不需要 WSL2，但有三处降级，装之前要知道：桌面通知在 Windows 上一律跳过（卡片仍然进 `agent-autoloop status` 和别的通道）；常驻靠计划任务而不是服务管理器，停了之后最多等 5 分钟才会自己回来，加了域的电脑还不让“登录时启动”，登录后也要等最多 5 分钟；Agent 的程序必须是真正的可执行文件（`claude.exe` 这种），npm 装出来的 `.cmd` 包装脚本起不了，`agent-autoloop init` 会说找不到。仍然想用 WSL2 的话按 Linux 装，注意系统服务要发行版开着 systemd（`/etc/wsl.conf` 里 `systemd=true`，没开就加 `--no-service`，自己运行 `agent-autoloop up`），没人登录时不启动要 `loginctl enable-linger`，桌面通知也到不了 Windows 桌面，WSL2 本身还要占 1GB 左右内存。
+支持 macOS、Linux、Windows 11。Windows 是原生安装，不需要 WSL2，但有四处降级，装之前要知道：桌面通知在 Windows 上一律跳过（卡片仍然进 `agent-autoloop status` 和别的通道）；常驻靠计划任务而不是服务管理器，停了之后最多等 5 分钟才会自己回来，加了域的电脑还不让“登录时启动”，登录后也要等最多 5 分钟；文件权限没有 `0700`，改用 `icacls` 锁到当前用户，锁不上时不拦着启动、由 `agent-autoloop doctor` 报一条降级（详见下面）；Agent 的程序必须是真正的可执行文件（`claude.exe` 这种），npm 装出来的 `.cmd` 包装脚本起不了，`agent-autoloop init` 会说找不到。仍然想用 WSL2 的话按 Linux 装，注意系统服务要发行版开着 systemd（`/etc/wsl.conf` 里 `systemd=true`，没开就加 `--no-service`，自己运行 `agent-autoloop up`），没人登录时不启动要 `loginctl enable-linger`，桌面通知也到不了 Windows 桌面，WSL2 本身还要占 1GB 左右内存。
 
-需要 Node.js 24 或更新、Git、curl，以及一个已经登录的命令行 Agent。
+需要 Node.js 24 或更新、Git，以及一个已经登录的命令行 Agent。下载安装脚本在 macOS / Linux 用 curl，Windows 用 PowerShell 自带的 `irm`，两边都不需要额外装东西。
 
 先检查 `node --version`。Homebrew 的 `node@24` 默认不进 PATH，装好后还要运行 `export PATH="$(brew --prefix node@24)/bin:$PATH"`；需要长期生效时再写入用户的 shell 配置。不要替用户登录，也不要读取或复制登录凭据。
 
@@ -38,7 +38,7 @@ AGENT_AUTOLOOP_REPO=/path/to/agent-autoloop sh /path/to/agent-autoloop/install.s
 
 `--agent claude` 选择 Claude Code；只有其他 CLI 时加 `--command 'hermes chat -Q -q {prompt}'`。不指定时会检测本机安装的 Agent，第一种作为试跑对象。
 
-程序装进 `~/.agent-autoloop/app`，配置和记录留在 `~/.agent-autoloop`。默认打开桌面通知；没有图形会话时安静跳过，问题仍能用 `agent-autoloop status` 查看。命令优先放在 PATH 中的 `~/.local/bin`，否则选 PATH 里第一个可写目录，不用 sudo、不覆盖其他程序；没有位置时使用安装器打印的完整路径。
+程序装进 `~/.agent-autoloop/app`，配置和记录留在 `~/.agent-autoloop`。默认打开桌面通知；macOS / Linux 没有图形会话时安静跳过，Windows 是一律跳过（这边还没有可用的通知程序），两种情况下问题都仍能用 `agent-autoloop status` 查看，`agent-autoloop doctor` 也会指出来。命令放在 PATH 中的 `~/.local/bin`；macOS / Linux 上这个目录不在 PATH 里时改选 PATH 里第一个可写目录，Windows 上则是把 `%USERPROFILE%\.local\bin` 加进用户 PATH（`setx`，要重开终端才生效）。两边都不用 sudo、不覆盖其他程序；没有位置时使用安装器打印的完整路径。
 
 安装器和中台启动时都会把数据目录设为 `0700`，包括已有目录，阻止其他系统用户读取数据库、事件和运行输出。Windows 没有 `0700`，改用 `icacls` 把数据目录的权限锁到当前用户（去掉继承，只留你自己，子目录和文件跟着继承），`master.key` 另外单独锁一次；锁不上（网络盘、FAT32、域策略）不会拦着启动，但 `agent-autoloop doctor` 会多出一条“文件权限降级”，这时同机的其他用户可能读得到数据。升级后同步重启中台与接单程序；新版 `status` 使用中台提供的费用汇总。
 

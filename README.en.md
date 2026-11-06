@@ -20,9 +20,9 @@ Most of us use command-line agents like Claude Code or Codex by babysitting a te
 
 ## Get started
 
-Works on macOS, Linux and Windows 11. You need Node 24, Git, curl, and at least one command-line agent already signed in; no GitHub account required. You can also hand the [installation guide](INSTALL.md) to your agent and let it install everything for you.
+Works on macOS, Linux and Windows 11. You need Node 24, Git (and curl on macOS / Linux; on Windows PowerShell's own `irm` does it), and at least one command-line agent already signed in; no GitHub account required. You can also hand the [installation guide](INSTALL.md) to your agent and let it install everything for you.
 
-> **Windows: supported natively, no WSL2 needed.** Install from PowerShell, no administrator required: `irm https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.ps1 | iex`. Three things are less than they are elsewhere: desktop notifications are always skipped (cards still reach `agent-autoloop status` and any other channel); it is kept running by a scheduled task rather than a service manager, so after it stops it can take up to five minutes to come back; and an agent has to be a real executable — the `.cmd` wrapper npm writes cannot be started as a program. See [INSTALL](INSTALL.md) for the details.
+> **Windows: supported natively, no WSL2 needed.** Install from PowerShell, no administrator required: `irm https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.ps1 | iex`. Four things are less than they are elsewhere: desktop notifications are always skipped (cards still reach `agent-autoloop status` and any other channel); it is kept running by a scheduled task rather than a service manager, so after it stops it can take up to five minutes to come back; file permissions are locked to the current user with `icacls`, and where that is refused (a network drive, FAT32, a domain policy) the install carries on and `agent-autoloop doctor` reports the degradation; and an agent has to be a real executable — the `.cmd` wrapper npm writes cannot be started as a program. See [INSTALL](INSTALL.md) for the details.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.sh | sh
