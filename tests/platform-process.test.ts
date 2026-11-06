@@ -177,4 +177,11 @@ test("号被别人捡走就不是这个 run 了：比对 launch-N.json 记下的
   assert.equal(alive(child.pid, "", record), true);
   // 没有记录可读时，和改动前一样只看号与映像名。
   assert.equal(alive(child.pid, "", join(dir, "没有这个文件")), true);
+
+  // 确认过的事记的是「这个号配这个时刻」，不是「这个号」。只按号记的话，号被还回去又被捡走之后，这里会一直说还是它。
+  forgetProcesses();
+  writeFileSync(record, JSON.stringify({ pid: child.pid, born }));
+  assert.equal(alive(child.pid, "", record), true, "对得上，记下来");
+  writeFileSync(record, JSON.stringify({ pid: child.pid, born: "1" }));
+  assert.equal(alive(child.pid, "", record), false, "同一个号、另一个时刻，记下的那次不算数");
 });

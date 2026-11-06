@@ -115,7 +115,12 @@ export function bornAt(pid: number | undefined): string | null {
  * else while the process holding it is alive, so this is asked once per number and not every tick: what it saves is a
  * second of the hub's own time, every tick, for as long as a run goes on.
  */
-const confirmed = new Set<number>();
+const confirmed = new Map<number, string>();
+/**
+ * How many are remembered. A number is kept for as long as the worker runs, and a hub that stays up for months launches
+ * more runs than there are numbers worth holding on to: past this the lot is dropped and asked again as it is needed.
+ */
+const REMEMBER = 512;
 
 /**
  * Whether the number in a launch record is held by the process that record was written for. Windows gives a number
@@ -125,11 +130,15 @@ const confirmed = new Set<number>();
  * process of this program's own runtime, and calling such a run gone would throw away work that is going on.
  */
 function sameAsRecorded(pid: number, record: string | undefined) {
-  if (!record || confirmed.has(pid)) return true;
+  if (!record) return true;
+  // What was shown is remembered against the moment it was shown for, not against the number alone: the same number
+  // comes round again, and a yes about the process that held it then is no answer about whatever holds it now.
+  if (confirmed.get(pid) === record) return true;
   const born = processTable()?.born.get(pid);
   if (born === undefined) return true;
   if (born !== record) return false;
-  confirmed.add(pid);
+  if (confirmed.size >= REMEMBER) confirmed.clear();
+  confirmed.set(pid, record);
   return true;
 }
 
