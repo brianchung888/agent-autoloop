@@ -63,6 +63,10 @@ jobs:
           if [ "${{ github.ref_type }}" = "tag" ]; then
             echo "$said" | grep -q "${{ github.ref_name }}" || { echo "没有说出这个 tag"; exit 1; }
           fi
+      # The whole first hour, on the binary: first run, start, a full turn, answer, finish, uninstall, nothing left
+      # (scripts/install-smoke.ps1 -Binary). The POSIX side has no `-Binary` yet — INSTALL.md says what is covered.
+      - if: runner.os == 'Windows'
+        run: pwsh -NoProfile -File scripts/install-smoke.ps1 -Binary build/agent-autoloop.exe
       - name: rename for the release
         shell: bash
         run: |
