@@ -2,7 +2,7 @@
 // job. An agent runs detached, in its own process group, writing to files, so the worker can stop and come back and
 // find it still going, or finished. A job is saved before anything slow happens; a result is saved before it's handed
 // in and stays until the hub has taken it.
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   closeSync,
@@ -30,6 +30,9 @@ import { promptFor, readMessage, repairPrompt, resultFrom } from "./contract.ts"
 import { loadUsage, saveUsage, usageDelta } from "./usage.ts";
 
 const RUNS = path.join(HOME, "worker", "runs");
+const WINDOWS = process.platform === "win32";
+/** The wrapper that stands in for the shell where there is none. */
+const LAUNCHER = ["--disable-warning=ExperimentalWarning", path.join(import.meta.dirname, "launcher.ts")];
 const NOTHING: Usage = { input: 0, output: 0, cached: 0, cost: 0 };
 const TIMEOUT_MINUTES = 180;
 /** A reader of the turn's end that doesn't exit is given this long. */
@@ -115,6 +118,7 @@ const files = (entry: Entry) => ({
   err: path.join(entry.dir, `stderr-${entry.turn}.log`),
   exit: path.join(entry.dir, `exit-${entry.turn}`),
   command: path.join(entry.dir, `command-${entry.turn}.sh`),
+  launch: path.join(entry.dir, `launch-${entry.turn}.json`),
 });
 const quoted = (word: string) => `'${word.replaceAll("'", `'\\''`)}'`;
 const marker = (entry: Entry) => `agent-autoloop-run:${entry.run}:${entry.attempt}:${entry.turn}`;
@@ -193,34 +197,58 @@ export function createWorker({
     };
     if (!existsSync(cwd)) throw new Error(`在 ${cwd} 启动不了：这个目录不存在`);
     const argv = adapter.command(turn);
-    const { out, err, exit, command } = files(entry);
-    // Login shells don't agree on how a command reads its arguments (fish has no $0 or $@), so the command waits in a
-    // file for /bin/sh. Its path travels by environment because the install path can hold any character.
-    writeFileSync(command, `unset AGENT_AUTOLOOP_COMMAND\nexec ${argv.map(quoted).join(" ")}\n`, { mode: 0o600 });
-    // Output and the exit code go through the shell, so they land in their files even if this program has gone by then.
-    const script = [
-      "out=$1",
-      "err=$2",
-      "result=$3",
-      "shift 3",
-      "umask 077",
-      '"$@" >"$out" 2>"$err"',
-      'echo $? >"$result.tmp"',
-      'mv "$result.tmp" "$result"',
-      // A final external command can replace the shell before publishing its exit file.
-      ":",
-    ].join("\n");
-    // The login shell gives it the PATH and sign-in its owner has in a terminal; launchd and systemd give neither.
-    const login = [process.env.SHELL ?? "/bin/sh", "-lc", 'exec /bin/sh "$AGENT_AUTOLOOP_COMMAND"'];
-    const child = spawn("/bin/sh", ["-c", script, marker(entry), out, err, exit, ...login], {
-      cwd,
-      env: { ...agentEnvironment(entry), AGENT_AUTOLOOP_COMMAND: command },
-      detached: true,
-      stdio: "ignore",
-    });
+    const { out, err, exit, command, launch: record } = files(entry);
+    let child: ChildProcess;
+    if (WINDOWS) {
+      // Nothing here to go through a shell: a wrapper of this program's own runtime points the output at the files,
+      // waits for the agent and publishes the exit code. Nothing is quoted because nothing is parsed — the command
+      // line arrives already split. There is no login shell either: a scheduled task starts with its owner's own
+      // environment, which is what the login shell was for.
+      child = spawn(process.execPath, [...LAUNCHER, out, err, exit, "--", ...argv], {
+        cwd,
+        env: agentEnvironment(entry),
+        detached: true,
+        windowsHide: true,
+        stdio: "ignore",
+      });
+    } else {
+      // Login shells don't agree on how a command reads its arguments (fish has no $0 or $@), so the command waits in a
+      // file for /bin/sh. Its path travels by environment because the install path can hold any character.
+      writeFileSync(command, `unset AGENT_AUTOLOOP_COMMAND\nexec ${argv.map(quoted).join(" ")}\n`, { mode: 0o600 });
+      // Output and the exit code go through the shell, so they land in their files even if this program has gone by then.
+      const script = [
+        "out=$1",
+        "err=$2",
+        "result=$3",
+        "shift 3",
+        "umask 077",
+        '"$@" >"$out" 2>"$err"',
+        'echo $? >"$result.tmp"',
+        'mv "$result.tmp" "$result"',
+        // A final external command can replace the shell before publishing its exit file.
+        ":",
+      ].join("\n");
+      // The login shell gives it the PATH and sign-in its owner has in a terminal; launchd and systemd give neither.
+      const login = [process.env.SHELL ?? "/bin/sh", "-lc", 'exec /bin/sh "$AGENT_AUTOLOOP_COMMAND"'];
+      child = spawn("/bin/sh", ["-c", script, marker(entry), out, err, exit, ...login], {
+        cwd,
+        env: { ...agentEnvironment(entry), AGENT_AUTOLOOP_COMMAND: command },
+        detached: true,
+        stdio: "ignore",
+      });
+    }
     child.on("error", (error) => log(`run ${entry.run}: ${error}`));
     child.unref();
     entry.pid = child.pid;
+    // Where the command line can't be read back, this is what says whose number that is.
+    if (WINDOWS) {
+      try {
+        const written = { pid: child.pid, startedAt: entry.launchedAt, marker: marker(entry) };
+        writeFileSync(record, `${JSON.stringify(written)}\n`, { mode: 0o600 });
+      } catch (error) {
+        log(`run ${entry.run}: couldn't write ${record}: ${error}`);
+      }
+    }
     save(entry);
     log(`run ${entry.run} (${rule.name}) turn ${entry.turn} started, pid ${child.pid}`);
   }
