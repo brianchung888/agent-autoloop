@@ -75,9 +75,19 @@ function describe(name: string, folder: string, argv: string[]) {
 }
 
 /**
+ * The plugins already made, by `<name>/<kind>`. A source plugin is made once because importing a module caches it:
+ * `loadPlugin` is called on every webhook (host/server.ts) and on every tick (worker/agents.ts), and what comes back
+ * the second time is the module that was already there. A process plugin has to be the same, or every one of those
+ * calls is an extra run of the program just to ask `describe` what it has — one request, two processes, both of them
+ * blocking the hub. So it is made once, and that is also what makes it behave as a source plugin does: a plugin
+ * changed under a running hub takes effect when the hub is next started, not halfway through.
+ */
+const made = new Map<string, unknown>();
+
+/**
  * The plugin, as the shape its kind is read as. `entry` and `args` come from the manifest, already known to stay
  * inside the plugin's own folder; `describe` is asked here, which is where a process plugin first runs — the same
- * moment a source plugin would first be imported and run.
+ * moment a source plugin would first be imported and run, and as with an import, only the first time.
  */
 export function processPlugin(
   name: string,
@@ -86,6 +96,16 @@ export function processPlugin(
   entry: string,
   args: readonly string[],
 ): unknown {
+  const key = `${name}/${kind}`;
+  if (made.has(key)) return made.get(key);
+  // Only what came out whole is kept. A plugin that threw — no entry, nothing answered, a channel — is asked again
+  // next time, so a person who fixes it does not have to restart the hub to find out.
+  const plugin = make(name, kind, folder, entry, args);
+  made.set(key, plugin);
+  return plugin;
+}
+
+function make(name: string, kind: PluginKind, folder: string, entry: string, args: readonly string[]): unknown {
   if (kind === "channel")
     throw new Error(
       `${name} 是通道插件，现在还不能用 runtime: "process"：通道是和中台一样长命的循环，不是一次一答的翻译。` +

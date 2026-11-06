@@ -6,7 +6,7 @@
 // turn fails for no stated reason; a plugin's `plugin.json` overrides the `.ts` file beside it, changing which plugin
 // an install already working has; a channel is let through, where nothing can carry its loop.
 import assert from "node:assert/strict";
-import { copyFileSync, linkSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, linkSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { setup } from "./helpers.ts";
@@ -121,6 +121,37 @@ test("答不出一行 JSON、或者什么都不答，都说得明明白白", asy
 test("通道还不能这样跑，而且说清楚该怎么办", async () => {
   plugin("outside-channel", handler({ command: "[]" }));
   await assert.rejects(() => loadPlugin("outside-channel", "channel"), /通道是和中台一样长命的循环/);
+});
+
+test("describe 只问一次：中台每个请求、worker 每一拍都要取这个插件", async () => {
+  // 每被起一次就往这个文件里加一行，于是数行数就是数进程。
+  const folder = plugin(
+    "counted-source",
+    `
+import { appendFileSync, readFileSync } from "node:fs";
+appendFileSync("ran.log", "x\\n");
+const request = JSON.parse(readFileSync(0, "utf8"));
+if (request.call === "describe") console.log(JSON.stringify({ ok: true, value: { calls: ["translate"] } }));
+else console.log(JSON.stringify({ ok: true, value: [{ id: "e", type: "t" }] }));
+`,
+  );
+  const runs = () => readFileSync(join(folder, "ran.log"), "utf8").trimEnd().split("\n").length;
+  const first = await loadPlugin("counted-source", "source");
+  assert.equal(runs(), 1, "describe");
+  // 再取两次：源码插件这时拿到的是已经 import 过的那个模块，process 插件也要是同一个。
+  assert.equal(await loadPlugin("counted-source", "source"), first);
+  assert.equal(await loadPlugin("counted-source", "source"), first);
+  assert.equal(runs(), 1, "describe 又跑了一次：每个 webhook 就多起一个进程");
+  // 而真的调用照旧一次一个进程：那是协议说的，不是可以省掉的。
+  assert.deepEqual(first({ headers: {}, body: "{}", secret: "" }), [{ id: "e", type: "t" }]);
+  assert.equal(runs(), 2);
+});
+
+test("没做成的插件不进缓存：修好了不必重启中台", async () => {
+  plugin("fixable", 'console.log(JSON.stringify({ ok: false, error: "先运行 gh auth login" }));');
+  await assert.rejects(() => loadPlugin("fixable", "agent"), /先运行 gh auth login/);
+  plugin("fixable", handler({ command: '["printf", "hi"]', read: "({ text: request.stdout })" }));
+  assert.equal(typeof (await loadPlugin("fixable", "agent")).command, "function");
 });
 
 test("同一个目录里既有 .ts 又有 plugin.json，那个 .ts 还是赢：装好的插件不会被改掉", async () => {
