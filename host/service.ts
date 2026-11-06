@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import path from "node:path";
 import { HOME } from "./home.ts";
+import { secureDir } from "./permissions.ts";
 import { stablePath } from "./node-path.ts";
 import { running } from "../worker/process.ts";
 import { installTask, removeTask, taskAtLogon, taskEnabled } from "./service-win.ts";
@@ -94,7 +95,7 @@ const taskOptions = () => ({
 });
 
 export function installService() {
-  mkdirSync(path.join(HOME, "logs"), { recursive: true, mode: 0o700 });
+  secureDir(path.join(HOME, "logs"));
   if (windows()) return installTask(taskOptions());
   if (process.platform === "darwin") {
     mkdirSync(path.dirname(plistFile()), { recursive: true });

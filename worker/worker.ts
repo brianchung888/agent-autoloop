@@ -22,6 +22,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { HubError, type Hub } from "../protocol/client.ts";
 import { HOME } from "../host/home.ts";
+import { secureDir } from "../host/permissions.ts";
 import type { Job } from "../protocol/job.ts";
 import { addUsage, type Notice, type Result } from "../protocol/validate.ts";
 import { adapterFor, type Adapter, type Reading, type Turn, type Usage } from "./agents.ts";
@@ -160,7 +161,7 @@ export function createWorker({
     if (!said.has(line)) log(line);
     said.add(line);
   };
-  mkdirSync(RUNS, { recursive: true, mode: 0o700 });
+  secureDir(RUNS);
 
   const entries = () =>
     readdirSync(RUNS).flatMap((id) => {

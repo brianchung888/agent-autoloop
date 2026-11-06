@@ -6,6 +6,7 @@ import path from "node:path";
 import { loadChannel } from "./channels.ts";
 import { parseListen, readConfig, type ChannelConfig } from "./config.ts";
 import { HOME } from "./home.ts";
+import { secureDir } from "./permissions.ts";
 import { claimUp, runningUp, stopFile } from "./service.ts";
 import { commitOf } from "./version.ts";
 import { hubClient } from "../protocol/client.ts";
@@ -91,8 +92,8 @@ function keepChannelRunning(id: string, { use, key, ...options }: ChannelConfig,
 
 export async function up() {
   const config = readConfig();
-  mkdirSync(HOME, { recursive: true, mode: 0o700 });
-  if (LOG_FILE) mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+  secureDir(HOME);
+  if (LOG_FILE) secureDir(path.dirname(LOG_FILE));
   const unlock = lock();
   // Plugins run in this process, and an `error` event or a promise nobody handled is theirs to answer for, not the hub's.
   // Everything that matters is in transactions, so the rest can carry on.

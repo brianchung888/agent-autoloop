@@ -9,6 +9,7 @@ import { hubClient } from "../protocol/client.ts";
 import { parseRules } from "../protocol/rules.ts";
 import { CONFIG_FILE, readConfig, writeConfig, type Config } from "../host/config.ts";
 import { HOME, RULES_FILE } from "../host/home.ts";
+import { permissionTrouble, secureDir } from "../host/permissions.ts";
 import {
   installService,
   removeService,
@@ -275,7 +276,7 @@ async function init(args: string[]) {
   // `init -p 4000` would otherwise install on the default port in silence.
   if (rest.length) return fail(`不认识的参数：${rest.join(" ")}\n\n${INIT_USAGE}`);
   if (existsSync(CONFIG_FILE)) return fail(`已经装过了：${CONFIG_FILE}`);
-  mkdirSync(HOME, { recursive: true, mode: 0o700 });
+  secureDir(HOME);
   mkdirSync(path.join(HOME, "try"), { recursive: true });
   const hostName = hostname()
     .toLowerCase()
@@ -494,6 +495,9 @@ async function doctor() {
   };
   say(Number(process.versions.node.split(".")[0]) >= 24, `Node ${process.versions.node}`);
   if (!existsSync(CONFIG_FILE)) return say(false, "还没装好：运行 agent-autoloop init");
+  // Not a red mark: it still runs, and whoever runs it should know what it does not promise about these files.
+  const files = permissionTrouble();
+  if (files) console.log(`○ 文件权限降级：${files}`);
   const config = readConfig();
   if (config.hub) {
     try {

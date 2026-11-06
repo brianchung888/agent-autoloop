@@ -12,14 +12,17 @@ import { NotFound } from "../kernel/errors.ts";
 import { initialize, rows, statement, type Fact, type Row, type Table } from "../kernel/evolve.ts";
 import * as query from "../kernel/query.ts";
 import { commitLatest, openView } from "../kernel/store.ts";
+import { secureDir, secureFile } from "./permissions.ts";
 import { parseRules as checkRules, RulesError } from "../protocol/rules.ts";
 
-mkdirSync(HOME, { recursive: true, mode: 0o700 });
+secureDir(HOME);
 chmodSync(HOME, 0o700);
 const masterKeyFile = join(HOME, "master.key");
 if (!existsSync(masterKeyFile)) {
   writeFileSync(masterKeyFile, randomBytes(32).toString("base64url"), { mode: 0o600, flag: "wx" });
 }
+// The one file nothing else can stand in for, so it is said of this file too, not only of the folder holding it.
+secureFile(masterKeyFile);
 const masterKey = readFileSync(masterKeyFile, "utf8").trim();
 // An empty or cut-short key would still sign links, and card links derive from what channels see. Replacing it would
 // void every link and token, so that is left to the owner.

@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { HOME } from "./home.ts";
+import { secureDir } from "./permissions.ts";
 
 export type ChannelConfig = { use?: string; key: string; [option: string]: unknown };
 export type Config = {
@@ -33,7 +34,7 @@ export function readConfig(): Config {
 }
 
 export function writeConfig(config: Config) {
-  mkdirSync(HOME, { recursive: true, mode: 0o700 });
+  secureDir(HOME);
   writeFileSync(`${CONFIG_FILE}.tmp`, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   renameSync(`${CONFIG_FILE}.tmp`, CONFIG_FILE);
 }
