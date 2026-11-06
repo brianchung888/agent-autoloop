@@ -1,12 +1,12 @@
 // Everything this machine does, in one process: the hub, the worker and its channels, whichever config.json says. They
 // speak the same protocol to each other here as they would across the world. A stop leaves agents running: they're
 // detached, and the worker finds them again when it's back.
-import { appendFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { loadChannel } from "./channels.ts";
 import { parseListen, readConfig, type ChannelConfig } from "./config.ts";
 import { HOME } from "./home.ts";
-import { runningUp } from "./service.ts";
+import { claimUp, runningUp } from "./service.ts";
 import { commitOf } from "./version.ts";
 import { hubClient } from "../protocol/client.ts";
 import { createWorker } from "../worker/worker.ts";
@@ -31,13 +31,8 @@ function lock() {
   const running = runningUp();
   // Its own number is what was left behind: pid 1 every time in a container, and a matter of luck after a restart.
   if (running !== null && running !== process.pid) throw new Error(`已经在跑了（进程 ${running}）`);
-  const file = path.join(HOME, "up.pid");
-  writeFileSync(file, String(process.pid));
-  return () => {
-    try {
-      unlinkSync(file);
-    } catch {}
-  };
+  // What anyone left behind is replaced here, which is what keeps a number nobody holds any more from standing for one.
+  return claimUp();
 }
 
 /** secrets.env: what an adapter needs to check a webhook, kept out of rules.json. */

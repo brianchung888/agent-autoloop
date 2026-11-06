@@ -1,12 +1,13 @@
 // Keeping it running: launchd on a Mac, systemd on Linux, a scheduled task on Windows. All three start it without an
 // administrator and bring it back when it stops; only how long that takes differs, and host/service-win.ts says why.
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { HOME } from "./home.ts";
 import { stablePath } from "./node-path.ts";
+import { running } from "../worker/process.ts";
 import { installTask, removeTask, taskAtLogon, taskEnabled } from "./service-win.ts";
 
 /** Asked each time, not once: a test may be standing in for another platform by the time it is. */
@@ -131,19 +132,56 @@ export function removeService() {
   }
 }
 
-/** The process that left its number in up.pid, if it still is that process: the number may be someone else's by now. */
-export function runningUp() {
-  const file = path.join(HOME, "up.pid");
-  if (!existsSync(file)) return null;
-  const pid = readFileSync(file, "utf8").trim();
-  let command = "";
+const pidFile = () => path.join(HOME, "up.pid");
+/** Written beside up.pid by the `up` that left its number there, and taken away when it lets go. */
+const tokenFile = () => path.join(HOME, "up.token");
+
+/** What `ps` says the process at this number is running, where there is a `ps` to ask. */
+function commandOf(pid: number) {
+  if (windows()) return "";
   try {
-    command = execFileSync("ps", ["-p", pid, "-o", "command="], {
+    return execFileSync("ps", ["-p", String(pid), "-o", "command="], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-  } catch {}
-  return /agent-autoloop(\.ts)? up\b/.test(command) ? Number(pid) : null;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The process that left its number in up.pid, if it still is that process: the number may be someone else's by now.
+ *
+ * Two things have to hold. The number is a live process — asked the same three ways a run is, and anything but a plain
+ * yes counts as nothing running, because what this answers is a lock and a lock may never be taken on a guess. And the
+ * number was left by an `up` of this install, which is what up.token beside it says: a number alone is worth little,
+ * being pid 1 every time in a container and a matter of luck after a restart. Where there is a `ps` the command line is
+ * still read, for a file left by a version that wrote no token.
+ *
+ * What is left unanswered: a number that was recycled between an `up` being killed outright and this being asked. The
+ * token is a file, not a hold on the process, so it cannot tell that apart — `up` clearing both files as it starts is
+ * what keeps that window short.
+ */
+export function runningUp() {
+  if (!existsSync(pidFile())) return null;
+  const pid = Number(readFileSync(pidFile(), "utf8").trim());
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  if (running(pid) !== true) return null;
+  if (existsSync(tokenFile())) return pid;
+  return /agent-autoloop(\.ts)? up\b/.test(commandOf(pid)) ? pid : null;
+}
+
+/** This process takes the install's one place to run. The number stays as it was written: a person may read it. */
+export function claimUp() {
+  writeFileSync(pidFile(), String(process.pid));
+  writeFileSync(tokenFile(), `${randomUUID()}\n`, { mode: 0o600 });
+  return () => {
+    for (const file of [tokenFile(), pidFile()]) {
+      try {
+        rmSync(file, { force: true });
+      } catch {}
+    }
+  };
 }
 
 /** Stopping a service returns before its process is gone, and one started by hand has no service to stop it. */
