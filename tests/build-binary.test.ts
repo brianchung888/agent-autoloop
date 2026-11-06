@@ -124,3 +124,29 @@ test("校验和不是拿来比两次建置的：这不是可重现建置，两�
   assert.match(install, /AGENT_AUTOLOOP_COMMIT/, "INSTALL.md 没说 export 了这个会盖掉二进位自己说的版本");
   assert.match(install, /AGENT_AUTOLOOP_RELEASE/);
 });
+
+test("改一份文档也会去看被跟踪的文字：那一步不挂在 scope 上", () => {
+  // scope=docs 的意思是「没有测试读这些文字」，于是 check.yml 里每一步都被 scope != 'docs' 拦住，整条流水线
+  // 一个文件都不看。而控制字符、还有不再解码的文件，正是一次改文档的提交带进来的东西（INSTALL.md 里那条
+  // `certutil -hashfile .<BEL>gent-autoloop-windows-x64.exe` 就是这么来的）。tests/tracked-text.test.ts 不需要
+  // 任何依赖，所以跑它那一步不该挂在 scope 上，它前面的 node 也不该。
+  const lines = readFileSync(join(root, ".github", "workflows", "check.yml"), "utf8").split("\n");
+  const step = lines.findIndex((line) => line.includes("- run:") && line.includes("tests/tracked-text.test.ts"));
+  assert.ok(step > 0, "check.yml 里没有谁去跑 tests/tracked-text.test.ts");
+  // 一个 step 的 `if` 写在它自己那一行，或者同一个 step 里紧挨着的别的行：从这一步往上找到它自己的 `- ` 开头。
+  let from = step;
+  while (from > 0 && !lines[from].trimStart().startsWith("- ")) from -= 1;
+  const own = lines.slice(from, step + 1).join("\n");
+  assert.doesNotMatch(own, /\bif:/, `跑 tracked-text 的那一步被 scope 拦住了：\n${own}`);
+  // 不挂 scope 的 setup-node 也得在它前面，否则那一步没有 node 可用。
+  const setup = lines.findIndex((line) => line.includes("uses: actions/setup-node"));
+  assert.ok(setup > 0 && setup < step, "setup-node 不在跑 tracked-text 的那一步前面");
+  let head = setup;
+  while (head > 0 && !lines[head].trimStart().startsWith("- ")) head -= 1;
+  const node = lines.slice(head, setup + 1).join("\n");
+  assert.doesNotMatch(node, /\bif:/, `第一个 setup-node 挂在 scope 上，docs 的时候没有 node：\n${node}`);
+  // 而 `npm ci` 还是该挂着：这一步的全部意思就是它不需要依赖。
+  const ci = lines.findIndex((line) => line.includes("run: npm ci"));
+  assert.ok(ci > 0, "check.yml 里没有 npm ci 了");
+  assert.match(lines[ci - 1], /if: steps\.scope\.outputs\.scope != 'docs'/, "npm ci 不该跟着一起放开");
+});

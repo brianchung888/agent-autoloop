@@ -24,14 +24,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      # These jobs stay required on main, so a docs change runs them too and they pass without doing anything.
+      # These jobs stay required on main, so a docs change runs them too and all it gets them to do is the one step
+      # below.
       - id: scope
         run: sh scripts/ci-scope.sh >> "$GITHUB_OUTPUT"
-      - if: steps.scope.outputs.scope != 'docs'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      # Node whatever the scope said, because the step after this one runs whatever the scope said. The rest of the job
+      # wants it anyway, so this is one setup for both rather than a second one further down.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           package-manager-cache: false
+      # The one test a docs-only change is the reason for: a control character in a tracked file, or a file that
+      # stopped decoding as UTF-8, is exactly what a docs commit brings in, and every step below this one is gated on
+      # the scope not being docs. It reads `git ls-files` and the files, so it needs no dependencies and no `npm ci`:
+      # a quarter of a second, and scope=docs stops meaning nothing was looked at. tests/build-binary.test.ts keeps
+      # this step off the gate.
+      - run: node --disable-warning=ExperimentalWarning --test tests/tracked-text.test.ts
       - if: steps.scope.outputs.scope != 'docs'
         run: npm ci
       - if: steps.scope.outputs.scope != 'docs'
