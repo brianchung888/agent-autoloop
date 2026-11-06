@@ -1,4 +1,8 @@
 // The command line: what a person, or their Agent, types.
+//
+// First of all, and before anything that could reach the runtime's own SQLite: the one warning a packaged build has no
+// command line left to turn off (host/warnings.ts). Importing it is what does it, so it comes before everything here.
+import "../host/warnings.ts";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
