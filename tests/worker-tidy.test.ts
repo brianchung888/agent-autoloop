@@ -8,10 +8,7 @@ import { join } from "node:path";
 import { skipOn } from "./helpers.ts";
 
 /** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
-const test = skipOn(
-  ["darwin", "linux"],
-  "这份测试用 #!/bin/sh 写假 Agent 并按 POSIX 模式位检查清理结果，Windows 上没有 /bin/sh",
-);
+const test = skipOn(["win32"], "这份测试用 #!/bin/sh 写假 Agent 并按 POSIX 模式位检查清理结果，Windows 上没有 /bin/sh");
 import { setup } from "./helpers.ts";
 
 const home = setup("worker-tidy");
@@ -96,7 +93,7 @@ test("only finished runs' folders old enough go", () => {
   rmSync(inHand, { recursive: true });
 });
 
-test("a folder that can't be cleared is said and leaves the rest to go", { skip: process.getuid!() === 0 }, () => {
+test("a folder that can't be cleared is said and leaves the rest to go", { skip: process.getuid?.() === 0 }, () => {
   const lines: string[] = [];
   const worker = createWorker({ hub: quiet() as any, name: "w1", wait: 0, log: (line) => lines.push(line) });
   const stuck = finished("5-1", 15);

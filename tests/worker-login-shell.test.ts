@@ -10,7 +10,7 @@ import { skipOn } from "./helpers.ts";
 
 /** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
 const test = skipOn(
-  ["darwin", "linux"],
+  ["win32"],
   "这份测试验证的是登录 shell 那一层（$SHELL -lc）；Windows 上没有登录 shell，worker/launcher.ts 本来就不经过它",
 );
 
@@ -37,7 +37,8 @@ exec /bin/sh -c "$2"
 `,
   { mode: 0o755 },
 );
-const fish = spawnSync("/bin/sh", ["-c", "command -v fish"], { encoding: "utf8" }).stdout.trim();
+// Nothing runs this file off POSIX, but its body still does: a shell that is not there leaves no output at all.
+const fish = (spawnSync("/bin/sh", ["-c", "command -v fish"], { encoding: "utf8" }).stdout ?? "").trim();
 
 const argument = `it's \\ "quoted" $HOME $(touch argv-injected)\nsecond line`;
 const waiting: any[] = [];

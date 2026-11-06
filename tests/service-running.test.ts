@@ -10,7 +10,7 @@ import { skipOn } from "./helpers.ts";
 
 /** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
 const test = skipOn(
-  ["darwin", "linux"],
+  ["win32"],
   "这份测试用 #!/bin/sh 写假 systemctl 冒充用户级与系统级服务管理器；Windows 上常驻走计划任务，由 tests/platform-service.test.ts 真机验证",
 );
 import { setup } from "./helpers.ts";

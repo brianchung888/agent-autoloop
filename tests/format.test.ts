@@ -13,7 +13,7 @@ import { skipOn } from "./helpers.ts";
 
 /** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
 const test = skipOn(
-  ["darwin", "linux"],
+  ["win32"],
   "这份测试用 data: 与 file: URL 动态 import 本仓库的模块；Windows 上是 ERR_UNSUPPORTED_ESM_URL_SCHEME，与被测的格式化无关",
 );
 

@@ -19,7 +19,7 @@ import { skipOn } from "./helpers.ts";
 
 /** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
 const test = skipOn(
-  ["darwin", "linux"],
+  ["win32"],
   "这份测试用 #!/bin/sh 写假 lark-cli，并按 POSIX 的可执行位挑程序，Windows 上没有对应语义",
 );
 import feishu, { render } from "../plugins/feishu/channel.ts";

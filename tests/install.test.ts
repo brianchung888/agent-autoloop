@@ -30,7 +30,7 @@ import { skipOn } from "./helpers.ts";
 
 /** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
 const test = skipOn(
-  ["darwin", "linux"],
+  ["win32"],
   "这份测试跑的是 install.sh（POSIX sh、ln -sf、chmod）；Windows 的等价物是 install.ps1，由 scripts/install-smoke.ps1 真机验证",
 );
 

@@ -2,7 +2,7 @@
 // the environment they read.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { after, test as runTest } from "node:test";
 
 /**
@@ -29,9 +29,19 @@ export function skipOn(platforms: NodeJS.Platform[], why: string): typeof runTes
 export function setup(name: string, rules = "rules.fixture.json") {
   const directory = mkdtempSync(join(tmpdir(), `agent-autoloop-${name}-`));
   process.env.AGENT_AUTOLOOP_HOME = directory;
-  process.env.AGENT_AUTOLOOP_RULES = rules.startsWith("/") ? rules : join(import.meta.dirname, rules);
+  // A path from the root is given as it is; a bare name is one of the fixtures beside this file. On Windows a path
+  // from the root does not begin with a separator at all, so what makes it one is asked rather than guessed.
+  process.env.AGENT_AUTOLOOP_RULES = isAbsolute(rules) ? rules : join(import.meta.dirname, rules);
   process.env.AGENT_AUTOLOOP_PUBLIC_URL = "https://hub.test";
-  after(() => rmSync(directory, { recursive: true, force: true }));
+  after(() => {
+    try {
+      rmSync(directory, { recursive: true, force: true, maxRetries: 3 });
+    } catch (error) {
+      // Windows refuses to remove a folder anything still holds open, and a detached child may for a moment longer.
+      // Tidying up is not what any of these tests are about, and the folder is in the system's own temporary place.
+      if (process.platform !== "win32") throw error;
+    }
+  });
   return directory;
 }
 

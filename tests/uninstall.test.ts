@@ -27,7 +27,7 @@ import { skipOn } from "./helpers.ts";
 
 /** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
 const test = skipOn(
-  ["darwin", "linux"],
+  ["win32"],
   "这份测试按 POSIX symlink 与 ln -sf 验证卸载；Windows 上 PATH 上是 .cmd 包装脚本、Skill 是 junction 或复制，由 scripts/install-smoke.ps1 真机验证",
 );
 

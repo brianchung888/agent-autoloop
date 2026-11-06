@@ -16,7 +16,7 @@ import { skipOn } from "./helpers.ts";
 
 /** 整份文件在 Windows 上跳过，理由写进每一条 skip 里。 */
 const test = skipOn(
-  ["darwin", "linux"],
+  ["win32"],
   "这份测试用 #!/bin/sh 写假 osascript / notify-send；Windows 上桌面通道一律跳过，没有可替换的通知程序",
 );
 import { setup } from "./helpers.ts";
