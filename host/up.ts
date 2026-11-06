@@ -51,6 +51,13 @@ const log = (who: string) => (line: string) => {
 /** Only one of these per install: a second would take work beside the first. */
 function lock() {
   const running = runningUp();
+  // Not being able to look is not the same as nothing being there. Two hubs on one SQLite file is worse than a hub
+  // that comes back five minutes later, and the task's repeating trigger is what brings it back.
+  if (running === "unknown") {
+    throw new Error(
+      `看不清 ${path.join(HOME, "up.pid")} 里的号还在不在（列进程没成功）：确认没有别的 up 在跑之后，把它删掉再来`,
+    );
+  }
   // Its own number is what was left behind: pid 1 every time in a container, and a matter of luck after a restart.
   if (running !== null && running !== process.pid) throw new Error(`已经在跑了（进程 ${running}）`);
   // What anyone left behind is replaced here, which is what keeps a number nobody holds any more from standing for one.

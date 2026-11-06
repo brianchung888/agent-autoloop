@@ -176,6 +176,24 @@ test("what a killed `up` leaves behind never stops the next one", notWindows, as
   assert.equal(runningUp(), process.pid);
 });
 
+test("列不出进程的时候，这把锁谁都不许抢", notWindows, (t) => {
+  const release = claimUp();
+  t.after(release);
+  assert.equal(runningUp(), process.pid, "先真的有人持锁");
+
+  // tasklist 在 System32 里。把它从 PATH 上拿掉，机器就只能回「看不出来」。以前这被当成「没人在跑」，第二个 up 于是
+  // 覆盖掉第一个的锁，两个 hub 开同一个 SQLite 文件——计划任务的 IgnoreNew 本来就挡掉了重复触发，宁可不抢。
+  const was = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = was;
+  });
+  process.env.PATH = join(home, "这里什么都没有");
+  assert.equal(runningUp(), "unknown", "看不清就不是「没人在跑」");
+
+  process.env.PATH = was;
+  assert.equal(runningUp(), process.pid, "看得见了，还是这把锁");
+});
+
 test("stopping nothing writes nothing and leaves nothing", () => {
   rmSync(join(home, "up.pid"), { force: true });
   stopUp();

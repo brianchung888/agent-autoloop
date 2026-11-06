@@ -151,33 +151,34 @@ function commandOf(pid: number) {
 }
 
 /**
- * The process that left its number in up.pid, if it still is that process: the number may be someone else's by now.
+ * Who holds the lock: the number of the `up` that holds it, `null` when nobody does, and `"unknown"` when it could not
+ * be looked at. Three answers, because a lock may never be taken on a guess — in either direction.
  *
- * Two things have to hold. The number is a live process — asked the same three ways a run is, and anything but a plain
- * yes counts as nothing running, because what this answers is a lock and a lock may never be taken on a guess. And the
- * number was left by an `up` of this install, which is what the token in up.pid and the one beside it say together: a
- * number alone is worth little, being pid 1 every time in a container and a matter of luck after a restart.
+ * Two things have to hold. The number is a live process, and it was left by an `up` of this install, which is what the
+ * token in up.pid and the one beside it say together: a number alone is worth little, being pid 1 every time in a
+ * container and a matter of luck after a restart.
  *
- * Whichever of the two cannot be confirmed, the lock is free. That is the only safe way round: a lock nobody can be
- * shown to hold stops `up` from ever starting again, and `up` is what a scheduled task or a service brings back.
- *
- * What is left unanswered: a number recycled between an `up` being killed outright and this being asked, by something
- * that is also this program's runtime. The token is a file, not a hold on the process, so it cannot tell that apart —
- * `up` replacing both files as it starts is what keeps that window short.
+ * Where a `ps` can say what the number is running, not being able to look still counts as nothing running: the command
+ * line settles the question outright once it can be read, and a lock nobody can be shown to hold would stop `up` from
+ * ever starting again. On Windows there is no command line to read back, and taking "could not look" for "nobody's" is
+ * what lets `tasklist` failing for a moment put two hubs on one database — so there the answer is `"unknown"`, and `up`
+ * would rather come back five minutes later (the task's trigger comes round again, and IgnoreNew drops the repeat).
  */
-export function runningUp() {
+export function runningUp(): number | null | "unknown" {
   const claim = readClaim();
   if (claim === null) return null;
-  if (running(claim.pid) !== true) return null;
   const token = readToken();
   if (windows()) {
-    // Nothing can be read back off a Windows process to say what it is running, so two cheaper things are asked
-    // instead. The number has to be held by this program's own runtime — a stopped `up` whose number was taken over by
+    // Nothing can be read back off a Windows process to say what it is running, so cheaper things are asked instead.
+    // The number has to be held by this program's own runtime — a stopped `up` whose number was taken over by
     // explorer.exe is the number of something else now, and treating it as a lock is how a hub never starts again. And
     // the number has to come with the token this install left beside it, written in the same breath.
-    if (alive(claim.pid, "") !== true) return null;
+    const image = alive(claim.pid, "");
+    if (image === null) return "unknown";
+    if (image === false) return null;
     return claim.token !== null && claim.token === token ? claim.pid : null;
   }
+  if (running(claim.pid) !== true) return null;
   // Where there is a `ps` the command line is read for a file left by a version that wrote no token at all.
   if (token === null) return /agent-autoloop(\.ts)? up\b/.test(commandOf(claim.pid)) ? claim.pid : null;
   return claim.token === null || claim.token === token ? claim.pid : null;
@@ -244,7 +245,9 @@ export const stopFile = () => path.join(HOME, "stop");
 /** Stopping a service returns before its process is gone, and one started by hand has no service to stop it. */
 export function stopUp() {
   const pid = runningUp();
-  if (pid === null) return;
+  // Nothing to stop, or nothing that can be shown to be there: ending a number that cannot be shown to be this
+  // install's `up` would be somebody else's process ended for them.
+  if (typeof pid !== "number") return;
   try {
     writeFileSync(stopFile(), `${new Date().toISOString()}\n`);
   } catch {}
@@ -254,14 +257,18 @@ export function stopUp() {
       process.kill(pid, "SIGTERM");
     } catch {}
   }
-  for (let tries = 0; tries < 50 && runningUp() !== null; tries++) pause(100);
+  // On Windows what is waited on is only whether that number is a process at all: a number cannot be given away while
+  // the process holding it is alive, and asking the whole question fifty times over asks the machine fifty times.
+  const gone = windows() ? () => running(pid) === false : () => runningUp() === null;
+  for (let tries = 0; tries < 50 && !gone(); tries++) pause(100);
   // It was asked, and five seconds later it is still there. On Windows nothing but ending it outright does, and only
-  // this process: the agents under it are detached on purpose, and the worker finds them again when it is back.
-  if (windows() && runningUp() !== null) {
+  // this process: the agents under it are detached on purpose, and the worker finds them again when it is back. The
+  // whole question is asked once more first — ending a number that has become somebody else's is not stopping `up`.
+  if (windows() && runningUp() === pid) {
     try {
       process.kill(pid);
     } catch {}
-    for (let tries = 0; tries < 50 && runningUp() !== null; tries++) pause(100);
+    for (let tries = 0; tries < 50 && !gone(); tries++) pause(100);
   }
   // Whether or not it read it, it is no longer being asked.
   rmSync(stopFile(), { force: true });
