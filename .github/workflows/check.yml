@@ -73,14 +73,16 @@ jobs:
         run: npm run typecheck
       - if: steps.scope.outputs.scope != 'docs'
         run: npm run format:check
-      # A floor, not a count: it may only go up. Nothing being run is the failure this guards against.
+      # A floor, not a count: it may only go up. Nothing being run is the failure this guards against — so a skipped
+      # case may not be counted towards it. TAP says `ok` of one too, with `# SKIP` after it, which is the whole point:
+      # every one of these could turn into a skip and the number would not move.
       - if: steps.scope.outputs.scope != 'docs'
         shell: bash
         run: |
           node --disable-warning=ExperimentalWarning --test --test-reporter=tap tests/platform-*.test.ts | tee platform.tap
-          passed=$(grep -c '^ok ' platform.tap)
-          echo "platform tests passed: $passed"
-          [ "$passed" -ge 12 ] || { echo "too few platform tests ran: $passed"; exit 1; }
+          passed=$(grep '^ok ' platform.tap | grep -vc 'SKIP' || true)
+          echo "platform tests passed: $passed, skipped: $(grep '^ok ' platform.tap | grep -c 'SKIP' || true)"
+          [ "$passed" -ge 24 ] || { echo "too few platform tests ran: $passed"; exit 1; }
       - if: steps.scope.outputs.scope == 'normal' || steps.scope.outputs.scope == 'kernel'
         shell: bash
         run: |
