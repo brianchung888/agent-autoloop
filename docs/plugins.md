@@ -47,6 +47,8 @@ node --disable-warning=ExperimentalWarning --test --test-name-pattern='agent-aut
 { "runtime": "process", "entry": "runtime.exe", "args": ["handler.mjs"] }
 ```
 
+**`entry` 也不能借 symlink 或 junction 出界。** 走不出插件目录这件事比的是**真实路径**（`realpathSync`），不是写法：插件目录里放一个指向外面的 symlink / junction（Windows 上的目录连接），写 `entry: "linked/tool.exe"` 一样会被拒掉，说的还是「走出了插件目录」那一句。连接尽头什么都没有的，也当出界处理——一个现在指不到地方的连接，待会儿可以指到任何地方。所以插件要用的程序得真的在插件目录里（一份拷贝，或者 clone 下来就带着）。
+
 跨平台的插件按平台写两份 `plugin.json`，或者干脆带一个各平台的原生可执行文件——那是这个协议最省事的用法：读一行，打一行，结束。
 
 调用方式：每次起一个进程，标准输入给一行 JSON 请求，标准输出的**最后一行**是 JSON 答复，然后退出。答复是 `{"ok":true,"value":…}` 或 `{"ok":false,"error":"一句人能照着做的话"}`；中间想打印别的东西可以，只要答复在最后一行。
@@ -61,6 +63,8 @@ node --disable-warning=ExperimentalWarning --test --test-name-pattern='agent-aut
 | `{"call":"translate","headers":{},"body":"","secret":""}` | 事件插件的那个函数           | 事件数组                                                          |
 
 这些就是全部：协议只是把已有的函数形状搛过进程边界，没有新能力。`describe` 没列出 `link` 或 `check` 的，就没有这两个：中台读的是「有没有」，凭空给一个 `link` 会报一个打不开的会话链接。一次调用就是程序跑一次：不留状态，也不用守着。智能体那四个调用在调用处是同步的（`worker/agents.ts` 的 `Adapter` 就是这个形状），所以它们会阻塞；事件插件那一个调用不阻塞——收 webhook 那头本来就是 `async`，等另一个程序答话的时候中台照旧转。
+
+**`describe` 每个进程只问一次。** 中台第一次取这个插件的时候问它有哪几个 call，往后就记着了——源码插件被 `import` 一次就是这个样子，`process` 插件也要是同一个样子，否则每收一个 webhook、worker 每一拍，都要为了问一句 `describe` 多起一个进程。代价是：**插件改了要重启中台才算数**（`agent-autoloop up` 重起一次）。改了 `plugin.json`、换了 `entry` 指的程序、给插件加了一个 `link` 或 `check`，在跑着的那个中台里都还是旧的。没做成的插件不进这个记忆——报了错的下一次会再问一遍，所以修好一个起不来的插件不必重启。
 
 **通道现在不支持 `process`。** 通道是和中台一样长命的循环，不是一次一答的翻译。用别的语言写通道，直接当独立程序连中台的 HTTP 协议（见下面的通道插件一节和 `examples/channel.sh`），不必经过插件机制。
 

@@ -196,6 +196,13 @@ else console.log(JSON.stringify({ ok: true, value: [{ id: "e", type: "t" }] }));
   // 而真的调用照旧一次一个进程：那是协议说的，不是可以省掉的。
   assert.deepEqual(await first({ headers: {}, body: "{}", secret: "" }), [{ id: "e", type: "t" }]);
   assert.equal(runs(), 2);
+
+  // 代价就在这里，docs/plugins.md 写明的那一条：插件改了要重启中台才算数。换掉 entry 指的那个程序，
+  // 跑着的这个中台拿到的还是记下来的那一个——连它声明过有哪几个 call 都还是旧的。
+  plugin("counted-source", `console.log(JSON.stringify({ ok: true, value: [{ id: "新的", type: "t" }] }));`);
+  assert.equal(await loadPlugin("counted-source", "source"), first, "改了插件，中台里还是记下来的那一个");
+  assert.deepEqual(await first({ headers: {}, body: "{}", secret: "" }), [{ id: "新的", type: "t" }]);
+  assert.equal(runs(), 2, "describe 没有再问一次：换了程序也不会重新问它有哪几个 call");
 });
 
 test("没做成的插件不进缓存：修好了不必重启中台", async () => {
