@@ -56,7 +56,7 @@ jobs:
       - run: npm ci
       - run: npm run test:quick
       - if: runner.os == 'Windows'
-        run: node --disable-warning=ExperimentalWarning --test tests/platform-process.test.ts tests/platform-service.test.ts tests/platform-permissions.test.ts
+        run: node --disable-warning=ExperimentalWarning --env-file=tests/lang.env --test tests/platform-process.test.ts tests/platform-service.test.ts tests/platform-permissions.test.ts
       - if: runner.os != 'Windows'
         run: sh scripts/install-smoke.sh
       - if: runner.os == 'Windows'
