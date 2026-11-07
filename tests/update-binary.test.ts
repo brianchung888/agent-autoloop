@@ -49,6 +49,8 @@ type Release = {
   truncate?: boolean;
   /** Serve the executable gzipped, which is what a CDN in front of a Release may do of its own accord. */
   gzip?: boolean;
+  /** Say a `content-encoding` on an unpacked body. `identity` is the one a far end may spell out for no reason. */
+  encoding?: string;
   /** Answer the lookup with this status instead. */
   status?: number;
 };
@@ -81,13 +83,14 @@ async function published(release: Release = {}) {
         res.writeHead(200, { "content-encoding": "gzip", "content-length": String(packed.length) });
         return void res.end(packed);
       }
+      const encoded = release.encoding ? { "content-encoding": release.encoding } : {};
       if (release.truncate) {
         // More promised than sent, and then the connection goes: the shape a download that broke arrives in.
-        res.writeHead(200, { "content-length": String(Buffer.byteLength(body) + 1000) });
+        res.writeHead(200, { ...encoded, "content-length": String(Buffer.byteLength(body) + 1000) });
         res.write(body);
         return void res.destroy();
       }
-      res.writeHead(200, { "content-length": String(Buffer.byteLength(body)) });
+      res.writeHead(200, { ...encoded, "content-length": String(Buffer.byteLength(body)) });
       return void res.end(body);
     }
     res.writeHead(404).end();
@@ -208,6 +211,24 @@ test("an asset that arrives gzipped is not read as a download that broke", async
   // The whole file, and the sum of the whole file: what is on the disk is the unpacked bytes the `.sha256` is of.
   assert.equal(it.says(), "新的那一个");
   assert.deepEqual(served.sort(), [`/assets/${NAME}`, `/assets/${NAME}.sha256`, "/releases/latest"]);
+});
+
+test("content-encoding: identity 不算打过包，长度还得比", async () => {
+  // `identity` 是 HTTP 自己用来说「什么都没做」的词。别家不写，写了的那一家不应该因此让长度那一关关掉——
+  // 关掉之后一份真的断了的下载就只能落到校验和那一关，说成「和发布的不是一份文件」（phase3-verification-round4.md 5）。
+  await published({ encoding: "identity", truncate: true });
+  const it = copy();
+  await assert.rejects(() => updateBinary(it.hooks()), /下载.*断了/s);
+  assert.equal(it.says(), "手上这一个");
+  assert.equal(existsSync(stagedName(it.executable)), false);
+  assert.equal(it.stopped.length, 0);
+});
+
+test("content-encoding: identity 的一份完整下载还是正常换上去", async () => {
+  await published({ encoding: "IDENTITY" });
+  const it = copy();
+  assert.equal((await updateBinary(it.hooks())).changed, true);
+  assert.equal(it.says(), "新的那一个");
 });
 
 test("没装常驻、中台却在跑的那台机器，得被告诉中台被停过", async () => {

@@ -168,9 +168,24 @@ export function sumIn(text: string, name: string) {
  * for gzip of its own accord and hands back what it unpacked, while `content-length` stays the length of what was
  * packed — so comparing them says «断了» on every single download of an asset a CDN chose to compress, and an
  * update that can never go through is worse than one that cannot tell a short read from a whole file
- * (phase3-verification-round3.md H). Where there is a `content-encoding` the length is not compared, and a body that
- * stopped early goes to the digest, which is where one that never said its length goes too.
+ * (phase3-verification-round3.md H). Where the body arrived under an encoding the length is not compared, and a body
+ * that stopped early goes to the digest, which is where one that never said its length goes too.
+ *
+ * `identity` is not an encoding, though it is a `content-encoding`. It is the header's own way of saying that nothing
+ * was done to the body — HTTP names it so that a request can ask for exactly that — so a far end that spells out what
+ * every other one leaves unsaid used to turn the length check off for no reason at all
+ * (phase3-verification-round4.md 5). The one word is read, and only the ones that mean something is packed count.
  */
+/**
+ * Whether what came back is not the bytes that were counted. Anything but `identity` is: this does not need to know
+ * which encoding it was, only that `content-length` and what the stream hands over are then two different counts.
+ */
+function packed(response: Response) {
+  const told = response.headers.get("content-encoding")?.trim().toLowerCase();
+  if (!told) return false;
+  return told.split(",").some((one) => one.trim() && one.trim() !== "identity");
+}
+
 async function downloadTo(url: string, file: string, name = basename(file)) {
   /** A download that did not finish, whichever of the three ways it failed to. Nothing half-written is left behind. */
   const broke = (why: string) => {
@@ -187,8 +202,7 @@ async function downloadTo(url: string, file: string, name = basename(file)) {
     throw error;
   }
   if (!response.body) throw broke(t("cli.selfUpdate.emptyBody"));
-  const packed = response.headers.get("content-encoding");
-  const said = packed ? NaN : Number(response.headers.get("content-length"));
+  const said = packed(response) ? NaN : Number(response.headers.get("content-length"));
   const digest = createHash("sha256");
   let got = 0;
   const bytes = Readable.fromWeb(response.body as never);
