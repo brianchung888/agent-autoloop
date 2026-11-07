@@ -42,10 +42,17 @@ test("只关那一句：别的实验性警告照旧说出来", () => {
 
 test("打包版那条路第一件事就是它：这个程序的每个命令都从 cli/main.ts 进来", () => {
   // 一个模块自己的 import 跑在它的 body 之前，所以写在 host/runtime.ts 的 body 里就太晚了——node:sqlite
-  // 那时候已经载完、已经说完了。顺序就是行为，所以钉住它：这一句要排在 cli/main.ts 的第一个 import。
+  // 那时候已经载完、已经说完了。顺序就是行为，所以钉住它：这一句要排在 cli/main.ts 最前面。
+  //
+  // 它前面只允许有一样东西：host/env-file.ts。那一个得更早（它一变 HOME 就不一样，而 HOME 是
+  // host/home.ts 加载那一刻定下来的），而它只读参数和一个文件，碰不到 node:sqlite——所以这里顺带钉住
+  // 「它自己不 import 任何东西」，不然那条路就从它身上绕过这一句了。
   const main = readFileSync(join(root, "cli", "main.ts"), "utf8");
-  const first = main.split("\n").find((line) => line.startsWith("import "));
-  assert.equal(first, 'import "../host/warnings.ts";', `cli/main.ts 的第一个 import 是 ${first}`);
+  const imports = main.split("\n").filter((line) => line.startsWith("import "));
+  const before = imports.slice(0, imports.indexOf('import "../host/warnings.ts";'));
+  assert.deepEqual(before, ['import "../host/env-file.ts";'], `这一句前面还有别的 import：${before.join(" ")}`);
+  const envFile = readFileSync(join(root, "host", "env-file.ts"), "utf8");
+  assert.doesNotMatch(envFile, /^import /m, "host/env-file.ts 自己 import 了东西：那就绕过了这一句");
 });
 
 test("源码模式下这一句什么都不改：命令行上那个 flag 还在", () => {
