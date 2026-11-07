@@ -4,6 +4,11 @@
 # that show a notification are stand-ins. It takes no service: a CI machine doesn't always have a session to run one in.
 set -eu
 
+# 这份自检断言的是这个程序原来那些字，也就是简体的那一份（i18n/zh-CN.ts）。程序和 install.sh 默认都说正體，
+# 所以这里说一次要哪一种；两种话都断言一遍不会多验出什么，只会把每一句写两遍。
+AGENT_AUTOLOOP_LANG=zh-CN
+export AGENT_AUTOLOOP_LANG
+
 repo=$(cd "$(dirname "$0")/.." && pwd -P)
 # In two steps: with mktemp failing inside the `cd`, `work` would be this folder, and cleaning up would delete it.
 work=$(mktemp -d)

@@ -16,6 +16,21 @@ $Root = if ($env:AGENT_AUTOLOOP_HOME) { $env:AGENT_AUTOLOOP_HOME } else { Join-P
 $App = Join-Path $Root "app"
 $Program = Join-Path $App "bin\agent-autoloop.ts"
 
+# 这个脚本说哪种中文。规矩和程序一样（host/i18n.ts）：AGENT_AUTOLOOP_LANG 最先，然后是环境的 LC_ALL / LANG，
+# 都没说就说正體。它跑在程序还不存在的时候，所以这两种说法只能带在它自己身上。
+$Told = if ($env:AGENT_AUTOLOOP_LANG) { $env:AGENT_AUTOLOOP_LANG }
+  elseif ($env:LC_ALL) { $env:LC_ALL }
+  elseif ($env:LANG) { $env:LANG }
+  else { "" }
+$Lang = if ($Told -match '(?i)hant|^zh[-_](TW|HK|MO)') { "zh-TW" }
+  elseif ($Told -match '(?i)^zh([-_.@]|$)') { "zh-CN" }
+  else { "zh-TW" }
+
+# Say <正體> <简体>
+function Say([string]$Hant, [string]$Hans) {
+  return $(if ($Lang -eq "zh-CN") { $Hans } else { $Hant })
+}
+
 function Quit([string]$Words) {
   Write-Host $Words
   exit 1
@@ -23,14 +38,21 @@ function Quit([string]$Words) {
 
 function NeedNode([string]$Words) {
   Write-Host $Words
-  Write-Host @"
+  Write-Host $(if ($Lang -eq "zh-CN") { @"
 用 winget 的话：
   winget install OpenJS.NodeJS
 用 nvm-windows 的话：
   nvm install 24
   nvm use 24
 装好后重开一个终端，再运行一遍这个安装命令。
-"@
+"@ } else { @"
+用 winget 的話：
+  winget install OpenJS.NodeJS
+用 nvm-windows 的話：
+  nvm install 24
+  nvm use 24
+裝好後重開一個終端，再執行一遍這個安裝命令。
+"@ })
   exit 1
 }
 
@@ -53,23 +75,29 @@ function RunGit {
   return $output
 }
 
-if (-not (Have "git")) { Quit "需要 git。" }
-if (-not (Have "node")) { NeedNode "需要 Node.js 24 或更新，这台电脑上没找到。" }
+if (-not (Have "git")) { Quit (Say "需要 git。" "需要 git。") }
+if (-not (Have "node")) {
+  NeedNode (Say "需要 Node.js 24 或更新，這台電腦上沒找到。" "需要 Node.js 24 或更新，这台电脑上没找到。")
+}
 # Asked here rather than by running something in node: PowerShell does not pass a quote on to a program as it was typed.
 $said = (& node -v) | Out-String
 $major = [regex]::Match($said, '^v?(\d+)').Groups[1].Value
-if (-not $major -or [int]$major -lt 24) { NeedNode "需要 Node.js 24 或更新，现在是 $($said.Trim())。" }
+if (-not $major -or [int]$major -lt 24) {
+  NeedNode (Say "需要 Node.js 24 或更新，現在是 $($said.Trim())。" "需要 Node.js 24 或更新，现在是 $($said.Trim())。")
+}
 
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
 # What a mode does on POSIX: everyone else out, and what is written inside inherits it. host/permissions.ts says the same.
 & icacls $Root /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
 if ($LASTEXITCODE -ne 0) {
-  Write-Host "没能把 $Root 的权限锁到当前用户，同一台电脑上的其他用户可能读得到里面的东西。"
+  Write-Host (Say "沒能把 $Root 的權限鎖到目前使用者，同一台電腦上的其他使用者可能讀得到裡面的東西。" `
+    "没能把 $Root 的权限锁到当前用户，同一台电脑上的其他用户可能读得到里面的东西。")
   # And written down where `doctor` reads it, in the shape host/permissions.ts writes: a line scrolling past during an
   # install is not a thing anybody can go back and look at. Whatever runs next says the same again, and wins.
   $mark = [pscustomobject]@{
     at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-    trouble = "icacls 没能锁定 $Root"
+    # host/permissions.ts 的 `permissions.icaclsRefused` 就是这一句，所以这里按同一种话写下来。
+    trouble = (Say "icacls 沒能鎖定 $Root" "icacls 没能锁定 $Root")
   } | ConvertTo-Json
   # No mark of its own at the start of the file: node reads this back as JSON and a mark is not part of it.
   [System.IO.File]::WriteAllText((Join-Path $Root "permissions.json"), $mark, [System.Text.UTF8Encoding]::new($false))
@@ -146,7 +174,8 @@ if ($placed -and -not $env:AGENT_AUTOLOOP_NO_PATH) {
   if ($already -notcontains $ShimFolder) {
     $joined = (@($already) + $ShimFolder) -join ";"
     [Environment]::SetEnvironmentVariable("PATH", $joined, "User")
-    Write-Host "把 $ShimFolder 加进了你的 PATH。这个终端还没生效，重开一个才算。"
+    Write-Host (Say "把 $ShimFolder 加進了你的 PATH。這個終端還沒生效，重開一個才算。" `
+      "把 $ShimFolder 加进了你的 PATH。这个终端还没生效，重开一个才算。")
   }
 }
 # This session's own PATH either way: what runs below should find the name it is about to tell the person to type.
@@ -157,7 +186,7 @@ if ($args.Count -gt 0 -and $args[0] -eq "join") {
   & node --disable-warning=ExperimentalWarning $Program @args
   $code = $LASTEXITCODE
 } elseif (Test-Path (Join-Path $Root "config.json")) {
-  Write-Host "更新好了。"
+  Write-Host (Say "更新好了。" "更新好了。")
   if ($args -notcontains "--no-service") {
     & node --disable-warning=ExperimentalWarning $Program service install
     $code = $LASTEXITCODE
@@ -185,8 +214,9 @@ foreach ($place in @($found)) {
 }
 if (-not $ours) {
   Write-Host ""
-  Write-Host "直接打 agent-autoloop 运行不了这个程序：要么这个终端的 PATH 还是旧的（重开一个就好），要么排在前面的是另一个同名程序。"
-  Write-Host "也可以每次写完整路径："
+  Write-Host (Say "直接打 agent-autoloop 執行不了這個程式：要麼這個終端的 PATH 還是舊的（重開一個就好），要麼排在前面的是另一個同名程式。" `
+    "直接打 agent-autoloop 运行不了这个程序：要么这个终端的 PATH 还是旧的（重开一个就好），要么排在前面的是另一个同名程序。")
+  Write-Host (Say "也可以每次寫完整路徑：" "也可以每次写完整路径：")
   Write-Host "  node --disable-warning=ExperimentalWarning `"$Program`""
 }
 exit $code
