@@ -6,8 +6,8 @@ import { InputError } from "../kernel/errors.ts";
 import type { Job } from "../protocol/job.ts";
 import { parseResult, type Result } from "../protocol/validate.ts";
 
-const FAILED = ["没跑成", "FAILED"];
-const NOTHING = ["没事可做", "NOTHING"];
+const FAILED = ["没跑成", "沒跑成", "FAILED"];
+const NOTHING = ["没事可做", "沒事可做", "NOTHING"];
 const RECEIPT_FIELDS = ["ask", "notice", "resolve", "later", "events"];
 const BLOCK = /```agent-autoloop[ \t]*\r?\n([\s\S]*?)```/g;
 const unique = <T>(items: T[]) => [...new Set(items)];

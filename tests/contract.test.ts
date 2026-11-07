@@ -122,6 +122,9 @@ test("the first line says how it ended", () => {
   assert.deepEqual(readMessage("**没跑成**：连不上数据库"), { outcome: "failed", error: "连不上数据库" });
   assert.deepEqual(readMessage("没跑成"), { outcome: "failed", error: "没说原因" });
   assert.deepEqual(readMessage("没事可做: 已经恢复了"), { outcome: "nothing", summary: "已经恢复了" });
+  // 界面是正體的，Agent 跟着界面写繁体也算：这两个词两种写法都要认。
+  assert.deepEqual(readMessage("沒跑成：連不上資料庫"), { outcome: "failed", error: "連不上資料庫" });
+  assert.deepEqual(readMessage("沒事可做：已經恢復了"), { outcome: "nothing", summary: "已經恢復了" });
   assert.deepEqual(readMessage("FAILED: no network"), { outcome: "failed", error: "no network" });
   assert.deepEqual(readMessage("NOTHING: all quiet"), { outcome: "nothing", summary: "all quiet" });
   assert.deepEqual(readMessage(""), { outcome: "failed", error: "没留下结果" });
