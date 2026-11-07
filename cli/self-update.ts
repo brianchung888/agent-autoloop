@@ -131,15 +131,29 @@ async function newestRelease(name = assetName()) {
 }
 
 /**
- * The digest out of a `.sha256`, which is what `sha256sum` and `shasum -a 256` write: the hex, two spaces, the name.
- * The name is checked where there is one — a `.sha256` for the wrong platform's file would otherwise be compared
- * against this platform's download and simply not match, which says nothing about which of the two is wrong.
+ * The digest out of a `.sha256`, read a line at a time and anchored to the line. Two spellings are understood, which
+ * are the two the tools that write these produce: `sha256sum` and `shasum -a 256` write the hex, then whitespace (with
+ * a `*` where the file was read as binary), then the name; `shasum --tag` and the BSD tools write `SHA256 (name) =
+ * hex`. The hex is read either case.
+ *
+ * The name is always checked, and a line without one is not a line this reads. What is being guarded against is
+ * quietly comparing the wrong number (phase3-verification-round3.md K): unanchored, the first 64 characters of a
+ * `sha512` line matched and were taken for a sha256, so a `.sha512` served under the wrong name would have failed as
+ * «对不上» rather than as what it was; a name only checked where one was found let the BSD spelling through with no
+ * check at all; and a digest written in capitals read as no digest.
  */
 export function sumIn(text: string, name: string) {
-  const found = /([0-9a-f]{64})(?:[ \t]+\*?(\S+))?/.exec(text);
-  if (!found) throw new Error(`.sha256 里读不出校验和：${JSON.stringify(text.slice(0, 200))}`);
-  if (found[2] && basename(found[2]) !== name) throw new Error(`.sha256 说的是 ${found[2]}，不是这台电脑要的 ${name}`);
-  return found[1];
+  const others: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const plain = /^[ \t]*([0-9a-fA-F]{64})[ \t]+\*?(\S.*?)[ \t]*$/.exec(line);
+    const tagged = /^[ \t]*SHA256[ \t]*\(([^)]*\S)\)[ \t]*=[ \t]*([0-9a-fA-F]{64})[ \t]*$/i.exec(line);
+    const found = plain ? { sum: plain[1], file: plain[2] } : tagged ? { sum: tagged[2], file: tagged[1] } : null;
+    if (!found) continue;
+    if (basename(found.file) === name) return found.sum.toLowerCase();
+    others.push(found.file);
+  }
+  if (others.length) throw new Error(`.sha256 说的是 ${others.join("、")}，不是这台电脑要的 ${name}`);
+  throw new Error(`.sha256 里读不出校验和：${JSON.stringify(text.slice(0, 200))}`);
 }
 
 /**

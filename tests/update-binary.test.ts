@@ -233,10 +233,30 @@ test("没装常驻、中台却在跑的那台机器，得被告诉中台被停�
   assert.match(main, /done\.wasUp/, "cli/main.ts 没读 wasUp：中台被停过这件事还是没人说");
 });
 
-test("a `.sha256` for another platform's file is refused rather than compared", () => {
-  assert.throws(() => sumIn(`${"a".repeat(64)}  agent-autoloop-linux-x64\n`, "agent-autoloop-windows-x64.exe"), /不是/);
-  assert.equal(sumIn(`${"a".repeat(64)}  ${NAME}\n`, NAME), "a".repeat(64));
+test("`.sha256` 里读的是哪一行：锚在行上、大小写不论、文件名必核", () => {
+  const hex = "a".repeat(64);
+  // 平常那一行：`sha256sum` 与 `shasum -a 256` 写的样子，包括按二进位读时那个 `*`。
+  assert.equal(sumIn(`${hex}  ${NAME}\n`, NAME), hex);
+  assert.equal(sumIn(`${hex} *${NAME}\n`, NAME), hex);
+  // 大写的校验和读得出来，而且转成小写——比对的那一边是 `createHash().digest("hex")`，它永远是小写。
+  assert.equal(sumIn(`${hex.toUpperCase()}  ${NAME}\n`, NAME), hex);
+  // BSD / `shasum --tag` 那一种写法：以前整行被当成「没有文件名」，于是文件名一眼都没核过。
+  assert.equal(sumIn(`SHA256 (${NAME}) = ${hex}\n`, NAME), hex);
+  assert.throws(() => sumIn(`SHA256 (agent-autoloop-linux-x64) = ${hex}\n`, NAME), /不是/);
+  // 带路径的名字按 basename 比，这是 `sha256sum build/x` 写出来的样子。
+  assert.equal(sumIn(`${hex}  build/${NAME}\n`, NAME), hex);
+
+  // 别的平台那一份，还是被拒掉而不是拿来比。
+  assert.throws(() => sumIn(`${hex}  agent-autoloop-linux-x64\n`, "agent-autoloop-windows-x64.exe"), /不是/);
   assert.throws(() => sumIn("no digest here", NAME), /读不出校验和/);
+  // 没有文件名的裸校验和不算一行：没有名字就没有东西可核，而核是这里必做的事。
+  assert.throws(() => sumIn(`${hex}\n`, NAME), /读不出校验和/);
+  // sha512 那一行不再被惄成 64 个字：锚在行上之前，它的前 64 个字会被当成 sha256 拿去比，结果是一句
+  // 「对不上」——说的是让人别用这个文件，而真正的毛病是发布端附错了一个 `.sha512`。
+  assert.throws(() => sumIn(`${"b".repeat(128)}  ${NAME}\n`, NAME), /读不出校验和/);
+  // 多行的一份（一个 Release 把三个平台写在一起）：按名字挑自己这一行。
+  const many = `${"c".repeat(64)}  agent-autoloop-linux-x64\n${hex}  ${NAME}\n`;
+  assert.equal(sumIn(many, NAME), hex);
 });
 
 test("a rename that fails puts the running one back, and says so with the hub's state in it", async () => {
