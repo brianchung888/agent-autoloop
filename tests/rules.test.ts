@@ -288,7 +288,7 @@ test("这两个环境变量设成空字符串，算没设，而不是工作目�
   assert.deepEqual(asked({ AGENT_AUTOLOOP_RULES: "   " }).rules, unset.rules);
   const named = join(home, "另一份.json");
   assert.equal(asked({ AGENT_AUTOLOOP_RULES: named }).rules, named);
-  // 前后的空白裁掉，不是只用来判「算不算设了」。不裁的话，` C:gent ` 指的是一个名字头尾都带空格的
+  // 前后的空白裁掉，不是只用来判「算不算设了」。不裁的话，` C:\agent ` 指的是一个名字头尾都带空格的
   // 文件夹——path.resolve 会把那两个空格留着，而人再怎么输也输不出那个路径（phase3-verification-round4.md 4）。
   assert.equal(asked({ AGENT_AUTOLOOP_RULES: `  ${named}	 ` }).rules, named);
   const place = join(home, "另一个家");
