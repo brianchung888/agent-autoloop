@@ -22,7 +22,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { HubError, type Hub } from "../protocol/client.ts";
 import { HOME } from "../host/home.ts";
-import { t } from "../host/i18n.ts";
+import { lang, t } from "../host/i18n.ts";
 import { secureDir } from "../host/permissions.ts";
 import type { Job } from "../protocol/job.ts";
 import { addUsage, type Notice, type Result } from "../protocol/validate.ts";
@@ -117,6 +117,11 @@ function agentEnvironment(entry: Entry) {
     AGENT_AUTOLOOP_HOME: HOME,
     AGENT_AUTOLOOP_RUN: String(entry.run),
     AGENT_AUTOLOOP_CONTEXT: path.join(entry.dir, "context.json"),
+    // Everything above is thrown away and put back on purpose, and the language has to be put back: a turn over ACP
+    // runs in this program started again (plugins/acp/agent.ts), and what that process says about a failure is what
+    // the person reads in their card. Without this it falls back to the default and answers in 正體 to an install
+    // that is in 简体. Not a secret, and host/i18n.ts reads it first, so saying it outright is the whole fix.
+    AGENT_AUTOLOOP_LANG: lang(),
   };
 }
 
