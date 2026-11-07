@@ -16,7 +16,7 @@
 // It is all or nothing. A failed download, a sum that does not match, a rename that does not go through: each leaves
 // the executable that is there now exactly where it is, and says what happened in a sentence with something to do in
 // it. The one thing it cannot undo is the hub having been stopped, so it says whether it started again.
-import { chmodSync, createWriteStream, existsSync, rmSync } from "node:fs";
+import { chmodSync, createWriteStream, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import { Readable } from "node:stream";
@@ -106,7 +106,7 @@ async function asks(url: string, what: string, timeout = LOOKUP_TIMEOUT) {
 type Asset = { name?: unknown; browser_download_url?: unknown };
 
 /** The newest Release: which tag it is, and where this platform's two files are. */
-export async function newestRelease(name = assetName()) {
+async function newestRelease(name = assetName()) {
   const response = await asks(`${api()}/releases/latest`, "问出最新发布的版本");
   const release = (await response.json()) as { tag_name?: unknown; assets?: unknown };
   const tag = typeof release.tag_name === "string" && release.tag_name ? release.tag_name : null;
@@ -150,7 +150,7 @@ export function sumIn(text: string, name: string) {
  * send, and a count that falls short of it is a broken download and not a different file. A download that stops early
  * without having said how long it would be fails the digest below instead, which is the same answer by another road.
  */
-export async function downloadTo(url: string, file: string, name = basename(file)) {
+async function downloadTo(url: string, file: string, name = basename(file)) {
   /** A download that did not finish, whichever of the three ways it failed to. Nothing half-written is left behind. */
   const broke = (why: string) => {
     rmSync(file, { force: true });
@@ -268,9 +268,3 @@ export async function updateBinary({
   const told = hadService ? restart() : undefined;
   return { changed: true, to: newest.tag, replaced, told, restarted: hadService && !told };
 }
-
-/** Called as this program starts, so that the file the last update moved aside does not sit there for ever. */
-export const tidySelf = (executable = stablePath(process.execPath)) => tidyReplaced(executable);
-
-/** Whether there is anything beside the executable that an update left. For `doctor` and for a test. */
-export const stagedLeftOver = (executable = stablePath(process.execPath)) => existsSync(stagedName(executable));
