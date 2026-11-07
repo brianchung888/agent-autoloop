@@ -3,6 +3,7 @@
 // detached, and the worker finds them again when it's back.
 import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, watch } from "node:fs";
 import path from "node:path";
+import { format } from "node:util";
 import { loadChannel } from "./channels.ts";
 import { parseListen, readConfig, type ChannelConfig } from "./config.ts";
 import { HOME } from "./home.ts";
@@ -39,16 +40,38 @@ export function rollLog(file: string, limit = LOG_LIMIT) {
 }
 
 let lines = 0;
+/** One line into the file, where there is one to write to. Never throws: a log that cannot be written is not the job. */
+function write(said: string) {
+  if (!LOG_FILE) return;
+  try {
+    appendFileSync(LOG_FILE, `${said}\n`);
+    if (++lines % LOOK_EVERY === 0) rollLog(LOG_FILE);
+  } catch {}
+}
+
 const log = (who: string) => (line: string) => {
   const said = `${new Date().toISOString()} [${who}] ${line}`;
   console.log(said);
-  if (LOG_FILE) {
-    try {
-      appendFileSync(LOG_FILE, `${said}\n`);
-      if (++lines % LOOK_EVERY === 0) rollLog(LOG_FILE);
-    } catch {}
-  }
+  write(said);
 };
+
+/**
+ * What the hub says with `console.error`, into the same file. A scheduled task points stderr nowhere, so the one
+ * sentence that says why a webhook was refused — which names the plugin's entry and the folder its plugin.json would
+ * go in — went nowhere at all, while the 404 it answered with told whoever sent it to go and read the hub's log
+ * (phase3-verification-round3.md F). A tick that could not run is the same story.
+ *
+ * Wired here, once, rather than a sink handed down to every place that has something to say: `console.error` is what
+ * those places already write to, and the hub, the worker and the channels are this one process. The real stderr still
+ * gets it — under launchd and systemd that is where it is read, and this file is only written on Windows.
+ */
+function alsoWrite(errors: Console) {
+  const was = errors.error.bind(errors);
+  errors.error = (...said: unknown[]) => {
+    was(...said);
+    write(`${new Date().toISOString()} [stderr] ${format(...said)}`);
+  };
+}
 
 /** Only one of these per install: a second would take work beside the first. */
 function lock() {
@@ -126,7 +149,10 @@ export async function up() {
   // now nothing is running it, and Windows lets it be deleted. Source mode has no executable of its own to have moved.
   if (!fromSource()) tidyReplaced(selfProgram());
   secureDir(HOME);
-  if (LOG_FILE) secureDir(path.dirname(LOG_FILE));
+  if (LOG_FILE) {
+    secureDir(path.dirname(LOG_FILE));
+    alsoWrite(console);
+  }
   const unlock = lock();
   // Plugins run in this process, and an `error` event or a promise nobody handled is theirs to answer for, not the hub's.
   // Everything that matters is in transactions, so the rest can carry on.

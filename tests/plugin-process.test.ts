@@ -326,3 +326,21 @@ test("同一个目录里既有 .ts 又有 plugin.json，那个 .ts 还是赢：�
   const adapter = await loadPlugin("both", "agent");
   assert.deepEqual(adapter.command({}), ["printf", "source"]);
 });
+
+test("plugin.json 指的程序根本不在，这件事带着 ENOENT：webhook 那头能说出是什么错", async () => {
+  // 这一头是 phase3-verification-round3.md F 的后半。server.ts 回给调用者的只有插件名和 errno——绝对路径不能回，
+  // 那一头还没验签——所以一个没有 errno 的 Error 就变成「装不起来」后面空括号，连「是哪一类错」都说不出。
+  const folder = join(home, "plugins", "no-entry-at-all");
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "plugin.json"), JSON.stringify({ runtime: "process", entry: "没有这个程序", args: [] }));
+  await assert.rejects(
+    () => loadPlugin("no-entry-at-all", "source"),
+    (error: NodeJS.ErrnoException) => {
+      assert.equal(error.code, "ENOENT");
+      // 完整那句话还是完整的：是哪个插件、指的是哪个文件。它走 console.error 进中台日志。
+      assert.match(error.message, /no-entry-at-all 的 plugin\.json 指的程序不在：/);
+      assert.ok(error.message.includes(join(folder, "没有这个程序")), error.message);
+      return true;
+    },
+  );
+});

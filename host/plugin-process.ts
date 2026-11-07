@@ -249,7 +249,11 @@ async function make(
       `${name} 是通道插件，现在还不能用 runtime: "process"：通道是和中台一样长命的循环，不是一次一答的翻译。` +
         `用别的语言写通道，直接当独立程序连中台的 HTTP 协议（见 docs/plugins.md 的通道一节），不必经过插件机制。`,
     );
-  if (!existsSync(entry)) throw new Error(`${name} 的 plugin.json 指的程序不在：${entry}`);
+  // With an errno on it: what sent a webhook is told the plugin's name and the code and nothing else
+  // (host/server.ts), and a plugin whose entry is not there was the one trouble that reached them as a bare
+  // 「装不起来」 with nothing in the brackets at all (phase3-verification-round3.md F).
+  if (!existsSync(entry))
+    throw Object.assign(new Error(`${name} 的 plugin.json 指的程序不在：${entry}`), { code: "ENOENT" });
   const argv = [entry, ...args];
   // Which call this is, last: the webhook's own headers and body are spread in here, and a request that arrives with
   // a `call` of its own would otherwise choose which of the plugin's calls runs.
