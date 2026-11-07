@@ -19,8 +19,13 @@ permissions:
 # a dispatch on a branch is its own group and never waits on a tag. Not cancelled, because the one already running may
 # be halfway through attaching: a Release left with one platform's binary on it is the thing the attach job exists to
 # prevent.
+#
+# `ref_name`, not `ref`: a dispatch is filled in with a tag's name (`v1.2.3`) and a tag push arrives as `github.ref`,
+# which is `refs/tags/v1.2.3`. Those are two names for one tag, so they were two groups, and the two runs they name
+# could attach to the same Release at the same time — which is the one thing this is here to stop
+# (phase3-verification-round2.md #8). `ref_name` is the short name either way.
 concurrency:
-  group: release-${{ inputs.release || github.ref }}
+  group: release-${{ inputs.release || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -119,7 +124,18 @@ jobs:
         # it is not there yet, and left exactly as it is if it is — a Release written by hand first, with its own
         # notes, must not be overwritten by generated ones. `--verify-tag` keeps a mistyped tag from creating a
         # Release for a tag that does not exist, which is how a tag push would otherwise end up with two Releases.
+        #
+        # Creating it is allowed to fail, and then it is looked for again. «Already exists» is what comes back when
+        # something else made it between the look and the make — a release created by hand, a draft being published,
+        # another workflow — and that is the Release this job wanted: failing there would throw away three binaries
+        # over a race whose outcome was the right one. Only a Release that is still not there after both is a failure,
+        # and it is said as one rather than left to `upload` to report as something else.
         run: |
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
-            gh release create "$TAG" --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY" || true
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || {
+              echo "$TAG 这个 Release 既不在，也没能建出来：tag 打错了，或者这个 token 没有 contents: write"
+              exit 1
+            }
+          fi
           gh release upload "$TAG" assets/* --clobber --repo "$GITHUB_REPOSITORY"

@@ -106,9 +106,22 @@ test("打 tag 就能发：Release 不在就先建，而且同一个 tag 不会�
     attach.indexOf('gh release create "$TAG"') < attach.indexOf('gh release upload "$TAG"'),
     "先上传再建 Release，顺序反了",
   );
+  // 建不出来可以容忍，但容忍完要再看一眼：「已经有了」是竞态赢的那一边，而「还是没有」是真的失败。
+  assert.match(attach, /gh release create "\$TAG"[^\n]*\|\| true/, "create 失败就直接挂了，竞态赢的那一边也算失败");
+  const afterCreate = attach.slice(attach.indexOf('gh release create "$TAG"'));
+  assert.match(afterCreate, /gh release view "\$TAG"/, "容忍了 create 失败，却没有再看一眼它到底在不在");
+  assert.match(afterCreate, /exit 1/, "既不在也建不出来的时候没有当失败说出来");
+  assert.ok(
+    afterCreate.indexOf('gh release view "$TAG"') < afterCreate.indexOf('gh release upload "$TAG"'),
+    "先上传才回头看 Release 在不在，顺序反了",
+  );
   // 同一个 tag 来两次，或者一次 tag、一次手动，两条流水线会各自往同一个 Release 上传同一批文件。
   assert.match(workflow, /^concurrency:$/m, "没有 concurrency，两条同样的流水线会撞在一起");
-  assert.match(workflow, /group: release-/);
+  // 一个 tag 只有一个组。dispatch 填进来的是 tag 的短名（v1.2.3），tag push 来的 github.ref 是
+  // refs/tags/v1.2.3——同一个 tag 的两个写法就是两个组，两条流水线于是会同时往同一个 Release 上传
+  // （phase3-verification-round2.md #8）。ref_name 两边都是短名。
+  assert.match(workflow, /group: release-\$\{\{ inputs\.release \|\| github\.ref_name \}\}/, "组名不是 tag 的短名");
+  assert.doesNotMatch(workflow, /group: release-\$\{\{[^}]*github\.ref \}\}/, "组名还在用 github.ref");
 });
 
 test("校验和不是拿来比两次建置的：这不是可重现建置，两处文字都得说清楚", () => {
