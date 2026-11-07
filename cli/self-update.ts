@@ -157,6 +157,16 @@ export function sumIn(text: string, name: string) {
 }
 
 /**
+ * Whether what came back is not the bytes that were counted. Anything but `identity` is: this does not need to know
+ * which encoding it was, only that `content-length` and what the stream hands over are then two different counts.
+ */
+function packed(response: Response) {
+  const told = response.headers.get("content-encoding")?.trim().toLowerCase();
+  if (!told) return false;
+  return told.split(",").some((one) => one.trim() && one.trim() !== "identity");
+}
+
+/**
  * The file, onto the disk, with its digest taken as it goes. Streamed rather than held: the thing being downloaded is
  * most of a hundred megabytes and this process is also the hub on a machine where the hub is the thing being updated.
  *
@@ -176,16 +186,6 @@ export function sumIn(text: string, name: string) {
  * every other one leaves unsaid used to turn the length check off for no reason at all
  * (phase3-verification-round4.md 5). The one word is read, and only the ones that mean something is packed count.
  */
-/**
- * Whether what came back is not the bytes that were counted. Anything but `identity` is: this does not need to know
- * which encoding it was, only that `content-length` and what the stream hands over are then two different counts.
- */
-function packed(response: Response) {
-  const told = response.headers.get("content-encoding")?.trim().toLowerCase();
-  if (!told) return false;
-  return told.split(",").some((one) => one.trim() && one.trim() !== "identity");
-}
-
 async function downloadTo(url: string, file: string, name = basename(file)) {
   /** A download that did not finish, whichever of the three ways it failed to. Nothing half-written is left behind. */
   const broke = (why: string) => {
