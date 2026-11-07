@@ -21,13 +21,14 @@ import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { t } from "../host/i18n.ts";
 import { stablePath } from "../host/node-path.ts";
 import { stagedName, swapSelf, tidyReplaced } from "../host/self-replace.ts";
 import { restartService, runningUp, serviceRunning, stopUp } from "../host/service.ts";
 import { releaseOf } from "../host/version.ts";
 
 /** The one repository whose Releases this follows, spelled as cli/update.ts spells the same decision for a checkout. */
-const PUBLISHED = "KKKKhazix/agent-autoloop";
+const PUBLISHED = "brianchung888/agent-autoloop";
 /** Where a person goes when this cannot: the only address in any message here that a browser can be pointed at. */
 export const RELEASES_PAGE = `https://github.com/${PUBLISHED}/releases`;
 /**
@@ -56,10 +57,7 @@ const BUILT: Record<string, string> = {
 export function assetName(platform: string = process.platform, arch: string = process.arch) {
   const name = BUILT[`${platform}-${arch}`];
   if (name) return name;
-  throw new Error(
-    `Release 里没有 ${platform}-${arch} 的单文件版（只建 ${Object.keys(BUILT).join("、")}）。` +
-      `这个平台要从源码装，见 INSTALL.md 的「安装」一节。`,
-  );
+  throw new Error(t("cli.selfUpdate.noBuild", { platform, arch, built: Object.keys(BUILT).join("、") }));
 }
 
 /** What went wrong underneath, where `fetch` only says «fetch failed». */
@@ -82,12 +80,10 @@ async function ask(url: string, what: string, timeout: number) {
   });
   // Unauthenticated calls are counted per address, and a machine behind one address can run out of them.
   if (response.status === 403 || response.status === 429) {
-    throw new Error(
-      `发布页暂时不让问了（HTTP ${response.status}，没登录的调用是按出口地址限次的）：` +
-        `过一阵再来，或者手动下载 ${RELEASES_PAGE}`,
-    );
+    throw new Error(t("cli.selfUpdate.rateLimited", { status: response.status, page: RELEASES_PAGE }));
   }
-  if (!response.ok) throw new Error(`没能${what}：发布页返回 HTTP ${response.status}（手动下载：${RELEASES_PAGE}）`);
+  if (!response.ok)
+    throw new Error(t("cli.selfUpdate.httpError", { what, status: response.status, page: RELEASES_PAGE }));
   return response;
 }
 
@@ -97,7 +93,7 @@ async function asks(url: string, what: string, timeout = LOOKUP_TIMEOUT) {
     return await ask(url, what, timeout);
   } catch (error) {
     if (error instanceof TypeError || (error as Error)?.name === "TimeoutError") {
-      throw new Error(`连不上发布页，没能${what}（${because(error)}）：等网络好了再来，或者手动下载 ${RELEASES_PAGE}`);
+      throw new Error(t("cli.selfUpdate.unreachable", { what, why: because(error), page: RELEASES_PAGE }));
     }
     throw error;
   }
@@ -107,10 +103,10 @@ type Asset = { name?: unknown; browser_download_url?: unknown };
 
 /** The newest Release: which tag it is, and where this platform's two files are. */
 async function newestRelease(name = assetName()) {
-  const response = await asks(`${api()}/releases/latest`, "问出最新发布的版本");
+  const response = await asks(`${api()}/releases/latest`, t("cli.selfUpdate.whatLatest"));
   const release = (await response.json()) as { tag_name?: unknown; assets?: unknown };
   const tag = typeof release.tag_name === "string" && release.tag_name ? release.tag_name : null;
-  if (!tag) throw new Error(`发布页答的东西里没有 tag_name，看不出最新是哪一版（手动下载：${RELEASES_PAGE}）`);
+  if (!tag) throw new Error(t("cli.selfUpdate.noTag", { page: RELEASES_PAGE }));
   const assets = Array.isArray(release.assets) ? (release.assets as Asset[]) : [];
   const urlOf = (wanted: string) => {
     const found = assets.find((asset) => asset.name === wanted);
@@ -121,10 +117,14 @@ async function newestRelease(name = assetName()) {
   const file = urlOf(name);
   const sum = urlOf(`${name}.sha256`);
   if (!file || !sum) {
-    const missing = [!file && name, !sum && `${name}.sha256`].filter(Boolean).join(" 和 ");
+    const missing = [!file && name, !sum && `${name}.sha256`].filter(Boolean).join(` ${t("cli.selfUpdate.and")} `);
     throw new Error(
-      `${tag} 这一版没有附 ${missing}，这台电脑要的就是它（附了：${assets.map((asset) => asset.name).join("、") || "没有"}）。` +
-        `换一版或者手动下载 ${RELEASES_PAGE}`,
+      t("cli.selfUpdate.missingAssets", {
+        tag,
+        missing,
+        attached: assets.map((asset) => asset.name).join("、") || t("cli.selfUpdate.nothing"),
+        page: RELEASES_PAGE,
+      }),
     );
   }
   return { tag, file, sum };
@@ -152,8 +152,8 @@ export function sumIn(text: string, name: string) {
     if (basename(found.file) === name) return found.sum.toLowerCase();
     others.push(found.file);
   }
-  if (others.length) throw new Error(`.sha256 说的是 ${others.join("、")}，不是这台电脑要的 ${name}`);
-  throw new Error(`.sha256 里读不出校验和：${JSON.stringify(text.slice(0, 200))}`);
+  if (others.length) throw new Error(t("cli.selfUpdate.sumNameMismatch", { said: others.join("、"), wanted: name }));
+  throw new Error(t("cli.selfUpdate.noSumInFile", { text: JSON.stringify(text.slice(0, 200)) }));
 }
 
 /**
@@ -175,18 +175,18 @@ async function downloadTo(url: string, file: string, name = basename(file)) {
   /** A download that did not finish, whichever of the three ways it failed to. Nothing half-written is left behind. */
   const broke = (why: string) => {
     rmSync(file, { force: true });
-    return new Error(`下载 ${name} 断了（${why}）：重来一次，或者手动下载 ${RELEASES_PAGE}`);
+    return new Error(t("cli.selfUpdate.downloadBroke", { name, why, page: RELEASES_PAGE }));
   };
   let response: Response;
   try {
-    response = await ask(url, `下载 ${name}`, DOWNLOAD_TIMEOUT);
+    response = await ask(url, t("cli.selfUpdate.whatDownload", { name }), DOWNLOAD_TIMEOUT);
   } catch (error) {
     // A body that stops partway through can fail here rather than below: the far end said how long it would be and
     // then went, which the runtime reports as the request itself having failed and not as a short read.
     if (error instanceof TypeError || (error as Error)?.name === "TimeoutError") throw broke(because(error));
     throw error;
   }
-  if (!response.body) throw broke("答复里没有内容");
+  if (!response.body) throw broke(t("cli.selfUpdate.emptyBody"));
   const packed = response.headers.get("content-encoding");
   const said = packed ? NaN : Number(response.headers.get("content-length"));
   const digest = createHash("sha256");
@@ -203,14 +203,10 @@ async function downloadTo(url: string, file: string, name = basename(file)) {
   }
   // Two different things, said as two. A backstop rather than the first line of defence: HTTP framing catches most
   // short bodies before this, as a request that failed (above). Long is what a compressed body used to be reported
-  // as — «说好 40 个字节，只到了 96000000 个», which is not what happened — and the encoding is accounted for above now.
+  // as «说好 40 个字节，只到了 96000000 个», which is not what happened — and the encoding is accounted for above now.
   // Both sentences are kept anyway: a mismatch described backwards is worse than one line that is rarely read.
   if (Number.isInteger(said) && said > 0 && got !== said) {
-    throw broke(
-      got < said
-        ? `说好 ${said} 个字节，只到了 ${got} 个`
-        : `说好 ${said} 个字节，来的却是 ${got} 个：发布端说的长度不对`,
-    );
+    throw broke(t(got < said ? "cli.selfUpdate.shortRead" : "cli.selfUpdate.longRead", { said, got }));
   }
   return { sum: digest.digest("hex"), bytes: got };
 }
@@ -268,15 +264,14 @@ export async function updateBinary({
 
   const staged = stagedName(executable);
   rmSync(staged, { force: true });
-  const published = sumIn(await (await asks(newest.sum, `下载 ${name}.sha256`)).text(), name);
+  const published = sumIn(
+    await (await asks(newest.sum, t("cli.selfUpdate.whatDownload", { name: `${name}.sha256` }))).text(),
+    name,
+  );
   const { sum } = await downloadTo(newest.file, staged, name);
   if (sum !== published) {
     rmSync(staged, { force: true });
-    throw new Error(
-      `下载下来的 ${name} 和 Release 上的 .sha256 对不上，已经删掉，什么都没换：` +
-        `说好 ${published}，拿到 ${sum}。别自己找来的那一份去对——Release 上的 .sha256 才是凭据（INSTALL.md 讲了为什么自己重建的不一样）。` +
-        `重下一次还是对不上就先别用，到 ${RELEASES_PAGE} 看看。`,
-    );
+    throw new Error(t("cli.selfUpdate.sumMismatch", { name, published, got: sum, page: RELEASES_PAGE }));
   }
   // A downloaded file is not executable on POSIX until it is said to be, and the service would start nothing.
   if (process.platform !== "win32") {
@@ -284,7 +279,7 @@ export async function updateBinary({
       chmodSync(staged, 0o755);
     } catch (error) {
       rmSync(staged, { force: true });
-      throw new Error(`没能把 ${staged} 设成可执行（${(error as Error).message}）：什么都没换。`);
+      throw new Error(t("cli.selfUpdate.notExecutable", { staged, why: (error as Error).message }));
     }
   }
 
@@ -297,12 +292,14 @@ export async function updateBinary({
     ({ replaced } = swap(executable));
   } catch (error) {
     const again = hadService ? restart() : undefined;
-    throw new Error(
-      `${(error as Error).message}。手上这一版还在用；` +
-        (hadUp
-          ? `中台已经被停过一次${again ? `（${again}）` : hadService ? "，已经重新启动" : "，要再 agent-autoloop up"}。`
-          : ""),
-    );
+    const hub = !hadUp
+      ? ""
+      : again
+        ? t("cli.selfUpdate.hubStoppedAgain", { again })
+        : hadService
+          ? t("cli.selfUpdate.hubStoppedRestarted")
+          : t("cli.selfUpdate.hubStoppedNeedsUp");
+    throw new Error(t("cli.selfUpdate.swapFailed", { why: (error as Error).message, hub }));
   }
   const told = hadService ? restart() : undefined;
   return { changed: true, to: newest.tag, replaced, told, restarted: hadService && !told, wasUp: hadUp };

@@ -22,13 +22,13 @@
 
 支持 macOS、Linux 和 Windows 11。运行前需要装好 Node 24、Git（macOS / Linux 还要 curl，Windows 用 PowerShell 自带的 irm），以及任意一个你已经登录好的命令行 Agent，不需要 GitHub 账号。也可以直接把[安装说明](INSTALL.md)丢给你的 Agent，让它替你装好。
 
-> **Windows：原生支持，不需要 WSL2。** 用 PowerShell 装，不要管理员权限：`irm https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.ps1 | iex`。有四处降级：桌面通知一律跳过（卡片还在 `agent-autoloop status` 和别的通道里）；常驻用的是计划任务，停了之后最多等 5 分钟才自己回来；文件权限用 `icacls` 锁到当前用户，锁不上（网络盘、FAT32、域策略）不拦着启动，`agent-autoloop doctor` 会报一条降级；Agent 得是真正的可执行文件，npm 装的 `.cmd` 包装脚本起不了。细节见 [INSTALL](INSTALL.md)。
+> **Windows：原生支持，不需要 WSL2。** 用 PowerShell 装，不要管理员权限：`irm https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.ps1 | iex`。有四处降级：桌面通知一律跳过（卡片还在 `agent-autoloop status` 和别的通道里）；常驻用的是计划任务，停了之后最多等 5 分钟才自己回来；文件权限用 `icacls` 锁到当前用户，锁不上（网络盘、FAT32、域策略）不拦着启动，`agent-autoloop doctor` 会报一条降级；Agent 得是真正的可执行文件，npm 装的 `.cmd` 包装脚本起不了。细节见 [INSTALL](INSTALL.md)。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.sh | sh
 ```
 
-安装和 `agent-autoloop update` 都装最新的 [Release](https://github.com/KKKKhazix/agent-autoloop/releases)，那是通过了全部检查的版本。
+安装和 `agent-autoloop update` 都装最新的 [Release](https://github.com/brianchung888/agent-autoloop/releases)，那是通过了全部检查的版本。
 
 > **不想装 Node？** 每个 Release 还附一个单文件可执行程序，三个平台各一个，旁边各有一份 `.sha256`：下载、对校验和、`agent-autoloop init`，没有别的前置。代价是下载约 96 MB（里面就是一整个 Node）、Windows 上没有签章所以 SmartScreen 会先拦一下，而且第三方 `.ts` 插件要带 `runtime: "process"`。源码安装仍然是默认方式；两种装法共用同一个数据目录，可以来回换。细节见 [INSTALL 的单一二进位一节](INSTALL.md#单一二进位这台电脑上没有-node)。
 

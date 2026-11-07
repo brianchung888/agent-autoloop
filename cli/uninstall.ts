@@ -4,6 +4,7 @@ import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, unlinkSync }
 import { homedir } from "node:os";
 import path from "node:path";
 import { HOME } from "../host/home.ts";
+import { t } from "../host/i18n.ts";
 import { fromSource, selfProgram } from "../host/self.ts";
 import { skillFolder } from "../host/skill.ts";
 import { tidyReplaced } from "../host/self-replace.ts";
@@ -20,7 +21,7 @@ function removeLink(link: string, target: string) {
   }
   // Not rmSync: Node 25.1 refuses it for a link that leads to a folder.
   unlinkSync(link);
-  console.log(`删掉了 ${link}`);
+  console.log(t("cli.uninstall.removed", { path: link }));
 }
 
 /**
@@ -35,7 +36,7 @@ function removeShim(shim: string, program: string) {
     return;
   }
   rmSync(shim, { force: true });
-  console.log(`删掉了 ${shim}`);
+  console.log(t("cli.uninstall.removed", { path: shim }));
 }
 
 /** Where an install puts something on PATH. The two Homebrew folders mean nothing off a Mac, and no shim goes there. */
@@ -68,7 +69,7 @@ function removeCopiedSkill(folder: string, skill: string) {
     return;
   }
   rmSync(folder, { recursive: true, force: true });
-  console.log(`删掉了 ${folder}`);
+  console.log(t("cli.uninstall.removed", { path: folder }));
 }
 
 function removeLinks() {
@@ -98,16 +99,16 @@ function removeLinks() {
   // which read it to tell a copy of ours from one someone has made their own.
   if (!fromSource()) {
     rmSync(skill, { recursive: true, force: true });
-    console.log(`删掉了 ${skill}`);
+    console.log(t("cli.uninstall.removed", { path: skill }));
   }
 }
 
 /** Confirmation is about removing the program; data is never part of this command. */
 export async function uninstall(yes: boolean, ask: ((question: string) => Promise<string>) | null) {
   if (!yes) {
-    if (!ask) throw new Error("运行 agent-autoloop uninstall --yes 卸载程序，规则、密钥和记录会保留。");
-    if (!/^y(es)?$/i.test((await ask("卸载程序并保留数据？[y/N] ")).trim())) {
-      console.log("没有卸载。");
+    if (!ask) throw new Error(t("cli.uninstall.needsYes"));
+    if (!/^y(es)?$/i.test((await ask(t("cli.uninstall.confirm"))).trim())) {
+      console.log(t("cli.uninstall.cancelled"));
       return;
     }
   }
@@ -123,5 +124,5 @@ export async function uninstall(yes: boolean, ask: ((question: string) => Promis
   if (existsSync(installedApp) && realpathSync(installedApp) === realpathSync(ROOT)) {
     rmSync(installedApp, { recursive: true });
   }
-  console.log(existsSync(HOME) ? `卸载好了。规则、密钥和记录还留在 ${HOME}。` : "卸载好了。");
+  console.log(existsSync(HOME) ? t("cli.uninstall.doneWithData", { home: HOME }) : t("cli.uninstall.done"));
 }

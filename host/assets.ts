@@ -13,6 +13,7 @@
 // which is exactly what the PoC measured (phase3-poc-report.md 三.1 步骤 5): a binary sitting in a source tree took
 // itself for a source install.
 import { readFileSync } from "node:fs";
+import { t } from "./i18n.ts";
 
 type Sea = { isSea(): boolean; getAsset(name: string, encoding: "utf8"): string };
 
@@ -54,9 +55,6 @@ export function assetText(name: Asset): string {
     return sea.getAsset(name, "utf8");
   } catch (error) {
     // A build that left one out fails here and nowhere later, saying which file and where the list is.
-    throw new Error(
-      `这个打包版里没有 ${name}：建置时内嵌的清单漏了它（host/assets.ts 的 ASSETS，` +
-        `由 scripts/build-binary.ps1 / .sh 写进 SEA 设定）。${(error as Error).message}`,
-    );
+    throw new Error(t("assets.missing", { name, why: (error as Error).message }));
   }
 }

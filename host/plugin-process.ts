@@ -20,6 +20,7 @@
 // Nothing here goes through a shell. The command line is an array, as everywhere else in this program.
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
+import { t } from "./i18n.ts";
 import type { PluginKind } from "./plugins.ts";
 
 /** What the plugin says it has. Only the two optional ones matter; the required ones are required. */
@@ -46,11 +47,12 @@ function answerOf(name: string, request: Record<string, unknown>, program: strin
   // been checked yet is the plugin's name and this code and nothing else (host/server.ts), and a code that had to be
   // parsed back out of a sentence would not survive that sentence being reworded.
   if (ran.error) {
-    throw Object.assign(new Error(`${name} 插件的程序起不来（${program}）：${ran.error.message}`), {
+    throw Object.assign(new Error(t("pluginProcess.cannotStart", { name, program, why: ran.error.message })), {
       code: (ran.error as NodeJS.ErrnoException).code,
     });
   }
-  if (ran.signal) throw new Error(`${name} 插件的程序被 ${ran.signal} 结束了，没有答复 ${request.call}`);
+  if (ran.signal)
+    throw new Error(t("pluginProcess.signalled", { name, signal: ran.signal, call: String(request.call) }));
   // The answer is the last line it printed: a program is allowed to say things on the way, and a line of its own is
   // what makes the answer findable without counting what came before it.
   const line = ran.stdout
@@ -60,17 +62,20 @@ function answerOf(name: string, request: Record<string, unknown>, program: strin
     .at(-1);
   if (!line)
     throw new Error(
-      `${name} 插件对 ${request.call} 什么都没答（退出码 ${ran.status}）${ran.stderr ? `：${ran.stderr.trim().slice(0, 500)}` : ""}`,
+      `${t("pluginProcess.saidNothing", { name, call: String(request.call), status: String(ran.status) })}${ran.stderr ? `：${ran.stderr.trim().slice(0, 500)}` : ""}`,
     );
   let answer: { ok?: unknown; value?: unknown; error?: unknown };
   try {
     answer = JSON.parse(line);
   } catch {
-    throw new Error(`${name} 插件对 ${request.call} 答的不是一行 JSON：${line.slice(0, 500)}`);
+    throw new Error(t("pluginProcess.notJson", { name, call: String(request.call), line: line.slice(0, 500) }));
   }
   if (answer.ok !== true) {
-    const said = typeof answer.error === "string" && answer.error ? answer.error : `没说原因（${line.slice(0, 200)}）`;
-    throw new Error(`${name} 插件说：${said}`);
+    const said =
+      typeof answer.error === "string" && answer.error
+        ? answer.error
+        : t("pluginProcess.noReason", { line: line.slice(0, 200) });
+    throw new Error(t("pluginProcess.said", { name, said }));
   }
   return answer.value;
 }
@@ -244,16 +249,12 @@ async function make(
   entry: string,
   args: readonly string[],
 ): Promise<unknown> {
-  if (kind === "channel")
-    throw new Error(
-      `${name} 是通道插件，现在还不能用 runtime: "process"：通道是和中台一样长命的循环，不是一次一答的翻译。` +
-        `用别的语言写通道，直接当独立程序连中台的 HTTP 协议（见 docs/plugins.md 的通道一节），不必经过插件机制。`,
-    );
+  if (kind === "channel") throw new Error(t("pluginProcess.channelNotProcess", { name }));
   // With an errno on it: what sent a webhook is told the plugin's name and the code and nothing else
   // (host/server.ts), and a plugin whose entry is not there was the one trouble that reached them as a bare
   // 「装不起来」 with nothing in the brackets at all (phase3-verification-round3.md F).
   if (!existsSync(entry))
-    throw Object.assign(new Error(`${name} 的 plugin.json 指的程序不在：${entry}`), { code: "ENOENT" });
+    throw Object.assign(new Error(t("pluginProcess.entryGone", { name, entry })), { code: "ENOENT" });
   const argv = [entry, ...args];
   // Which call this is, last: the webhook's own headers and body are spread in here, and a request that arrives with
   // a `call` of its own would otherwise choose which of the plugin's calls runs.

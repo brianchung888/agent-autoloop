@@ -13,6 +13,7 @@
 // the one that gets tested. 未在 macOS / Linux 上验证过：本轮只有 Windows 的机器。
 import { existsSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { t } from "./i18n.ts";
 
 /** Where a downloaded executable waits until it is verified: beside the one it replaces, so the rename stays a rename. */
 export const stagedName = (executable: string) => `${executable}.new`;
@@ -43,7 +44,7 @@ function freeOldName(executable: string) {
  */
 export function swapSelf(executable: string, { rename = renameSync } = {}) {
   const staged = stagedName(executable);
-  if (!existsSync(staged)) throw new Error(`没有要换上去的文件：${staged} 不在`);
+  if (!existsSync(staged)) throw new Error(t("selfReplace.nothingStaged", { staged }));
   const old = freeOldName(executable);
   const running = existsSync(executable);
   if (running) {
@@ -60,8 +61,10 @@ export function swapSelf(executable: string, { rename = renameSync } = {}) {
         rmSync(staged, { force: true });
       } catch {}
       throw new Error(
-        `没能把手上这个 ${basename(executable)} 换开，什么都没动，下载到的那份已经删掉（${(error as Error).message}）：` +
-          `这个文件被别的程序打开着（杀毒软件在读、调试器挂着）就是这样，过一阵再来一次`,
+        t("selfReplace.cannotRenameRunning", {
+          name: basename(executable),
+          why: (error as Error).message,
+        }),
       );
     }
   }
@@ -74,15 +77,19 @@ export function swapSelf(executable: string, { rename = renameSync } = {}) {
         rename(old, executable);
       } catch (putBack) {
         throw new Error(
-          `换文件失败了，而且没能把旧的放回去：现在 ${executable} 不在，旧的在 ${old}。` +
-            `把它改回原名就能用（${(error as Error).message}；放回时 ${(putBack as Error).message}）`,
+          t("selfReplace.lost", {
+            executable,
+            old,
+            why: (error as Error).message,
+            putBack: (putBack as Error).message,
+          }),
         );
       }
     }
     try {
       rmSync(staged, { force: true });
     } catch {}
-    throw new Error(`换文件失败了，已经回到原样（${(error as Error).message}）`);
+    throw new Error(t("selfReplace.rolledBack", { why: (error as Error).message }));
   }
   return { replaced: running ? old : null };
 }

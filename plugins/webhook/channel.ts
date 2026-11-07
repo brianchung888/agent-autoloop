@@ -4,6 +4,7 @@
 //                               "body": { "msgtype": "text", "text": { "content": "{text}" } } } }
 import { accepted, payload } from "./templates.ts";
 import type { Card, ChannelContext } from "../../host/channels.ts";
+import { t } from "../../host/i18n.ts";
 
 function fill(template: unknown, text: string): unknown {
   if (typeof template === "string") return template.replaceAll("{text}", () => text);
@@ -21,7 +22,7 @@ const asWords = (text: string) => text.replaceAll("](", "］(").replaceAll("<", 
 function words(card: Card, platform = "") {
   if (platform === "wecom")
     card = { ...card, title: asWords(card.title), text: asWords(card.text), options: card.options.map(asWords) };
-  const source = platform === "wecom" && card.rule ? `来源：${asWords(card.rule)}` : "";
+  const source = platform === "wecom" && card.rule ? t("webhook.source", { rule: asWords(card.rule) }) : "";
   if (
     platform === "wecom" &&
     card.kind === "notice" &&
@@ -30,7 +31,7 @@ function words(card: Card, platform = "") {
     card.options[0] === "已处理" &&
     card.link
   )
-    return [card.title, source, card.text, `[点击处理](${card.link})`].filter(Boolean).join("\n\n");
+    return [card.title, source, card.text, `[${t("webhook.openCard")}](${card.link})`].filter(Boolean).join("\n\n");
   const choices = card.options.map((option, index) => `${index + 1}. ${option}`).join("\n");
   const parts = [card.title, source, card.text, ...(card.state === "open" ? [choices, card.link] : [])];
   return parts.filter(Boolean).join("\n\n");

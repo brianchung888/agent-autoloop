@@ -22,13 +22,13 @@ Most of us use command-line agents like Claude Code or Codex by babysitting a te
 
 Works on macOS, Linux and Windows 11. You need Node 24, Git (and curl on macOS / Linux; on Windows PowerShell's own `irm` does it), and at least one command-line agent already signed in; no GitHub account required. You can also hand the [installation guide](INSTALL.md) to your agent and let it install everything for you.
 
-> **Windows: supported natively, no WSL2 needed.** Install from PowerShell, no administrator required: `irm https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.ps1 | iex`. Four things are less than they are elsewhere: desktop notifications are always skipped (cards still reach `agent-autoloop status` and any other channel); it is kept running by a scheduled task rather than a service manager, so after it stops it can take up to five minutes to come back; file permissions are locked to the current user with `icacls`, and where that is refused (a network drive, FAT32, a domain policy) the install carries on and `agent-autoloop doctor` reports the degradation; and an agent has to be a real executable — the `.cmd` wrapper npm writes cannot be started as a program. See [INSTALL](INSTALL.md) for the details.
+> **Windows: supported natively, no WSL2 needed.** Install from PowerShell, no administrator required: `irm https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.ps1 | iex`. Four things are less than they are elsewhere: desktop notifications are always skipped (cards still reach `agent-autoloop status` and any other channel); it is kept running by a scheduled task rather than a service manager, so after it stops it can take up to five minutes to come back; file permissions are locked to the current user with `icacls`, and where that is refused (a network drive, FAT32, a domain policy) the install carries on and `agent-autoloop doctor` reports the degradation; and an agent has to be a real executable — the `.cmd` wrapper npm writes cannot be started as a program. See [INSTALL](INSTALL.md) for the details.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.sh | sh
 ```
 
-The installer and `agent-autoloop update` both install the newest [release](https://github.com/KKKKhazix/agent-autoloop/releases), which has passed every check.
+The installer and `agent-autoloop update` both install the newest [release](https://github.com/brianchung888/agent-autoloop/releases), which has passed every check.
 
 > **No Node on the machine?** Every release also carries a single-file executable, one per platform, each with a `.sha256` beside it: download it, check the sum, run `agent-autoloop init`. Nothing else is needed. What it costs: about 96 MB to download (there is a whole Node inside it), a SmartScreen warning on Windows because it is not signed, and third-party `.ts` plugins having to declare `runtime: "process"`. The source install stays the default; both share one data directory and you can move between them. See [INSTALL](INSTALL.md#单一二进位这台电脑上没有-node).
 

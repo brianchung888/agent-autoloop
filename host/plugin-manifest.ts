@@ -8,6 +8,7 @@
 // nowhere to run — because carrying on would run the wrong thing or nothing at all.
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { t } from "./i18n.ts";
 
 export type PluginRuntime = "source" | "process";
 export type PluginManifest = {
@@ -52,17 +53,15 @@ export function readManifest(folder: string, name = folder): PluginManifest {
   if (runtime === undefined || runtime === null) return DEFAULT_MANIFEST;
   if (typeof runtime !== "string" || !RUNTIMES.includes(runtime as PluginRuntime))
     throw new Error(
-      `${name} 的 plugin.json 里 runtime 只能是 ${RUNTIMES.join(" 或 ")}，现在写的是 ${describe(runtime)}`,
+      t("manifest.runtime", { name, allowed: RUNTIMES.join(t("manifest.or")), written: describe(runtime) }),
     );
   if (runtime === "source") return DEFAULT_MANIFEST;
-  if (typeof entry !== "string" || !entry)
-    throw new Error(`${name} 的 plugin.json 写了 runtime: "process"，还要用 entry 指出要运行的程序`);
-  if (isAbsolute(entry) || /^[a-zA-Z]:/.test(entry))
-    throw new Error(`${name} 的 plugin.json 里 entry 要是插件目录内的相对路径，不能是绝对路径：${entry}`);
+  if (typeof entry !== "string" || !entry) throw new Error(t("manifest.entryMissing", { name }));
+  if (isAbsolute(entry) || /^[a-zA-Z]:/.test(entry)) throw new Error(t("manifest.entryAbsolute", { name, entry }));
   const file = resolve(folder, entry);
-  if (escapes(resolve(folder), file)) throw new Error(`${name} 的 plugin.json 里 entry 走出了插件目录：${entry}`);
+  if (escapes(resolve(folder), file)) throw new Error(t("manifest.entryEscapes", { name, entry }));
   if (args !== undefined && (!Array.isArray(args) || args.some((part) => typeof part !== "string")))
-    throw new Error(`${name} 的 plugin.json 里 args 要是一串字符串，每一项都是一个参数`);
+    throw new Error(t("manifest.args", { name }));
   return { runtime: "process", entry: file, args: (args as string[]) ?? [] };
 }
 

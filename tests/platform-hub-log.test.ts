@@ -16,6 +16,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { anyLang } from "../host/i18n.ts";
 import { skipUnless } from "./helpers.ts";
 
 const test = skipUnless(
@@ -95,7 +96,14 @@ test("计划任务起的中台，把 webhook 装不起插件的那一整句写�
   assert.equal(answer.status, 404);
   const said = (await answer.json()) as { error?: string };
   // What goes over the wire stays what it was: the plugin's name, an errno, and where the rest of it is written down.
-  assert.match(String(said.error), /no-such-plugin-here.*装不起来.*中台日志/s);
+  // Asked in every language rather than in the one this suite is written in: the task carries the environment
+  // host/service-win.ts wrote for it and nothing of this process, so the hub it starts says whatever this install
+  // says when nobody has said otherwise — 正體 — while every other assertion here quotes 简体 (tests/lang.env).
+  assert.match(String(said.error), /no-such-plugin-here/);
+  assert.ok(
+    anyLang("server.adapterBrokenTail").some((tail) => String(said.error).includes(tail)),
+    String(said.error),
+  );
 
   // And that is where the rest of it really is. The hub writes the line as it answers, so it is looked for rather
   // than assumed to be there the moment the answer arrives.
@@ -106,9 +114,9 @@ test("计划任务起的中台，把 webhook 装不起插件的那一整句写�
     if (/no-such-plugin-here/.test(wrote)) break;
     await wait(100);
   }
-  assert.match(
-    wrote,
-    /webhook hooked：没有 no-such-plugin-here 的插件（plugins\/no-such-plugin-here\/source\.ts）/,
-    `404 叫人去读中台日志，而日志里没有这一句：\n${wrote}`,
+  const sentence = anyLang("plugin.none", { name: "no-such-plugin-here", kind: "source" });
+  assert.ok(
+    sentence.some((one) => wrote.includes(`webhook hooked：${one}`)),
+    `404 叫人去读中台日志，而日志里没有这一句（${sentence.join(" / ")}）：\n${wrote}`,
   );
 });

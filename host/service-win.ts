@@ -11,6 +11,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { t } from "./i18n.ts";
 
 export type TaskOptions = {
   label: string;
@@ -61,13 +62,13 @@ const xml = (text: string) =>
 /** A path is one argument whatever is in it. A quote cannot be in a Windows path, so quoting it needs no escaping. */
 function argument(value: string) {
   const bad = (at: string) => at === '"' || at.codePointAt(0)! < 0x20 || at.codePointAt(0) === 0x7f;
-  if ([...value].some(bad)) throw new Error("Windows 上的路径不能包含引号或控制字符");
+  if ([...value].some(bad)) throw new Error(t("service.winPathQuotes"));
   return `"${value}"`;
 }
 
 /** The home this install uses, for `node --env-file`: it is read as a value, never as something a shell would run. */
 export function environment(home: string) {
-  if (/[\r\n]/.test(home)) throw new Error("AGENT_AUTOLOOP_HOME 不能包含换行");
+  if (/[\r\n]/.test(home)) throw new Error(t("service.winHomeNewline"));
   return `AGENT_AUTOLOOP_HOME="${home}"\n`;
 }
 
@@ -88,7 +89,7 @@ export function taskXml(options: TaskOptions) {
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Agent 自动化中台（${xml(options.label)}）[${installMark(options.home, known(options))}]</Description>
+    <Description>${t("service.descriptionNamed", { label: xml(options.label) })}[${installMark(options.home, known(options))}]</Description>
     <URI>\\${xml(options.label)}</URI>
   </RegistrationInfo>
   <Triggers>${options.atLogon ? "\n    <LogonTrigger><Enabled>true</Enabled></LogonTrigger>" : ""}

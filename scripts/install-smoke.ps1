@@ -26,6 +26,10 @@ $PSNativeCommandUseErrorActionPreference = $false
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
+# 这份自检断言的是这个程序原来那些字，也就是简体的那一份（i18n/zh-CN.ts）。程序和 install.ps1 默认都说正體，
+# 所以这里说一次要哪一种；两种话都断言一遍不会多验出什么，只会把每一句写两遍。
+$env:AGENT_AUTOLOOP_LANG = "zh-CN"
+
 $repo =(Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("agent-autoloop-smoke-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 $upJob = $null

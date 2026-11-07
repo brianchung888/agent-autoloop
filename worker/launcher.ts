@@ -15,12 +15,13 @@
 // tests/platform-launch.test.ts starts it: that is the same code either way.
 import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, openSync, renameSync, writeFileSync } from "node:fs";
+import { t } from "../host/i18n.ts";
 
 /** Wraps one agent: `<stdout 文件> <stderr 文件> <exit 文件> -- <程序> [参数…]`. Ends this process, either way. */
 export function launch(words: string[]): void {
   const [out, err, exitFile, dashes, ...argv] = words;
   if (!out || !err || !exitFile || dashes !== "--" || !argv.length) {
-    process.stderr.write("用法：agent-autoloop internal:launch <stdout 文件> <stderr 文件> <exit 文件> -- <命令行>\n");
+    process.stderr.write(`${t("launcher.usage")}\n`);
     process.exit(2);
   }
 
@@ -42,7 +43,7 @@ export function launch(words: string[]): void {
     stderr = openSync(err, "a");
   } catch (error) {
     try {
-      writeFileSync(err, `启动不了：写不了输出文件（${error}）\n`, { flag: "a" });
+      writeFileSync(err, `${t("launcher.cannotOpen", { why: String(error) })}\n`, { flag: "a" });
     } catch {}
     // 127 is what a shell leaves when it couldn't run the command at all.
     publish(127);
@@ -60,7 +61,7 @@ export function launch(words: string[]): void {
   };
   const whyNot = (error: unknown) => {
     try {
-      writeFileSync(err, `启动不了：${error}\n`, { flag: "a" });
+      writeFileSync(err, `${t("launcher.cannotStart", { why: String(error) })}\n`, { flag: "a" });
     } catch {}
     once(127);
   };

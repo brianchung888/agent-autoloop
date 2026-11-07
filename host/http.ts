@@ -1,6 +1,7 @@
 // Node's HTTP server and nothing more: each request becomes a web Request for the kernel, each answer goes back out.
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
+import { t } from "./i18n.ts";
 import { makeHandler } from "./server.ts";
 
 /**
@@ -65,7 +66,7 @@ export function serve(port: number, host = "127.0.0.1", { commit = "dev" }: { co
     } catch (error) {
       console.error(error);
       if (res.headersSent) return void res.end();
-      res.writeHead(500, { "content-type": "application/json" }).end(JSON.stringify({ error: "中台出错了" }));
+      res.writeHead(500, { "content-type": "application/json" }).end(JSON.stringify({ error: t("http.serverError") }));
     }
   });
   server.keepAliveTimeout = KEEP_ALIVE;

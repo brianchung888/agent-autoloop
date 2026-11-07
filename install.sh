@@ -1,15 +1,26 @@
 #!/bin/sh
 # Installs Agent 自动化中台: a clone in ~/.agent-autoloop/app, with nothing to build and nothing else to install.
 set -e
-PUBLISHED=https://github.com/KKKKhazix/agent-autoloop.git
+PUBLISHED=https://github.com/brianchung888/agent-autoloop.git
 REPO="${AGENT_AUTOLOOP_REPO:-$PUBLISHED}"
 ROOT="${AGENT_AUTOLOOP_HOME:-$HOME/.agent-autoloop}"
 APP="$ROOT/app"
 PROGRAM="$APP/bin/agent-autoloop.ts"
 
+# 这个脚本说哪种中文。规矩和程序一样（host/i18n.ts）：AGENT_AUTOLOOP_LANG 最先，然后是环境的 LC_ALL / LANG，
+# 都没说就说正體。它跑在程序还不存在的时候，所以这两种说法只能带在它自己身上。
+lang=zh-TW
+case "${AGENT_AUTOLOOP_LANG:-${LC_ALL:-${LANG:-}}}" in
+  *Hant* | *hant* | zh[-_]TW* | zh[-_]HK* | zh[-_]MO*) lang=zh-TW ;;
+  zh | zh[-_.]* | zh@*) lang=zh-CN ;;
+esac
+# say <正體> <简体>
+say() { if [ "$lang" = zh-CN ]; then echo "$2"; else echo "$1"; fi; }
+
 need_node() {
   echo "$1"
-  cat <<'END'
+  if [ "$lang" = zh-CN ]; then
+    cat <<'END'
 用 Homebrew 的话，node@24 装好后默认不在 PATH 上，这三行都要运行（用 bash 就把 ~/.zshrc 换成 ~/.bashrc）：
   brew install node@24
   echo "export PATH=\"$(brew --prefix node@24)/bin:\$PATH\"" >> ~/.zshrc
@@ -19,12 +30,26 @@ need_node() {
   nvm alias default 24
 装好后再运行一遍这个安装命令。
 END
+  else
+    cat <<'END'
+用 Homebrew 的話，node@24 裝好後預設不在 PATH 上，這三行都要執行（用 bash 就把 ~/.zshrc 換成 ~/.bashrc）：
+  brew install node@24
+  echo "export PATH=\"$(brew --prefix node@24)/bin:\$PATH\"" >> ~/.zshrc
+  source ~/.zshrc
+用 nvm 的話：
+  nvm install 24
+  nvm alias default 24
+裝好後再執行一遍這個安裝命令。
+END
+  fi
   exit 1
 }
 
-command -v git >/dev/null || { echo "需要 git。"; exit 1; }
-command -v node >/dev/null || need_node "需要 Node.js 24 或更新，这台电脑上没找到。"
-node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' || need_node "需要 Node.js 24 或更新，现在是 $(node -v)。"
+command -v git >/dev/null || { say "需要 git。" "需要 git。"; exit 1; }
+command -v node >/dev/null ||
+  need_node "$(say '需要 Node.js 24 或更新，這台電腦上沒找到。' '需要 Node.js 24 或更新，这台电脑上没找到。')"
+node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' ||
+  need_node "$(say "需要 Node.js 24 或更新，現在是 $(node -v)。" "需要 Node.js 24 或更新，现在是 $(node -v)。")"
 
 mkdir -p -m 700 "$ROOT"
 chmod 700 "$ROOT"
@@ -75,7 +100,7 @@ IFS=$usual_ifs
 if [ "${1:-}" = join ]; then
   "$PROGRAM" "$@"
 elif [ -f "$ROOT/config.json" ]; then
-  echo "更新好了。"
+  say "更新好了。" "更新好了。"
   case " $* " in *" --no-service "*) ;; *) "$PROGRAM" service install ;; esac
 else
   "$PROGRAM" init "$@"
@@ -83,7 +108,9 @@ fi
 
 if ! [ "$(command -v agent-autoloop)" -ef "$PROGRAM" ]; then
   echo
-  echo "直接打 agent-autoloop 运行不了这个程序：PATH 上没有能放它的目录，或者排在前面的是另一个同名程序。"
-  echo "要写完整路径 $PROGRAM，或者把这一行加进 ~/.zshrc（用 bash 就是 ~/.bashrc）："
+  say "直接打 agent-autoloop 執行不了這個程式：PATH 上沒有能放它的目錄，或者排在前面的是另一個同名程式。" \
+    "直接打 agent-autoloop 运行不了这个程序：PATH 上没有能放它的目录，或者排在前面的是另一个同名程序。"
+  say "要寫完整路徑 $PROGRAM，或者把這一行加進 ~/.zshrc（用 bash 就是 ~/.bashrc）：" \
+    "要写完整路径 $PROGRAM，或者把这一行加进 ~/.zshrc（用 bash 就是 ~/.bashrc）："
   echo "  alias agent-autoloop='$PROGRAM'"
 fi

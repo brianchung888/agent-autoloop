@@ -3,6 +3,7 @@
 import { watch } from "node:fs";
 import { basename, dirname } from "node:path";
 import { RULES_FILE } from "./home.ts";
+import { t } from "./i18n.ts";
 import { loadPlugin } from "./plugins.ts";
 import * as hub from "./runtime.ts";
 import { AuthError, NotFound } from "../kernel/errors.ts";
@@ -56,7 +57,7 @@ function logStream(after: number, signal: AbortSignal, key: string) {
 
 async function adaptWebhook(source: string, headers: Headers, body: string) {
   const adapter = hub.rules.sources[source]?.adapter;
-  if (!adapter || !/^[a-z][a-z0-9-]*$/.test(adapter)) throw new NotFound("这个来源不收 Webhook");
+  if (!adapter || !/^[a-z][a-z0-9-]*$/.test(adapter)) throw new NotFound(t("server.noWebhook"));
   // Getting the plugin is its own trouble, told apart from what it answers with. Outside a `catch` this threw past
   // every door this file has, and whoever sent the webhook got a 500 saying «中台出错了» while the one sentence that
   // says what is wrong went nowhere anybody was looking. It is this source's adapter being unusable, which is the
@@ -73,14 +74,17 @@ async function adaptWebhook(source: string, headers: Headers, body: string) {
   } catch (error) {
     console.error(`webhook ${source}：${(error as Error).message}`);
     const code = (error as NodeJS.ErrnoException).code;
-    throw new NotFound(`${adapter} 这个插件装不起来${code ? `（${code}）` : ""}，中台日志里写了是什么`);
+    throw new NotFound(
+      (code ? t("server.adapterBrokenCode", { adapter, code }) : t("server.adapterBroken", { adapter })) +
+        t("server.adapterBrokenTail"),
+    );
   }
   const secret = process.env[`AGENT_AUTOLOOP_SECRET_${source.toUpperCase().replaceAll("-", "_")}`] ?? "";
   try {
     const events = await translate({ headers: Object.fromEntries(headers), body, secret });
     return Array.isArray(events) ? events : [];
   } catch {
-    throw new AuthError("验签没过");
+    throw new AuthError(t("server.badSignature"));
   }
 }
 

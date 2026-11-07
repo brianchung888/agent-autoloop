@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
+import { t } from "../../host/i18n.ts";
 import { findProgram, tail, type Adapter } from "../../worker/agents.ts";
 
 const SANDBOX = { read: "read-only", edit: "workspace-write", full: "danger-full-access" };
@@ -76,14 +77,14 @@ export default {
         seen.sessionUsage = { input: input_tokens, output: output_tokens, cached: cached_input_tokens };
       } else if (event.type === "turn.failed") {
         seen.finished = true;
-        seen.error = event.error?.message || "Codex 没跑完这一轮";
+        seen.error = event.error?.message || t("codex.unfinished");
       } else if (event.type === "error") seen.error = event.message;
     }
     const { completed, ...reading } = seen;
     // Only a finished turn's last message is its answer; before that it's only as far as it had got.
     if (!completed) delete reading.text;
-    if (code !== null && !completed && !reading.error) reading.error = tail(stderr) || "Codex 没有完成并留下实际结果";
-    if (completed && !reading.text?.trim()) reading.error = "Codex 没有完成并留下实际结果";
+    if (code !== null && !completed && !reading.error) reading.error = tail(stderr) || t("codex.noResult");
+    if (completed && !reading.text?.trim()) reading.error = t("codex.noResult");
     return reading;
   },
   link: (session) => `codex://threads/${session}`,
@@ -96,7 +97,7 @@ export default {
       );
       return null;
     } catch (error) {
-      return `Codex 没有登录或用不了：运行 codex login（${(error as Error).message.split("\n")[0]}）`;
+      return t("codex.notLoggedIn", { why: (error as Error).message.split("\n")[0] });
     }
   },
 } satisfies Adapter;

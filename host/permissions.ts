@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { HOME } from "./home.ts";
+import { t } from "./i18n.ts";
 
 const windows = () => process.platform === "win32";
 /** Beside the files it is about, so another process — `doctor` — can read what was managed. */
@@ -34,17 +35,17 @@ const said = new Map<string, string | null>();
  */
 function lockOnWindows(target: string, folder: boolean) {
   const who = process.env.USERNAME;
-  if (!who) return "不知道当前用户是谁（USERNAME 没有设）";
+  if (!who) return t("permissions.noUser");
   const grant = folder ? `${who}:(OI)(CI)F` : `${who}:F`;
   const done = spawnSync("icacls", [target, "/inheritance:r", "/grant:r", grant], {
     encoding: "utf8",
     timeout: 60_000,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  if (done.error) return `icacls 运行不了：${done.error.message}`;
+  if (done.error) return t("permissions.icaclsBroken", { why: done.error.message });
   if (done.status === 0) return null;
   const why = `${done.stderr ?? ""}${done.stdout ?? ""}`.trim().split(/\r?\n/)[0] ?? "";
-  return `icacls 没能锁定 ${target}${why ? `：${why}` : ""}`;
+  return `${t("permissions.icaclsRefused", { target })}${why ? `：${why}` : ""}`;
 }
 
 /**
@@ -97,7 +98,7 @@ export function secureFile(file: string) {
 export function permissionTrouble() {
   if (!windows()) return null;
   const mark = readMark();
-  if (!mark) return "还没有锁过文件权限：运行一次 agent-autoloop init 或 up";
+  if (!mark) return t("permissions.neverLocked");
   if (!mark.trouble) return null;
-  return `${mark.trouble}。同一台电脑上的其他用户可能读得到 ${HOME} 里的东西`;
+  return t("permissions.trouble", { trouble: mark.trouble, home: HOME });
 }

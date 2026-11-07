@@ -6,10 +6,9 @@ import { execFile } from "node:child_process";
 import type { Card, ChannelContext } from "../../host/channels.ts";
 // Saying there is no notifier sends cards down the skipped path, which is right and quiet, rather than failing each one
 // on a command that isn't there. `doctor` reads the same answer, so the two can never say different things.
+import { t } from "../../host/i18n.ts";
 import { hasDesktopNotifier } from "../../host/notify.ts";
 
-const WORDS = "运行 agent-autoloop status 查看";
-const TITLE = "Agent 问你一个问题";
 const APPLESCRIPT = ["on run argv", "display notification (item 2 of argv) with title (item 1 of argv)", "end run"];
 
 /**
@@ -17,9 +16,11 @@ const APPLESCRIPT = ["on run argv", "display notification (item 2 of argv) with 
  * it one when it starts with a dash: without it osascript takes a title of `-e` as more script to run.
  */
 export function notifyCommand(title: string, platform: string = process.platform): [string, string[]] {
-  const body = `${title}\n${WORDS}`;
-  if (platform === "darwin") return ["osascript", [...APPLESCRIPT.flatMap((line) => ["-e", line]), "--", TITLE, body]];
-  return ["notify-send", ["--", TITLE, body]];
+  const body = `${title}\n${t("desktop.words")}`;
+  const heading = t("desktop.title");
+  if (platform === "darwin")
+    return ["osascript", [...APPLESCRIPT.flatMap((line) => ["-e", line]), "--", heading, body]];
+  return ["notify-send", ["--", heading, body]];
 }
 
 /** Not the sync call the other channels get away with: this runs in the hub's own process, and may wait on a dialog. */
@@ -37,7 +38,7 @@ export default async function desktop({ hub, log, signal }: ChannelContext) {
     try {
       ({ card } = await hub.nextCard(50));
     } catch (error) {
-      log(`连不上中台：${error}`);
+      log(t("desktop.hubUnreachable", { why: String(error) }));
       await new Promise((resolve) => setTimeout(resolve, 10_000));
       continue;
     }
@@ -55,7 +56,7 @@ export default async function desktop({ hub, log, signal }: ChannelContext) {
       await show(card.title);
       await hub.delivered(card.id, card.version, `shown-${card.id}`);
     } catch (error) {
-      log(`卡片 ${card.id} 的桌面通知没发出：${error}`);
+      log(t("desktop.notSent", { card: card.id, why: String(error) }));
       await hub.failed(card.id, card.version, String(error)).catch(() => {});
     }
   }

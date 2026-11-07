@@ -25,6 +25,7 @@ import { hubClient } from "../protocol/client.ts";
 import { parseRules } from "../protocol/rules.ts";
 import { CONFIG_FILE, readConfig, writeConfig, type Config } from "../host/config.ts";
 import { HOME, RULES_FILE } from "../host/home.ts";
+import { anyLang, asLang, lang, LANGS, t, useLang } from "../host/i18n.ts";
 import { readManifest, type PluginManifest } from "../host/plugin-manifest.ts";
 import { stablePath } from "../host/node-path.ts";
 import { desktopTrouble } from "../host/notify.ts";
@@ -46,121 +47,44 @@ import { attemptsOf, newFailure, waitingRetry } from "./try.ts";
 
 const ROOT = path.join(import.meta.dirname, "..");
 
-const HELP = `Agent 自动化中台
-
-  agent-autoloop init [--agent claude|codex] [--command '某个命令 {prompt}'] [--port 3350] [--no-service]
-                                    在这台电脑上装好：一个人一台电脑就够
-  agent-autoloop try                     用你的 Agent 跑一遍完整流程
-  agent-autoloop why <第几轮> [--json]  查看时间线；--json 输出原始事实
-  agent-autoloop conformance <地址> --config <测试凭据文件>
-                                    在测试中台上检查协议
-  agent-autoloop status [--json]         现在什么情况：谁在线、等你什么、在做什么、做过什么、花了多少
-                                     --json 输出 /v1/state 的原始结构，给脚本用
-  agent-autoloop answer <卡片> [序号] [--text 别的想法]
-                                    回答一张卡片；通知不用写序号
-  agent-autoloop resolve <卡片> <结果>   这件事不用决定了，写一句结果
-  agent-autoloop doctor                  查哪里没配好
-  agent-autoloop check [文件]            检查规则文件，不碰中台；不写文件就查 rules.json
-  agent-autoloop rules explain           按本机 rules.json 说明生效的规则、Agent、通道和下次定时
-  agent-autoloop emit <类型> [--dry-run] [--subject x] [--summary x] [--detail x] [--link x] [--id x] [--key 来源密钥]
-                                    发一条事件；--dry-run 只预演会派给谁，不连接中台
-  agent-autoloop tell <编号> [--task 定时任务名]
-                                    直接告诉你一件事，内容从标准输入读
-  agent-autoloop ask --task <定时任务名>
-                                    定时任务问你一件事：标准输入传回执那样的 ask；你答了，它的 Agent 在 cwd 接着做
-  agent-autoloop stop <第几轮>           停掉一轮
-  agent-autoloop key new <source|worker|channel|owner> <名字>
-                                    新建一把密钥（只显示这一次）
-  agent-autoloop key list                有哪些密钥
-  agent-autoloop key remove <种类> <名字>  立即收回一把密钥
-  agent-autoloop add <git 地址>           安装插件，不自动更新
-  agent-autoloop mcp                      用标准输入输出连接 MCP 客户端
-  agent-autoloop join <中台地址> --worker <名字> --key <密钥> [--no-service]
-                                    另一台电脑只接活时用
-  agent-autoloop backup [目录]           备份数据库、主密钥、配置、规则和 secrets.env；不填目录就放在 ~/.agent-autoloop/backups
-  agent-autoloop restore <目录> [--yes]  停掉中台后，用一次备份恢复本机数据
-  agent-autoloop update                  更新到最新发布的版本
-  agent-autoloop uninstall [--yes]       卸载程序并保留数据；--yes 跳过确认
-  agent-autoloop --version               版本和当前提交
-  agent-autoloop help                    这份说明
-  agent-autoloop up                      启动（平时由系统服务调用）
-  agent-autoloop service install|remove  系统服务
-
-配置和数据在 ${HOME}。规则在 ${RULES_FILE}，改了自动生效。`;
-
-const INIT_USAGE = `用法：agent-autoloop init [--agent claude|codex] [--command '某个命令 {prompt}'] [--port 3350] [--no-service]
-
-  --agent      只接这个 Agent：claude 或 codex。不写就接本机装好的全部
-  --command    改用别的命令行 Agent；{prompt} 会作为一个独立参数传进去
-  --port       中台监听的端口，默认 3350
-  --no-service 先不装系统服务，之后手动运行 agent-autoloop up`;
-
-const TRY_USAGE = `用法：agent-autoloop try
-
-用本机接好的 Agent 跑一遍完整流程：提问，进程退出等你回复，你拍板，它接着干完。`;
-
-const STATUS_USAGE = `用法：agent-autoloop status [--json]
-
-现在什么情况：谁在线、等你什么、在做什么、做过什么、花了多少。
-  --json  输出 /v1/state 的原始结构，给脚本和看板用`;
-
-const UPDATE_USAGE = `用法：agent-autoloop update
-
-更新到最新发布的版本。没有参数。`;
-
-const UNINSTALL_USAGE = `用法：agent-autoloop uninstall [--yes]
-
-卸载程序并保留规则、密钥和记录。
-  --yes  跳过确认`;
-
-const RESTORE_USAGE = `用法：agent-autoloop restore <目录> [--yes]
-
-恢复会替换本机的数据库、主密钥、配置、规则和 secrets.env；先停掉中台，--yes 跳过确认。`;
+/**
+ * Every word of these is in i18n/ (host/i18n.ts), and each is read when it is said rather than when this module loads:
+ * `lang` writes a new language and then has to confirm itself in it, and a function is what makes that one answer
+ * instead of two.
+ */
+const HELP = () => t("cli.help", { home: HOME, rules: RULES_FILE });
 
 /** What each command reads besides its own words, and how to use it. */
-const TAKES: Record<string, { flags: string[]; usage: string }> = {
-  add: { flags: [], usage: "用法：agent-autoloop add <git 地址>" },
-  answer: { flags: ["text"], usage: "用法：agent-autoloop answer <卡片> [序号] [--text 别的想法]" },
-  ask: {
-    flags: ["task"],
-    usage: `用法：agent-autoloop ask --task <定时任务名>，问题从标准输入读：
-  { "title": "…", "text": "…", "options": ["…", "…"], "recommend": 0, "about": "留给接着做的", "key": "这件事的固定名字" }
-rules.json 里这个定时任务要写 cwd；你答了，中台叫醒它的 Agent 在 cwd 照 skill、prompt 接着做。`,
-  },
-  backup: { flags: [], usage: "用法：agent-autoloop backup [目录]" },
-  check: { flags: [], usage: "用法：agent-autoloop check [文件]" },
-  conformance: { flags: ["config"], usage: "用法：agent-autoloop conformance <测试中台地址> --config <测试凭据文件>" },
-  doctor: { flags: [], usage: "用法：agent-autoloop doctor" },
+const TAKES: Record<string, { flags: string[]; usage: () => string }> = {
+  add: { flags: [], usage: () => t("cli.usage.add") },
+  answer: { flags: ["text"], usage: () => t("cli.usage.answer") },
+  ask: { flags: ["task"], usage: () => t("cli.usage.ask") },
+  backup: { flags: [], usage: () => t("cli.usage.backup") },
+  check: { flags: [], usage: () => t("cli.usage.check") },
+  conformance: { flags: ["config"], usage: () => t("cli.usage.conformance") },
+  doctor: { flags: [], usage: () => t("cli.usage.doctor") },
   emit: {
     flags: ["dry-run", "subject", "summary", "detail", "link", "id", "key"],
-    usage:
-      "用法：agent-autoloop emit <类型> [--dry-run] [--subject x] [--summary x] [--detail x] [--link x] [--id x] [--key 来源密钥]",
+    usage: () => t("cli.usage.emit"),
   },
-  init: { flags: ["agent", "command", "port", "no-service"], usage: INIT_USAGE },
-  join: {
-    flags: ["worker", "key", "no-service"],
-    usage: "用法：agent-autoloop join <中台地址> --worker <名字> --key <密钥> [--no-service]",
-  },
-  key: {
-    flags: [],
-    usage: `用法：agent-autoloop key new <source|worker|channel|owner> <名字>
-      agent-autoloop key list
-      agent-autoloop key remove <种类> <名字>`,
-  },
-  mcp: { flags: [], usage: "用法：agent-autoloop mcp" },
+  init: { flags: ["agent", "command", "port", "no-service", "lang"], usage: () => t("cli.usage.init") },
+  join: { flags: ["worker", "key", "no-service"], usage: () => t("cli.usage.join") },
+  key: { flags: [], usage: () => t("cli.usage.key") },
+  lang: { flags: [], usage: () => t("cli.usage.lang") },
+  mcp: { flags: [], usage: () => t("cli.usage.mcp") },
   // Only its first word is read as anything: the rest is a result in someone's own words, dashes and all.
-  resolve: { flags: [], usage: "用法：agent-autoloop resolve <卡片> <结果>" },
-  restore: { flags: ["yes"], usage: RESTORE_USAGE },
-  rules: { flags: [], usage: "用法：agent-autoloop rules explain" },
-  service: { flags: [], usage: "用法：agent-autoloop service install|remove" },
-  status: { flags: ["json"], usage: STATUS_USAGE },
-  stop: { flags: [], usage: "用法：agent-autoloop stop <第几轮>" },
-  tell: { flags: ["task"], usage: "用法：agent-autoloop tell <编号> [--task 定时任务名]，内容从标准输入读" },
-  try: { flags: [], usage: TRY_USAGE },
-  uninstall: { flags: ["yes"], usage: UNINSTALL_USAGE },
-  up: { flags: [], usage: "用法：agent-autoloop up" },
-  update: { flags: [], usage: UPDATE_USAGE },
-  why: { flags: ["json"], usage: "用法：agent-autoloop why <第几轮> [--json]" },
+  resolve: { flags: [], usage: () => t("cli.usage.resolve") },
+  restore: { flags: ["yes"], usage: () => t("cli.usage.restore") },
+  rules: { flags: [], usage: () => t("cli.usage.rules") },
+  service: { flags: [], usage: () => t("cli.usage.service") },
+  status: { flags: ["json"], usage: () => t("cli.usage.status") },
+  stop: { flags: [], usage: () => t("cli.usage.stop") },
+  tell: { flags: ["task"], usage: () => t("cli.usage.tell") },
+  try: { flags: [], usage: () => t("cli.usage.try") },
+  uninstall: { flags: ["yes"], usage: () => t("cli.usage.uninstall") },
+  up: { flags: [], usage: () => t("cli.usage.up") },
+  update: { flags: [], usage: () => t("cli.usage.update") },
+  why: { flags: ["json"], usage: () => t("cli.usage.why") },
 };
 
 type Flags = Record<string, string | true>;
@@ -202,36 +126,32 @@ const report = (error: unknown) => {
  * Stops at a flag the command doesn't read. A misspelt --port would otherwise install with the default in silence, and
  * --help would install at all.
  */
-function refuseUnknownFlags(args: string[], { flags: known, usage }: { flags: string[]; usage: string }) {
+function refuseUnknownFlags(args: string[], { flags: known, usage }: { flags: string[]; usage: () => string }) {
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(usage);
+    console.log(usage());
     process.exit(0);
   }
   const unknown = Object.keys(flags(args).named).filter((name) => !known.includes(name));
-  if (unknown.length) fail(`不认识的参数：${unknown.map((name) => `--${name}`).join("、")}\n\n${usage}`);
+  if (unknown.length)
+    fail(`${t("cli.unknownFlags", { flags: unknown.map((name) => `--${name}`).join("、") })}\n\n${usage()}`);
 }
 
 const client = (key: string, config = readConfig()) => hubClient(config.url, key);
-const ownerClient = (config = readConfig()) =>
-  client(config.owner ?? fail("这台电脑上没有本人的密钥（只接活的电脑看不了）"), config);
+const ownerClient = (config = readConfig()) => client(config.owner ?? fail(t("cli.noOwnerKey")), config);
 
 /** The first rules of a new install: its agents and one rule to try the whole loop with. */
 function starterRules(agents: Record<string, object>, first: string) {
   return {
-    sources: { local: { name: "本机" } },
+    sources: { local: { name: t("cli.starter.source") } },
     agents,
-    channels: { desktop: { name: "桌面通知" } },
+    channels: { desktop: { name: t("cli.starter.channel") } },
     rules: [
       {
-        name: "试一下",
+        name: t("cli.starter.rule"),
         when: { source: "local", types: ["try.*"] },
         to: first,
         cwd: path.join(HOME, "try"),
-        prompt:
-          "这是 agent-autoloop try 的试跑，不要改任何文件，不要做别的事。读资料文件。" +
-          "如果 answers 是空的，就问一个问题：title 写“试跑：选一个颜色”，text 写“这是一次试跑，选哪个都行。”，" +
-          'options 写 ["蓝色","绿色"]，key 写 try-color，第一行结论写“问了一个问题”。' +
-          "如果 answers 不是空的，第一行结论写“你选了某某，试跑通过”，把某某换成 answers 里选的那一项，不附回执。",
+        prompt: t("cli.starter.prompt"),
       },
     ],
     elsewhere: [],
@@ -275,7 +195,7 @@ function linkSkill() {
       writeFileSync(SKILL_WAYS(), `${JSON.stringify(ways, null, 2)}\n`, { mode: 0o600 });
     }
   } catch (error) {
-    console.log(`没能把 skill 接到你的 Agent 上（${(error as Error).message}）。这不影响中台，之后可以手动放。`);
+    console.log(t("cli.skillNotLinked", { why: (error as Error).message }));
   }
 }
 
@@ -352,8 +272,12 @@ async function agentsToUse(named: Flags, worker: string) {
 async function init(args: string[]) {
   const { named, rest } = flags(args);
   // `init -p 4000` would otherwise install on the default port in silence.
-  if (rest.length) return fail(`不认识的参数：${rest.join(" ")}\n\n${INIT_USAGE}`);
-  if (existsSync(CONFIG_FILE)) return fail(`已经装过了：${CONFIG_FILE}`);
+  if (rest.length) return fail(`${t("cli.unknownArgs", { args: rest.join(" ") })}\n\n${t("cli.usage.init")}`);
+  if (existsSync(CONFIG_FILE)) return fail(t("cli.alreadyInstalled", { file: CONFIG_FILE }));
+  // Before any of this says anything: `--lang` is what it says it in, and what gets written down below.
+  const told = text(named.lang);
+  const chosen = told === undefined ? undefined : (asLang(told) ?? fail(unknownLang(told)));
+  if (chosen) useLang(chosen);
   secureDir(HOME);
   mkdirSync(path.join(HOME, "try"), { recursive: true });
   const hostName = hostname()
@@ -362,10 +286,7 @@ async function init(args: string[]) {
   const worker = hostName.replace(/[^a-z0-9-]/g, "-").replace(/^[^a-z]+/, "") || "this-machine";
   const agents = await agentsToUse(named, worker);
   if (!Object.keys(agents).length) {
-    return fail(
-      "这台电脑上没找到 Claude Code 或 Codex。先装好并登录，" +
-        "或者用 --command 指定别的命令行 Agent，比如 --command 'hermes chat -Q -q {prompt}'",
-    );
+    return fail(t("cli.noAgentFound"));
   }
   const port = text(named.port) ?? "3350";
   const url = `http://127.0.0.1:${port}`;
@@ -380,6 +301,7 @@ async function init(args: string[]) {
     worker: { name: worker, key: addKey("worker", worker) },
     source: { name: "local", key: addKey("source", "local") },
     owner: addKey("owner", "owner"),
+    ...(chosen && { lang: chosen }),
     // A channel only rules.json knows about, or only this file, would do nothing: it's on only if both are ours to write.
     ...(ownRules && { channels: { desktop: { key: addKey("channel", "desktop") } } }),
   };
@@ -387,12 +309,10 @@ async function init(args: string[]) {
   linkSkill();
   if (!named["no-service"]) installService();
   const names = Object.values(agents).map((agent) => agent.name);
-  const reach = ownRules ? "  通道：桌面通知\n" : "";
+  const reach = ownRules ? `${t("cli.init.channelLine")}\n` : "";
   const run = howToRun();
-  const next = named["no-service"]
-    ? `先运行 ${run} up 启动中台，再开一个终端运行 ${run} try 跑一遍完整流程。`
-    : `运行 ${run} try 跑一遍完整流程。`;
-  console.log(`装好了。\n  Agent：${names.join("、")}\n${reach}  规则：${RULES_FILE}\n\n${next}`);
+  const next = named["no-service"] ? t("cli.init.nextNoService", { run }) : t("cli.init.next", { run });
+  console.log(t("cli.init.done", { agents: names.join("、"), reach, rules: RULES_FILE, next }));
 }
 
 async function join(args: string[]) {
@@ -400,15 +320,15 @@ async function join(args: string[]) {
   const [url] = rest;
   const name = text(named.worker);
   const key = text(named.key);
-  if (!url || !name || !key) return fail(TAKES.join.usage);
+  if (!url || !name || !key) return fail(TAKES.join.usage());
   // Joining another hub must not silently replace this machine's existing hub, worker or owner keys.
   if (existsSync(CONFIG_FILE)) {
-    return fail(`已经配置过了：${CONFIG_FILE}。为防止覆盖现有设置，请先备份并手动修改配置。`);
+    return fail(t("cli.join.already", { file: CONFIG_FILE }));
   }
   writeConfig({ url, worker: { name, key } });
   if (!named["no-service"]) installService();
-  const next = named["no-service"] ? `运行 ${howToRun()} up 开始。` : "";
-  console.log(`这台电脑以 ${name} 的身份接活了。${next}`);
+  const next = named["no-service"] ? t("cli.join.next", { run: howToRun() }) : "";
+  console.log(t("cli.join.done", { name, next }));
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -416,28 +336,30 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 type Card = { id: number; kind: string; title: string; text: string; options: string[]; recommend: number | null };
 
 function showCard(card: Card) {
-  console.log(`\n【${card.kind === "ask" ? "等你决定" : "要你留意"}】#${card.id} ${card.title}`);
+  console.log(`\n【${card.kind === "ask" ? t("cli.card.ask") : t("cli.card.notice")}】#${card.id} ${card.title}`);
   if (card.text) console.log(card.text);
   if (card.kind !== "ask") return;
   card.options.forEach((option, index) => {
-    console.log(`  ${index + 1}. ${option}${index === card.recommend ? "（推荐）" : ""}`);
+    console.log(`  ${index + 1}. ${option}${index === card.recommend ? t("cli.card.recommend") : ""}`);
   });
 }
 
 const howToAnswer = (card: Card) =>
-  card.kind === "ask" ? `回答：agent-autoloop answer ${card.id} <序号>` : `处理完了：agent-autoloop answer ${card.id}`;
+  card.kind === "ask"
+    ? t("cli.card.howToAnswerAsk", { card: card.id })
+    : t("cli.card.howToAnswerNotice", { card: card.id });
 
 async function chooseAt(terminal: ReturnType<typeof createInterface>, card: Card) {
   for (;;) {
-    const choice = Number(await terminal.question("\n选几？"));
+    const choice = Number(await terminal.question(`\n${t("cli.choose")}`));
     if (Number.isInteger(choice) && choice >= 1 && choice <= card.options.length) return choice - 1;
-    console.log(`输入 1 到 ${card.options.length}。`);
+    console.log(t("cli.chooseRange", { max: card.options.length }));
   }
 }
 
 async function tryIt() {
   const config = readConfig();
-  if (!config.source) return fail("这台电脑上没有来源的密钥。");
+  if (!config.source) return fail(t("cli.try.noSourceKey"));
   const owner = ownerClient(config);
   const stamp = Date.now();
   // A hub that can't be reached is said just below, when the event doesn't go through.
@@ -445,59 +367,60 @@ async function tryIt() {
   const attempts = attemptsOf(before.runs);
   await client(config.source.key, config)
     .event({ id: `try-${stamp}`, type: "try.start", subject: `#${stamp}` })
-    .catch((error) => fail(`连不上中台（${error.message}）：先 agent-autoloop up 或 agent-autoloop service install`));
+    .catch((error) => fail(t("cli.try.hubUnreachable", { why: error.message })));
   const retrying = waitingRetry(before.runs);
   if (retrying) {
     const clock = { timeZone: before.timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
-    const time = new Date(retrying.notBefore).toLocaleString("zh-CN", clock);
-    console.log(`上一次没跑成（${retrying.error}），${time} 会自动再试，这次的事件会一起处理。`);
-  } else console.log("事件发出去了，Agent 开始干活……");
+    const time = new Date(retrying.notBefore).toLocaleString(lang(), clock);
+    console.log(t("cli.try.retrying", { error: retrying.error, time }));
+  } else console.log(t("cli.try.sent"));
   let asked: number | null = null;
   for (let i = 0; i < 300; i++) {
     await sleep(1000);
     const state = await owner.state();
     const failed = newFailure(state.runs, attempts);
-    if (failed) return fail(`Agent 没跑成：${failed.error}\n运行 agent-autoloop doctor 看看。`);
+    if (failed) return fail(t("cli.try.agentFailed", { error: failed.error }));
     if (asked === null) {
       // An agent asking the same thing again lands on the card already open, so this may be from before: it's the one.
+      // The prompt that asked for it was written into rules.json when this install was made, in whichever language
+      // `init` then said things in: the title starts with that language's word, not today's.
       const card: Card | undefined = state.cards.find(
-        (open: Card) => open.kind === "ask" && open.title.startsWith("试跑"),
+        (open: Card) =>
+          open.kind === "ask" && anyLang("cli.try.cardPrefix").some((prefix) => open.title.startsWith(prefix)),
       );
       if (!card) continue;
       asked = card.id;
-      console.log("\nAgent 结束了这一轮，问了你一个问题。它现在不占进程、不花 Token。");
+      console.log(`\n${t("cli.try.asked")}`);
       showCard(card);
       if (!process.stdin.isTTY) {
-        console.log(`${howToAnswer(card)}\n答完运行 agent-autoloop status，能看到它接着把活干完。`);
+        console.log(t("cli.try.answerHint", { how: howToAnswer(card) }));
         return;
       }
       const terminal = createInterface({ input: process.stdin, output: process.stdout });
       const choice = await chooseAt(terminal, card);
       terminal.close();
       await owner.answer(card.id, { choice });
-      console.log("收到，Agent 接着干……");
+      console.log(t("cli.try.received"));
       continue;
     }
     const done = state.recentCards.find(
       (card: { id: number; state: string }) => card.id === asked && card.state === "done",
     );
     if (done) {
-      console.log(
-        `它把活干完了：${done.result}\n\n通了。接下来把 ${RULES_FILE} 改成你自己的规则，或者跟你的 Agent 说一句。`,
-      );
+      console.log(t("cli.try.done", { result: done.result, rules: RULES_FILE }));
       return;
     }
   }
-  fail("五分钟没等到结果。运行 agent-autoloop doctor 看看。");
+  fail(t("cli.try.timeout"));
 }
 
-const RUN_STATES: Record<string, string> = {
-  claimed: "在跑",
-  queued: "排队",
-  done: "做完了",
-  nothing: "没事可做",
-  unknown: "不确定",
-  cancelled: "停了",
+const RUN_STATES: Record<string, () => string> = {
+  claimed: () => t("cli.run.claimed"),
+  queued: () => t("cli.run.queued"),
+  done: () => t("cli.run.done"),
+  nothing: () => t("cli.run.nothing"),
+  unknown: () => t("cli.run.unknown"),
+  cancelled: () => t("cli.run.cancelled"),
 };
 
 async function status(named: Flags) {
@@ -506,9 +429,14 @@ async function status(named: Flags) {
   if (named.json !== undefined) return console.log(JSON.stringify(state, null, 2));
   const { totals } = state;
   const clock = { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
-  const at = (iso: string) => new Date(iso).toLocaleString("zh-CN", { timeZone: state.timezone, ...clock });
+  const at = (iso: string) => new Date(iso).toLocaleString(lang(), { timeZone: state.timezone, ...clock });
   console.log(
-    `在跑 ${totals.running} · 排队 ${totals.queued} · 今天做完 ${totals.doneToday} · 等你 ${state.cards.length}`,
+    t("cli.status.totals", {
+      running: totals.running,
+      queued: totals.queued,
+      doneToday: totals.doneToday,
+      waiting: state.cards.length,
+    }),
   );
   console.log(`${spendLine(state.spending)}\n`);
   for (const agent of state.agents) console.log(`${agent.online ? "●" : "○"} ${agent.name}（${agent.worker}）`);
@@ -518,22 +446,24 @@ async function status(named: Flags) {
     console.log(howToAnswer(card));
   }
   const timed = [...state.lines.filter((line: { every: string | null }) => line.every), ...state.elsewhere];
-  if (timed.length) console.log("\n定时");
+  if (timed.length) console.log(`\n${t("cli.status.timed")}`);
   for (const { name, where, every, next } of timed) {
-    console.log(`  ${name}${where ? `（在别处：${where}）` : ""}：${every}，下次 ${at(next)}`);
+    const place = where ? t("cli.status.elsewhere", { where }) : "";
+    console.log(t("cli.status.timedLine", { name, where: place, every, next: at(next) }));
   }
-  if (state.recentCards.length) console.log("\n最近的卡片");
+  if (state.recentCards.length) console.log(`\n${t("cli.status.recentCards")}`);
   for (const card of state.recentCards.slice(0, 5)) {
     const chosen = card.choice !== null ? card.options[card.choice] : card.answer;
     console.log(`  #${card.id} ${card.title}：${[chosen, card.result].filter(Boolean).join("。") || card.text}`);
   }
-  if (state.runs.length) console.log("\n最近几轮");
+  if (state.runs.length) console.log(`\n${t("cli.status.recentRuns")}`);
   for (const run of state.runs.slice(0, 8)) {
-    const shown = run.state === "queued" && run.attempts > 0 ? "等重派" : (RUN_STATES[run.state] ?? run.state);
+    const shown =
+      run.state === "queued" && run.attempts > 0 ? t("cli.run.retrying") : (RUN_STATES[run.state]?.() ?? run.state);
     const outcome = run.summary || run.error;
     console.log(`  #${run.id} ${run.rule} ${shown}${outcome ? `：${outcome}` : ""}`);
   }
-  if (state.unrouted.length) console.log("\n没有规则接的事件");
+  if (state.unrouted.length) console.log(`\n${t("cli.status.unrouted")}`);
   for (const { source, type, subject, summary } of state.unrouted.slice(0, 5)) {
     console.log(`  ${source} ${type} ${subject}${summary ? `：${summary}` : ""}`);
   }
@@ -542,7 +472,7 @@ async function status(named: Flags) {
 async function answer(args: string[]) {
   const { named, rest } = flags(args);
   const card = Number(rest[0]);
-  if (!Number.isInteger(card) || card < 1) return fail(TAKES.answer.usage);
+  if (!Number.isInteger(card) || card < 1) return fail(TAKES.answer.usage());
   const words = text(named.text);
   const done = await ownerClient().answer(card, {
     ...(rest[1] !== undefined && { choice: Number(rest[1]) - 1 }),
@@ -550,19 +480,19 @@ async function answer(args: string[]) {
   });
   console.log(
     !done.changed
-      ? "这张卡片已经处理过了，这次没有改动。"
+      ? t("cli.answer.unchanged")
       : done.state === "closed"
-        ? "结案了。"
-        : "收到，Agent 接着干。",
+        ? t("cli.answer.closed")
+        : t("cli.answer.received"),
   );
 }
 
 async function resolve(args: string[]) {
   const [id, ...words] = args;
   const card = Number(id);
-  if (!Number.isInteger(card) || card < 1 || !words.length) return fail(TAKES.resolve.usage);
+  if (!Number.isInteger(card) || card < 1 || !words.length) return fail(TAKES.resolve.usage());
   const { changed } = await ownerClient().resolve(card, words.join(" "));
-  console.log(changed ? "结案了。" : "这张卡片已经处理过了，这次没有改动。");
+  console.log(changed ? t("cli.answer.closed") : t("cli.answer.unchanged"));
 }
 
 async function doctor() {
@@ -578,19 +508,19 @@ async function doctor() {
    */
   const aside = (words: string) => console.log(`◐ ${words}`);
   say(Number(process.versions.node.split(".")[0]) >= 24, `Node ${process.versions.node}`);
-  if (!existsSync(CONFIG_FILE)) return say(false, "还没装好：运行 agent-autoloop init");
+  if (!existsSync(CONFIG_FILE)) return say(false, t("cli.doctor.notInstalled"));
   // Not a red mark: it still runs, and whoever runs it should know what it does not promise about these files.
   const files = permissionTrouble();
-  if (files) aside(`文件权限降级：${files}`);
+  if (files) aside(t("cli.doctor.filePermissions", { why: files }));
   const config = readConfig();
   if (config.hub) {
     try {
       const { channels } = checkRulesFile(RULES_FILE);
-      say(true, `规则 ${RULES_FILE}`);
+      say(true, t("cli.doctor.rules", { file: RULES_FILE }));
       for (const [id, channel] of Object.entries(channels)) {
         // Nobody answers from a desktop notification, and a link goes only to whoever it's sent to.
         if (id !== "desktop" && !channel.links && !channel.answerers) {
-          aside(`${channel.name}没写 answerers：这个通道里谁都能回答卡片。`);
+          aside(t("cli.doctor.noAnswerers", { channel: channel.name }));
         }
       }
     } catch (error) {
@@ -598,30 +528,31 @@ async function doctor() {
     }
   }
   if (serviceRunning()) {
-    say(true, "系统服务在跑");
+    say(true, t("cli.doctor.serviceRunning"));
     // What this platform's way of keeping it running doesn't promise. Not a red mark: it is there, it just comes back slower.
     const note = serviceNote();
     if (note) aside(note);
-  } else if (systemUnit()) say(true, "系统级服务在跑");
-  else say(false, "系统服务没在跑：agent-autoloop service install");
+  } else if (systemUnit()) say(true, t("cli.doctor.systemService"));
+  else say(false, t("cli.doctor.serviceStopped"));
   try {
     const health = await (await fetch(`${config.url}/healthz`, { signal: AbortSignal.timeout(5000) })).json();
-    say(health.ok === true, `中台 ${config.url}（${String(health.commit).slice(0, 12)}）`);
+    say(health.ok === true, t("cli.doctor.hub", { url: config.url, commit: String(health.commit).slice(0, 12) }));
   } catch (error) {
-    say(false, `连不上中台 ${config.url}：${(error as Error).message}`);
+    say(false, t("cli.doctor.hubUnreachable", { url: config.url, why: (error as Error).message }));
   }
   if (config.owner) {
     try {
       const state = await ownerClient(config).state();
       for (const agent of state.agents) {
-        say(agent.online, `${agent.name}（${agent.worker}）${agent.online ? "在线" : "不在线"}`);
+        const where = agent.online ? t("cli.doctor.online") : t("cli.doctor.offline");
+        say(agent.online, t("cli.doctor.agent", { name: agent.name, worker: agent.worker, state: where }));
         if (agent.worker === config.worker?.name) {
           const { adapterFor } = await import("../worker/agents.ts");
           const problem = await adapterFor(agent.use).then(
             (adapter) => adapter.check?.() ?? null,
             (error) => String(error.message),
           );
-          say(!problem, problem ?? `${agent.name} 可以用`);
+          say(!problem, problem ?? t("cli.doctor.agentUsable", { name: agent.name }));
         }
       }
       for (const channel of state.channels) {
@@ -630,21 +561,26 @@ async function doctor() {
         // either: everything else about the install is in order, and `agent-autoloop status` still shows the card.
         const trouble = channel.id === "desktop" ? desktopTrouble() : null;
         if (channel.online && trouble) aside(trouble);
-        else say(channel.online, `${channel.name}${channel.online ? "在线" : "不在线"}`);
+        else
+          say(
+            channel.online,
+            t("cli.doctor.channel", {
+              name: channel.name,
+              state: channel.online ? t("cli.doctor.online") : t("cli.doctor.offline"),
+            }),
+          );
       }
       // Named, and really there: a packaged build has it inside itself, and the path it is written out to is the one
       // worth telling someone to read. Writing it is idempotent and only ever under this install's own HOME.
       const manual = path.join(placeSkill(), "SKILL.md");
       if (!state.channels.length) {
-        aside(`还没接通道：Agent 问你时不会主动告诉你，要自己运行 agent-autoloop status 看。接法见 ${manual}`);
+        aside(t("cli.doctor.noChannels", { manual }));
       } else if (state.channels.length === 1 && state.channels[0].id === "desktop") {
-        const only = desktopTrouble()
-          ? "只接了桌面通知，而这台电脑弹不出通知：Agent 问你时得自己运行 agent-autoloop status 看。"
-          : "只接了桌面通知：Agent 问你时只有这台电脑会弹通知，人不在电脑前、或者电脑没有图形界面就看不到。";
-        aside(`${only}要发到飞书、钉钉这些地方，接法见 ${manual}`);
+        const only = desktopTrouble() ? t("cli.doctor.onlyDesktopMuted") : t("cli.doctor.onlyDesktop");
+        aside(t("cli.doctor.onlyDesktopTail", { only, manual }));
       }
     } catch (error) {
-      say(false, `读不到中台状态：${(error as Error).message}`);
+      say(false, t("cli.doctor.stateUnreadable", { why: (error as Error).message }));
     }
   }
   // Not process.exit: this has talked to the hub more than once, and ending the process outright while more than one
@@ -659,7 +595,9 @@ function checkRulesFile(file: string) {
   try {
     json = readFileSync(file, "utf8");
   } catch (error) {
-    throw new Error(`读不到 ${file}：${(error as NodeJS.ErrnoException).code ?? (error as Error).message}`);
+    throw new Error(
+      t("cli.rulesUnreadable", { file, why: (error as NodeJS.ErrnoException).code ?? (error as Error).message }),
+    );
   }
   return parseRules(json, Date.now(), Intl.DateTimeFormat().resolvedOptions().timeZone);
 }
@@ -667,15 +605,15 @@ function checkRulesFile(file: string) {
 function check(args: string[]) {
   const file = path.resolve(args[0] ?? RULES_FILE);
   checkRulesFile(file);
-  console.log(`规则没问题：${file}`);
+  console.log(t("cli.check.ok", { file }));
 }
 
 async function key(args: string[]) {
   const [action, kind, name] = args;
   if (action === "remove") {
-    if (!kind || !name) return fail("用法：agent-autoloop key remove <种类> <名字>");
+    if (!kind || !name) return fail(t("cli.usage.keyRemove"));
     const { changed } = await ownerClient().removeKey(kind, name);
-    console.log(changed ? "密钥已失效。" : "没有这把密钥，可能已经删过了。");
+    console.log(changed ? t("cli.key.removed") : t("cli.key.notThere"));
     return;
   }
   const { addKey, listKeys } = await import("../host/runtime.ts");
@@ -684,7 +622,7 @@ async function key(args: string[]) {
     return;
   }
   if (action !== "new" || !["source", "worker", "channel", "owner"].includes(kind) || !name) {
-    return fail("用法：agent-autoloop key new <source|worker|channel|owner> <名字>");
+    return fail(t("cli.usage.keyNew"));
   }
   console.log(addKey(kind as "source", name));
 }
@@ -692,7 +630,7 @@ async function key(args: string[]) {
 async function emit(args: string[]) {
   const { named, rest } = flags(args);
   const config = readConfig();
-  const type = rest[0] ?? fail(TAKES.emit.usage);
+  const type = rest[0] ?? fail(TAKES.emit.usage());
   const event = {
     id: text(named.id) ?? randomUUID(),
     type,
@@ -703,16 +641,16 @@ async function emit(args: string[]) {
   };
   if (named["dry-run"] !== undefined) {
     // The hub tells a source by its key, and only the key's own source is known here.
-    if (text(named.key)) return fail("--dry-run 按这台电脑的来源预演，不能和 --key 一起用");
-    if (!config.source) return fail("这台电脑上没有来源的密钥：--dry-run 需要知道来源名");
+    if (text(named.key)) return fail(t("cli.emit.dryRunWithKey"));
+    if (!config.source) return fail(t("cli.emit.noSourceNameForDryRun"));
     const { previewEvent } = await import("./explain.ts");
-    console.log("预演（按本机 rules.json，不连接中台、不写日志）：");
+    console.log(t("cli.emit.preview"));
     for (const line of previewEvent(readFileSync(RULES_FILE, "utf8"), config.source.name, event)) console.log(line);
     return;
   }
-  const secret = text(named.key) ?? config.source?.key ?? fail("这台电脑上没有来源的密钥：用 --key");
+  const secret = text(named.key) ?? config.source?.key ?? fail(t("cli.emit.noSourceKey"));
   const answer = await client(secret, config).event(event);
-  console.log(answer.routed.length ? `交给了：${answer.routed.join("、")}` : "记下了，没有规则接它。");
+  console.log(answer.routed.length ? t("cli.emit.routed", { to: answer.routed.join("、") }) : t("cli.emit.unrouted"));
 }
 
 async function backupCommand(args: string[]) {
@@ -721,28 +659,28 @@ async function backupCommand(args: string[]) {
   const target = path.resolve(rest[0] ?? path.join(HOME, "backups", stamp));
   const { backup } = await import("./backup.ts");
   const { files } = await backup(HOME, target);
-  console.log(`备份好了：${target}\n  ${files.join("、")}\n里面有密钥，把它放到安全的地方；恢复要中台停下来。`);
+  console.log(t("cli.backup.done", { target, files: files.join("、") }));
 }
 
 async function restoreCommand(args: string[]) {
   const { named, rest } = flags(args);
-  if (!rest[0]) return fail(RESTORE_USAGE);
+  if (!rest[0]) return fail(t("cli.usage.restore"));
   if (named.yes === undefined) {
-    if (!process.stdin.isTTY) return fail("恢复会替换本机数据；确认后运行 agent-autoloop restore <目录> --yes");
-    const answer = await askAtTerminal("恢复会替换本机的数据库、主密钥、配置、规则和 secrets.env，继续？[y/N] ");
+    if (!process.stdin.isTTY) return fail(t("cli.restore.needsYes"));
+    const answer = await askAtTerminal(t("cli.restore.confirm"));
     if (!/^y(es)?$/i.test(answer.trim())) {
-      console.log("没有恢复。");
+      console.log(t("cli.restore.cancelled"));
       return;
     }
   }
   const { restore } = await import("./backup.ts");
   const { safety } = await restore(HOME, path.resolve(rest[0]));
-  console.log(`恢复好了。原来的文件在 ${safety}。\n启动：agent-autoloop up 或 agent-autoloop service install`);
+  console.log(t("cli.restore.done", { safety }));
 }
 
 async function rulesCommand(args: string[]) {
   const { rest } = flags(args);
-  if (rest[0] !== "explain" || rest.length > 1) return fail(TAKES.rules.usage);
+  if (rest[0] !== "explain" || rest.length > 1) return fail(TAKES.rules.usage());
   const { explainRules } = await import("./explain.ts");
   for (const line of explainRules(readFileSync(RULES_FILE, "utf8"), Date.now())) console.log(line);
 }
@@ -750,30 +688,30 @@ async function rulesCommand(args: string[]) {
 async function tell(args: string[]) {
   const { named, rest } = flags(args);
   const config = readConfig();
-  const matter = rest[0] ?? fail(TAKES.tell.usage);
+  const matter = rest[0] ?? fail(TAKES.tell.usage());
   const words = readFileSync(0, "utf8").trim();
-  if (!words) return fail("要说的话从标准输入传，不能为空。");
+  if (!words) return fail(t("cli.tell.empty"));
   const task = text(named.task);
   const secret = task ? config.worker?.key : config.source?.key;
-  if (!secret) return fail(task ? "这台电脑不是接单程序" : "这台电脑上没有来源的密钥");
+  if (!secret) return fail(task ? t("cli.tell.notWorker") : t("cli.tell.noSourceKey"));
   const answer = await client(secret, config).tell({ key: matter, text: words, ...(task && { task }) });
-  console.log(answer.duplicate ? "这件事已经说过了，这次没再发。" : "说了。");
+  console.log(answer.duplicate ? t("cli.tell.duplicate") : t("cli.tell.sent"));
 }
 
 async function ask(args: string[]) {
   const { named, rest } = flags(args);
   const task = text(named.task);
-  if (!task || rest.length) return fail(TAKES.ask.usage);
+  if (!task || rest.length) return fail(TAKES.ask.usage());
   let question: unknown;
   try {
     question = JSON.parse(readFileSync(0, "utf8"));
   } catch {
-    return fail("问题从标准输入传，是一段 JSON：和回执里的 ask 一样");
+    return fail(t("cli.ask.badJson"));
   }
   const config = readConfig();
-  if (!config.worker) return fail("这台电脑不是接单程序");
+  if (!config.worker) return fail(t("cli.tell.notWorker"));
   const answer = await client(config.worker.key, config).tell({ task, ask: question });
-  console.log(answer.duplicate ? "同一件事还在等你回答，这次没再问。" : "问了。");
+  console.log(answer.duplicate ? t("cli.ask.duplicate") : t("cli.ask.asked"));
 }
 
 /** A run is named by its number; anything else would reach the hub as /v1/runs/NaN and come back as "没有这个地址". */
@@ -786,7 +724,7 @@ function runOf(word: string | undefined, usage: string) {
 async function why(args: string[]) {
   const id = runOf(
     args.find((arg) => !arg.startsWith("--")),
-    "用法：agent-autoloop why <第几轮> [--json]",
+    t("cli.usage.why"),
   );
   const facts = await ownerClient().why(id);
   if (args.includes("--json")) return console.log(JSON.stringify(facts, null, 2));
@@ -797,15 +735,15 @@ async function why(args: string[]) {
 async function checkConformance(args: string[]) {
   const { named, rest } = flags(args);
   const file = text(named.config) ?? process.env.AGENT_AUTOLOOP_CONFORMANCE;
-  if (!rest[0] || !file) return fail(TAKES.conformance.usage);
+  if (!rest[0] || !file) return fail(TAKES.conformance.usage());
   const { conformance } = await import("../protocol/conformance.ts");
   console.log(JSON.stringify(await conformance(rest[0], JSON.parse(readFileSync(file, "utf8"))), null, 2));
 }
 
 async function stop(args: string[]) {
-  const id = runOf(args[0], "用法：agent-autoloop stop <第几轮>");
+  const id = runOf(args[0], t("cli.usage.stop"));
   await ownerClient().cancel(id);
-  console.log("通知它停了。");
+  console.log(t("cli.stop.told"));
 }
 
 function service(args: string[]) {
@@ -815,18 +753,17 @@ function service(args: string[]) {
     return installService();
   }
   if (args[0] === "remove") return removeService();
-  fail(TAKES.service.usage);
+  fail(TAKES.service.usage());
 }
 
 /** A plugin is a folder of its own under this install, named after its repository. */
 function addPlugin(args: string[]) {
-  const url = args[0] ?? fail(TAKES.add.usage);
+  const url = args[0] ?? fail(TAKES.add.usage());
   // A bare drive designator is not an address of anything in particular: on Windows `C:` means "wherever this shell
   // happens to be on drive C", so `git clone -- C: …` clones the current folder — and the last part of `C:` is the
   // letter, so it would be cloned under the name `c`. There is no address here to refuse later, only a letter, so it
   // is refused here and the one thing a person can do about it is said.
-  if (/^[a-zA-Z]:[\\/]*$/.test(url))
-    fail(`「${url}」只是一个盘符，不是一个地址：写全要装的那个仓库的路径或 URL（比如 ${url[0]}:/path/to/plugin）。`);
+  if (/^[a-zA-Z]:[\\/]*$/.test(url)) fail(t("cli.add.driveOnly", { url, drive: url[0] }));
   // The last part of wherever it came from: a URL, an SSH address, or a path on this machine — which on Windows is
   // separated by backslashes, and whose drive letter is a colon that is not a separator at all. Every separator there
   // is, then, with the empty parts a trailing one leaves dropped. An address that is nothing but separators has no
@@ -839,23 +776,22 @@ function addPlugin(args: string[]) {
   )
     .replace(/\.git$/, "")
     .toLowerCase();
-  if (!/^[a-z][a-z0-9-]*$/.test(name))
-    fail(`插件名字「${name}」不能用：只能用小写字母、数字和 -，规则里的 use 也写这个名字`);
+  if (!/^[a-z][a-z0-9-]*$/.test(name)) fail(t("cli.add.badName", { name }));
   mkdirSync(path.join(HOME, "plugins"), { recursive: true });
   const folder = path.join(HOME, "plugins", name);
   const clone = spawnSync("git", ["clone", "--", url, folder], { stdio: "inherit" });
-  if (clone.status !== 0) fail("安装失败。");
-  console.log(`已安装 ${name}。`);
+  if (clone.status !== 0) fail(t("cli.add.cloneFailed"));
+  console.log(t("cli.add.installed", { name }));
   // Only cloned: nothing of it has run yet. What it says it is, it is worth saying out loud now, because the next
   // thing that happens to a `source` plugin is the hub importing it, which runs it.
   let said: PluginManifest;
   try {
     said = readManifest(folder, name);
   } catch (error) {
-    return console.log(`但它的 plugin.json 写错了：${(error as Error).message}`);
+    return console.log(t("cli.add.badManifest", { why: (error as Error).message }));
   }
-  if (said.runtime === "process") console.log(`它声明自己是一个外部程序（runtime: "process"），跑的是 ${said.entry}。`);
-  else console.log('它没有声明 runtime，按源码插件用（runtime: "source"）：中台加载它的时候会执行它。');
+  if (said.runtime === "process") console.log(t("cli.add.isProcess", { entry: said.entry ?? "" }));
+  else console.log(t("cli.add.isSource"));
 }
 
 /**
@@ -867,10 +803,10 @@ function addPlugin(args: string[]) {
  */
 async function runPlugin(args: string[]) {
   const [name, ...rest] = args;
-  if (!name) return fail("用法：agent-autoloop internal:plugin <插件名字> [参数…]");
+  if (!name) return fail(t("cli.usage.internalPlugin"));
   const { loadPlugin } = await import("../host/plugins.ts");
   const plugin = await loadPlugin(name, "agent");
-  if (typeof plugin?.main !== "function") fail(`${name} 这个插件没有可以这样跑的活（它没有导出 main）`);
+  if (typeof plugin?.main !== "function") fail(t("cli.plugin.noMain", { name }));
   await plugin.main(rest);
 }
 
@@ -881,26 +817,45 @@ async function update() {
   if (!fromSource()) {
     const { updateBinary } = await import("./self-update.ts");
     const done = await updateBinary();
-    if (!done.changed) return console.log(`已经是最新的（${done.to}）。`);
+    if (!done.changed) return console.log(t("cli.update.newest", { to: done.to }));
     // In this order because it is the order it matters in: what is on the disk now, then whether the hub is back. The
     // one thing that must not be left out is a hub that was stopped for this and is not coming back by itself: no
     // service to bring it up, and whoever started it by hand is the only one who can (phase3-verification-round3.md I).
     const back = done.restarted
-      ? "中台已经用新版重新启动。"
-      : (done.told ??
-        (done.wasUp
-          ? "中台为这次换文件停掉了，而本机没装常驻：再 agent-autoloop up 启一次，用的就是新版。"
-          : "再 agent-autoloop up 就用上新版了（本机没装常驻）。"));
-    console.log(`更新好了（${done.to}）。${back}`);
-    if (done.replaced) console.log(`旧的那一个还在 ${done.replaced}，下次启动会自己清掉。`);
+      ? t("cli.update.restarted")
+      : (done.told ?? t(done.wasUp ? "cli.update.wasUpNoService" : "cli.update.upAgain"));
+    console.log(t("cli.update.done", { to: done.to, back }));
+    if (done.replaced) console.log(t("cli.update.oldKept", { old: done.replaced }));
     return;
   }
   const { updateCode } = await import("./update.ts");
   const { changed, to } = updateCode(ROOT);
   const version = to ? `（${to}）` : "";
-  if (!changed) return console.log(`已经是最新的${version}。`);
+  if (!changed) return console.log(t("cli.update.newestSource", { version }));
   const told = restartService();
-  console.log(`更新好了${version}。${told ?? ""}`);
+  console.log(t("cli.update.doneSource", { version, told: told ?? "" }));
+}
+
+const unknownLang = (told: string) => t("cli.lang.unknown", { told, allowed: LANGS.join("、") });
+
+/**
+ * Which of the two Chinese scripts this install says things in: `lang` with nothing says which, and `lang zh-CN`
+ * writes it into config.json. Said back in the new one, which is what `useLang` is for — the answer was settled the
+ * first time anything was said, and writing a file does not unsettle it.
+ *
+ * `AGENT_AUTOLOOP_LANG` comes first of all (host/i18n.ts), so when it is set, what was just written would not be what
+ * the next command says: that is worth one line, because otherwise the command looks as if it did nothing.
+ */
+function langCommand(args: string[]) {
+  const { rest } = flags(args);
+  if (rest.length > 1) return fail(t("cli.usage.lang"));
+  if (!rest.length) return void console.log(t("cli.lang.now", { lang: lang() }));
+  const told = asLang(rest[0]) ?? fail(unknownLang(rest[0]));
+  writeConfig({ ...readConfig(), lang: told });
+  useLang(told);
+  console.log(t("cli.lang.changed", { lang: told }));
+  const set = process.env.AGENT_AUTOLOOP_LANG;
+  if (asLang(set) && asLang(set) !== told) console.log(t("cli.lang.overridden", { env: set! }));
 }
 
 async function askAtTerminal(question: string) {
@@ -943,13 +898,14 @@ const commands: Record<string, () => unknown> = {
     await uninstall(flags(args).named.yes !== undefined, process.stdin.isTTY ? askAtTerminal : null);
   },
   service: () => service(args),
-  help: () => console.log(HELP),
-  "--help": () => console.log(HELP),
-  "-h": () => console.log(HELP),
+  lang: () => langCommand(args),
+  help: () => console.log(HELP()),
+  "--help": () => console.log(HELP()),
+  "-h": () => console.log(HELP()),
   "--version": () => console.log(versionLine()),
 };
 if (!command || !commands[command]) {
-  console.log(HELP);
+  console.log(HELP());
   if (command) process.exitCode = 1;
 } else {
   Promise.resolve()

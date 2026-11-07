@@ -13,13 +13,13 @@
 本仓库已公开，安装脚本和代码都可匿名下载，不需要 GitHub 账号、登录或 GitHub CLI（`gh`）。下面的命令安装并启用登录后常驻服务：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.sh | sh
 ```
 
 Windows 用 PowerShell，不需要管理员：
 
 ```powershell
-irm https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.ps1 | iex
 ```
 
 它把 `agent-autoloop.cmd` 放进 `%USERPROFILE%\.local\bin` 并加进你自己的 PATH（不动系统 PATH），所以装完要重开一个终端，`agent-autoloop` 才认得。本地仓库安装时和 POSIX 一样设 `AGENT_AUTOLOOP_REPO`，再运行该目录下的 `install.ps1`。
@@ -113,6 +113,7 @@ PATH 没有命令时，把 `agent-autoloop` 换成安装器打印的完整路径
 | `AGENT_AUTOLOOP_RELEASES` | `update` | 二进位自我更新去问哪个 Release API，默认公开仓库那个。改它只为了拿自建的 Release 试，或者给测试用一个本机的服务器 |
 | `AGENT_AUTOLOOP_REPO` | 安装器 | `install.sh` / `install.ps1` 从哪个仓库装，默认公开仓库。从本地副本装时用它（见上面「临时 HOME」一节） |
 | `AGENT_AUTOLOOP_NO_PATH` | 安装器 | 设成非空就不改 Windows 的用户 PATH（见上面「安装」一节） |
+| `AGENT_AUTOLOOP_LANG` | 全部 | 这个程序说哪种中文：`zh-TW`（默认）或 `zh-CN`，`zh_TW.UTF-8`、`zh-Hant`、`zh-HK` 这些写法也认。没设时看 `config.json` 的 `lang`（`agent-autoloop lang` 和 `init --lang` 写它），再没有才看环境的 `LC_ALL` / `LC_MESSAGES` / `LANG`。设了它就盖得过 `config.json`，所以脚本和测试用它钉住要哪一种 |
 | `AGENT_AUTOLOOP_CONFORMANCE` | `conformance` | 一致性检查用的凭据文件，等于不写 `--config` 时的默认值 |
 | `AGENT_AUTOLOOP_SECRET_<来源名>` | 中台 | 这个来源验 Webhook 签名用的密钥，来源名里的 `-` 写成 `_` 并大写。平时放 `HOME/secrets.env`，`up` 启动时读进来 |
 

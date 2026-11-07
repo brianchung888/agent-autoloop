@@ -5,6 +5,7 @@
 // The order is the behaviour, so it does not change: this install's folder first, then the ones that ship. A loader
 // finds a plugin or says it has none; the first that finds one wins, and the lot of them coming up empty is the one
 // error below. Finding is what loads it, at the moment it is found — importing a plugin runs it, as it always has.
+import { t } from "./i18n.ts";
 import { builtinLoader, externalLoader, processLoader, shippedLoader } from "./plugin-loaders.ts";
 
 export type PluginKind = "agent" | "channel" | "source";
@@ -29,10 +30,10 @@ export const loaderOrder = (): readonly PluginLoader[] => loaders;
 // What it hands back is what it always did: the plugin's default export, which each caller reads as the shape its kind
 // requires (worker/agents.ts: `Adapter`, host/channels.ts: the channel function, host/server.ts: the source function).
 export async function loadPlugin(name: string, kind: PluginKind): Promise<any> {
-  if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`插件名字不正确：${name}`);
+  if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(t("plugin.badName", { name }));
   for (const loader of loaders) {
     const found = await loader.resolve(name, kind);
     if (found) return found.plugin;
   }
-  throw new Error(`没有 ${name} 的插件（plugins/${name}/${kind}.ts）`);
+  throw new Error(t("plugin.none", { name, kind }));
 }

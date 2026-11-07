@@ -54,6 +54,10 @@ export function skipUnless(able: boolean, why: string): typeof runTest {
   }) as unknown as typeof runTest;
 }
 
+// A file that reads a sentence of this program's without making a home of its own still reads it in the language the
+// assertions are written in: importing this is enough, and `npm test` has said the same thing already.
+process.env.AGENT_AUTOLOOP_LANG ??= "zh-CN";
+
 /** The prefix every home this file makes is named with, and the one thing the sweep below is allowed to go by. */
 const MINE = "agent-autoloop-";
 /** Old enough that no run going on now can be in it: the whole suite is nine minutes, and the longest file is two. */
@@ -85,6 +89,10 @@ function sweep() {
 
 export function setup(name: string, rules = "rules.fixture.json") {
   sweep();
+  // The language every assertion in this suite is written in. `npm test` already says so for the whole run
+  // (tests/lang.env), and this is the same answer for a file run on its own — `??=`, so that a test about the
+  // language itself (tests/i18n.test.ts) can say otherwise and be believed.
+  process.env.AGENT_AUTOLOOP_LANG ??= "zh-CN";
   const directory = mkdtempSync(join(tmpdir(), `${MINE}${name}-`));
   process.env.AGENT_AUTOLOOP_HOME = directory;
   // A path from the root is given as it is; a bare name is one of the fixtures beside this file. On Windows a path

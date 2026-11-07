@@ -21,6 +21,8 @@ import { environment as environmentFile, envFile, installMark, taskXml } from ".
 import { placeSkill, skillFolder } from "../host/skill.ts";
 import { unit } from "../host/service.ts";
 import { loadEnvFiles } from "../host/env-file.ts";
+import { zhCN } from "../i18n/zh-CN.ts";
+import { zhTW } from "../i18n/zh-TW.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "agent-autoloop-packaged-"));
 after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 3 }));
@@ -31,7 +33,7 @@ const repo = join(import.meta.dirname, "..");
  * this is a packaged build — which is the whole point, since what decides that is asked of the file system.
  */
 const copy = join(dir, "no-entry");
-for (const part of ["cli", "host", "kernel", "plugins", "protocol", "skills", "worker", "package.json"]) {
+for (const part of ["cli", "host", "i18n", "kernel", "plugins", "protocol", "skills", "worker", "package.json"]) {
   cpSync(join(repo, part), join(copy, part), { recursive: true });
 }
 
@@ -128,8 +130,12 @@ test("服务定义里也没有 .ts 可以指：只有那个可执行文件和 up
 
 test("内部子命令不进帮助，也不进 TAKES：它们不是给人打的", () => {
   const main = readFileSync(join(repo, "cli", "main.ts"), "utf8");
-  const help = main.slice(main.indexOf("const HELP = `"), main.indexOf("const INIT_USAGE"));
-  assert.doesNotMatch(help, /internal:/, "内部子命令进了帮助");
+  // 帮助那段话在 i18n/ 里（host/i18n.ts），两种中文各一份，所以两份都要看。
+  for (const [which, words] of [
+    ["zh-CN", zhCN],
+    ["zh-TW", zhTW],
+  ] as const)
+    assert.doesNotMatch(words["cli.help"], /internal:/, `内部子命令进了 ${which} 的帮助`);
   const takes = main.slice(main.indexOf("const TAKES"), main.indexOf("type Flags"));
   assert.doesNotMatch(
     takes,
