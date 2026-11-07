@@ -49,13 +49,19 @@ test("打包版带的文件就是程序要读的那些，一个不多一个不�
   assert.equal(seaConfig().disableExperimentalSEAWarning, true, "不然每次启动都先说一句 SEA 是实验功能");
 });
 
-test("入口里没有 top-level await，而且顺序是定好的那三行", () => {
-  // 一个模块的 import 全跑在它 body 之前，而「import 命令行」就等于「把命令跑掉」。所以版本要排在最前面，
-  // 内置清单第二，命令行最后——而且全是静态 import：CJS 的产物不能有 top-level await。
+test("入口里没有 top-level await，而且顺序是定好的那四行", () => {
+  // 一个模块的 import 全跑在它 body 之前，而「import 命令行」就等于「把命令跑掉」。所以 --env-file 要排在最前面
+  // （它一变，后面读到的 HOME 就不一样，而 host/home.ts 在内置清单里面某处就被加载了），版本第二，内置清单第三，
+  // 命令行最后——而且全是静态 import：CJS 的产物不能有 top-level await。
   const code = ENTRY.split("\n").filter((line) => !line.trimStart().startsWith("//"));
   assert.doesNotMatch(code.join("\n"), /\bawait\b/, "入口有 top-level await：CJS 打不出来");
   const lines = ENTRY.split("\n").filter((line) => line.startsWith("import "));
-  assert.deepEqual(lines, ['import "./sea-told.ts";', 'import "./builtins.generated.ts";', 'import "../cli/main.ts";']);
+  assert.deepEqual(lines, [
+    'import "../host/env-file.ts";',
+    'import "./sea-told.ts";',
+    'import "./builtins.generated.ts";',
+    'import "../cli/main.ts";',
+  ]);
 
   const told = toldSource({ commit: "abc123", release: "v1.2.3" });
   assert.match(told, /AGENT_AUTOLOOP_COMMIT \|\|= "abc123";/);

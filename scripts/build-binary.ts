@@ -85,7 +85,11 @@ export const toldSource = (told: { commit: string; release: string }) =>
  */
 export const ENTRY = [
   "// 由 scripts/build-binary.ts 产生，不进版本库，改它没有意义：下一次建置会覆盖。",
-  "// 打包版的入口。顺序就是这三行的顺序，而且一个 top-level await 都没有——CJS 的产物不能有。",
+  "// 打包版的入口。顺序就是这四行的顺序，而且一个 top-level await 都没有——CJS 的产物不能有。",
+  // First of all, because it changes what the others read: `--env-file=` is how the Windows task hands this install
+  // its home (host/env-file.ts), and which home this is gets decided the moment host/home.ts loads — which happens
+  // somewhere inside the list of built-ins below.
+  'import "../host/env-file.ts";',
   'import "./sea-told.ts";',
   'import "./builtins.generated.ts";',
   'import "../cli/main.ts";',

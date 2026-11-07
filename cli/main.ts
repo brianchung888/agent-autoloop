@@ -1,6 +1,9 @@
 // The command line: what a person, or their Agent, types.
 //
-// First of all, and before anything that could reach the runtime's own SQLite: the one warning a packaged build has no
+// First of all: `--env-file=` off the front of the arguments (host/env-file.ts). It has to be first because which home
+// this is gets decided as host/home.ts loads, and in a packaged build nothing but this program reads that flag.
+import "../host/env-file.ts";
+// Then, before anything that could reach the runtime's own SQLite: the one warning a packaged build has no
 // command line left to turn off (host/warnings.ts). Importing it is what does it, so it comes before everything here.
 import "../host/warnings.ts";
 import { spawnSync } from "node:child_process";

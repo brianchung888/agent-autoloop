@@ -11,15 +11,16 @@
 // recognised by the other.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { assetText } from "../host/assets.ts";
-import { envFile, installMark, taskXml } from "../host/service-win.ts";
+import { environment as environmentFile, envFile, installMark, taskXml } from "../host/service-win.ts";
 import { placeSkill, skillFolder } from "../host/skill.ts";
 import { unit } from "../host/service.ts";
+import { loadEnvFiles } from "../host/env-file.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "agent-autoloop-packaged-"));
 after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 3 }));
@@ -34,9 +35,23 @@ for (const part of ["cli", "host", "kernel", "plugins", "protocol", "skills", "w
   cpSync(join(repo, part), join(copy, part), { recursive: true });
 }
 
+/** The environment one run gets. A `null` in `more` is a variable this run must not have at all. */
+function environment(home: string, more: Record<string, string | null>) {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    AGENT_AUTOLOOP_HOME: home,
+    AGENT_AUTOLOOP_RULES: join(home, "rules.json"),
+  };
+  for (const [name, value] of Object.entries(more)) {
+    if (value === null) delete env[name];
+    else env[name] = value;
+  }
+  return env;
+}
+
 let homes = 0;
 /** One run of the command line out of that tree, in a throwaway home of its own. */
-function run(args: string[], home = join(dir, `home-${++homes}`), more: NodeJS.ProcessEnv = {}) {
+function run(args: string[], more: Record<string, string | null> = {}, home = join(dir, `home-${++homes}`)) {
   mkdirSync(home, { recursive: true });
   const done = spawnSync(
     process.execPath,
@@ -44,12 +59,9 @@ function run(args: string[], home = join(dir, `home-${++homes}`), more: NodeJS.P
     {
       encoding: "utf8",
       timeout: 60_000,
-      env: {
-        ...process.env,
-        AGENT_AUTOLOOP_HOME: home,
-        AGENT_AUTOLOOP_RULES: join(home, "rules.json"),
-        ...more,
-      },
+      // `null` takes a variable away rather than setting it to nothing: an empty string is a value, and a value is
+      // what `??` keeps — AGENT_AUTOLOOP_RULES="" resolves to the working directory, not to the default.
+      env: environment(home, more),
     },
   );
   return { ...done, home };
@@ -202,7 +214,7 @@ test("打包版的 update 走的是 Release，不是一棵它没有的 checkout"
   // 真正的打包版里 execPath 就是 agent-autoloop.exe，所以那一步由 tests/update-binary.test.ts 在一个临时目录里验。
   //
   // 要钉的是三件事：不碰 git；问不出来的时候给一句能照着做的话；而且绝不在什么都没发生的时候说升级成功。
-  const done = run(["update"], undefined, { AGENT_AUTOLOOP_RELEASES: "http://127.0.0.1:1" });
+  const done = run(["update"], { AGENT_AUTOLOOP_RELEASES: "http://127.0.0.1:1" });
   assert.notEqual(done.status, 0, done.stdout);
   const said = done.stdout + done.stderr;
   assert.match(said, /连不上发布页/, said);
@@ -214,4 +226,39 @@ test("打包版的 update 走的是 Release，不是一棵它没有的 checkout"
   for (const file of ["README.md", "README.en.md"]) {
     assert.doesNotMatch(readFileSync(join(repo, file), "utf8"), /升级要重新下载|re-downloading to upgrade/, file);
   }
+});
+
+test("打包版自己读 --env-file：计划任务给的 home 到得了，不会被当成一个子命令", () => {
+  // 这是 3.7 真机跑一遍时撞出来的。Windows 的计划任务不带环境，所以 home 是用一个 env 文件交给程序的
+  // （host/service-win.ts）。源码模式下那个 flag 由运行时自己读掉；打包版里没有读命令行的运行时，于是它原样
+  // 落到了子命令的位置——中台每五分钟印一遍帮助、退出码 1，一个带常驻的二进位安装根本起不来。
+  // install-smoke 用的是 --no-service，任务那边只验过 XML，所以这一条谁都没看见。
+  //
+  // 这里验的是读这个 flag 的那一段本身：整条命令行在源码模式下走不到它——运行时先把这个 flag 吃掉了（实测
+  // node 25 对 .ts 入口会，退出码 9），而真正那条路只有真二进位走得到，由 3.7 的真机验收跑。
+  const home = join(dir, "env-file-home");
+  mkdirSync(home, { recursive: true });
+  const file = join(dir, "service.env");
+  writeFileSync(file, environmentFile(home));
+  const was = process.env.AGENT_AUTOLOOP_HOME;
+  delete process.env.AGENT_AUTOLOOP_HOME;
+  try {
+    // flag 被摘掉，剩下的就是这个程序的命令行；而 home 真的进了环境。
+    assert.deepEqual(loadEnvFiles([`--env-file=${file}`, "up"]), { argv: ["up"], loaded: [file] });
+    assert.equal(process.env.AGENT_AUTOLOOP_HOME, home);
+    // 只在最前面：子命令之后的词是子命令自己的，一条规则或者一句提示正好这么开头不算这个程序的 flag。
+    assert.deepEqual(loadEnvFiles(["emit", `--env-file=${file}`]), {
+      argv: ["emit", `--env-file=${file}`],
+      loaded: [],
+    });
+    // 读不了那个文件就说一句，而不是悄悄用默认的 home。
+    assert.throws(() => loadEnvFiles([`--env-file=${join(dir, "没有这个文件.env")}`]), /--env-file/);
+  } finally {
+    if (was === undefined) delete process.env.AGENT_AUTOLOOP_HOME;
+    else process.env.AGENT_AUTOLOOP_HOME = was;
+  }
+  // 而且它排在最前面：HOME 是 host/home.ts 加载的那一刻定下来的，这个 flag 晚一步读就白读了。
+  const main = readFileSync(join(repo, "cli", "main.ts"), "utf8");
+  const imports = main.split("\n").filter((line) => line.startsWith("import "));
+  assert.equal(imports[0], 'import "../host/env-file.ts";', `cli/main.ts 的第一个 import 不是它：${imports[0]}`);
 });
