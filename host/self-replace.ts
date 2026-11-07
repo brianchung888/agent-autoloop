@@ -21,15 +21,18 @@ export const stagedName = (executable: string) => `${executable}.new`;
 export const replacedName = (executable: string) => `${executable}.old`;
 
 /**
- * A name nothing holds. `.old` is the one to use and almost always free; one left from an update whose next start has
- * not happened yet may still be held by a process that is running it, and renaming onto a held file fails on Windows
- * the same way writing to it does. So a moment is added rather than the swap being given up on.
+ * A name nothing holds, chosen without taking anything away. `.old` is the one to use and almost always free; one left
+ * from an update whose next start has not happened yet may still be held by a process that is running it, and renaming
+ * onto a held file fails on Windows the same way writing to it does. So a moment is added rather than the swap being
+ * given up on.
+ *
+ * Nothing is deleted here, and that is the point. It used to try `rmSync` on the previous `.old` first — before the
+ * first rename, which is the one that really gets refused — so a swap that failed there said «什么都没动» having
+ * already taken away the file the last update left behind (phase3-verification-round4.md 2). What is left over is
+ * taken away after the swap has gone through instead, and `tidyReplaced` would have taken it at the next start anyway.
  */
 function freeOldName(executable: string) {
   const old = replacedName(executable);
-  try {
-    rmSync(old, { force: true });
-  } catch {}
   return existsSync(old) ? `${old}-${Date.now()}` : old;
 }
 
@@ -90,6 +93,15 @@ export function swapSelf(executable: string, { rename = renameSync } = {}) {
       rmSync(staged, { force: true });
     } catch {}
     throw new Error(t("selfReplace.rolledBack", { why: (error as Error).message }));
+  }
+  // Now, and not before: the swap has gone through, so taking away what the last update left behind can no longer
+  // make a failure message untrue. Where `.old` itself was free this one is the file just moved aside, so only a name
+  // that was not used is a leftover. Best effort — a file still held by the process running it goes at the next start
+  // (tidyReplaced), which is where it would have gone anyway.
+  if (old !== replacedName(executable)) {
+    try {
+      rmSync(replacedName(executable), { force: true });
+    } catch {}
   }
   return { replaced: running ? old : null };
 }

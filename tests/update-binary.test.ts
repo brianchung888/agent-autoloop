@@ -302,6 +302,56 @@ test("the first rename failing leaves nothing behind and says it as a sentence",
   assert.equal(it.restarted.length, 1);
 });
 
+/** An executable, a staged download beside it, and whatever `.old` this case is about. For swapSelf on its own. */
+function staged(leftover?: string) {
+  const dir = temp();
+  const executable = join(dir, process.platform === "win32" ? "agent-autoloop.exe" : "agent-autoloop");
+  writeFileSync(executable, "手上这一个");
+  writeFileSync(stagedName(executable), "新的那一个");
+  if (leftover !== undefined) writeFileSync(replacedName(executable), leftover);
+  return { dir, executable };
+}
+
+test("第一次 rename 就失败的时候，上一次更新留下的 .old 也还在：「什么都没动」得是真的", () => {
+  // 选那个名字的时候曾经先 rmSync 上一份 `.old`，而那是在第一次 rename 之前——恰恰就是 Windows 真会拒的
+  // 那一次。于是一份失败的换文件说着「什么都没动」，却已经把上一次留下的那份拿走了（phase3-verification-round4.md 2）。
+  const it = staged("上一次那一个");
+  assert.throws(
+    () =>
+      swapSelf(it.executable, {
+        rename: () => {
+          throw Object.assign(new Error("EBUSY: resource busy or locked, rename"), { code: "EBUSY" });
+        },
+      }),
+    /什么都没动/,
+  );
+  // 这才是「什么都没动」：上一份还在，而且还是那些字。
+  assert.equal(readFileSync(replacedName(it.executable), "utf8"), "上一次那一个");
+  // 而 96 MB 那一份还是没留下（r3-A），手上这一个也没动。
+  assert.equal(existsSync(stagedName(it.executable)), false);
+  assert.equal(readFileSync(it.executable, "utf8"), "手上这一个");
+});
+
+test("换成了之后才把上一份 .old 清掉，而这一次移开的那一份换了个名字活着", () => {
+  const it = staged("上一次那一个");
+  const { replaced } = swapSelf(it.executable);
+  assert.equal(readFileSync(it.executable, "utf8"), "新的那一个");
+  // `.old` 被占着，所以这一次移开的那一份拿的是带时间的名字。
+  assert.match(String(replaced), /\.old-\d+$/);
+  assert.equal(readFileSync(String(replaced), "utf8"), "手上这一个");
+  // 而上一份已经没了：清它这件事换成了之后才做，做了就做干净。
+  assert.equal(existsSync(replacedName(it.executable)), false);
+  assert.equal(existsSync(stagedName(it.executable)), false);
+});
+
+test(".old 本来就是空的时候，移开的那一份就叫 .old，没有多出来的清扫", () => {
+  const it = staged();
+  const { replaced } = swapSelf(it.executable);
+  assert.equal(replaced, replacedName(it.executable));
+  assert.equal(readFileSync(String(replaced), "utf8"), "手上这一个");
+  assert.equal(readFileSync(it.executable, "utf8"), "新的那一个");
+});
+
 test("a Release without this platform's two files says which one is missing and where to look", async () => {
   await published({ without: [`${NAME}.sha256`] });
   const it = copy();
