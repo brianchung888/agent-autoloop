@@ -5,16 +5,17 @@
 // otherwise, so they're given every time; nobody is there to approve anything, so a call that needs it is refused rather than
 // left waiting. It has no desktop session to open.
 import { execFileSync } from "node:child_process";
+import { t } from "../../host/i18n.ts";
 import { findProgram, tail, type Adapter, type Reading, type Usage } from "../../worker/agents.ts";
 import { addUsage } from "../../protocol/validate.ts";
 
 const PRESET = { read: "read-only", edit: "workspace-write", full: "danger-full-access" };
-const NOT_FINISHED = "DSH 没跑完这一轮";
-const NO_RESULT = "DSH 没有完成并留下实际结果";
-const WHY_NOT: Record<string, string> = {
-  aborted: "这一轮被中止了",
-  blocked: "这一轮被卡住了，没有完成",
-  "max-tokens": "这一轮用完了输出上限",
+const NOT_FINISHED = () => t("dsh.unfinished");
+const NO_RESULT = () => t("dsh.noResult");
+const WHY_NOT: Record<string, () => string> = {
+  aborted: () => t("dsh.aborted"),
+  blocked: () => t("dsh.blocked"),
+  "max-tokens": () => t("dsh.maxTokens"),
 };
 
 /** dsh reports each step's tokens as inputTokens / outputTokens / cacheReadTokens. */
@@ -68,13 +69,13 @@ export default {
       const kind = final.reason?.kind;
       if (kind === "completed") {
         if (typeof final.text === "string" && final.text.trim()) reading.text = final.text;
-        else reading.error = NO_RESULT;
-      } else if (kind === "error") reading.error = final.reason?.error?.message || NOT_FINISHED;
-      else reading.error = WHY_NOT[kind ?? ""] ?? NOT_FINISHED;
+        else reading.error = NO_RESULT();
+      } else if (kind === "error") reading.error = final.reason?.error?.message || NOT_FINISHED();
+      else reading.error = (WHY_NOT[kind ?? ""] ?? NOT_FINISHED)();
     } else if (code !== null) {
       const why = failed || tail(stderr);
-      if (code !== 0) reading.error = `退出码 ${code}：${why || "没留下原因"}`;
-      else reading.error = why || NO_RESULT;
+      if (code !== 0) reading.error = t("agent.exitCode", { code, why: why || t("agent.noReason") });
+      else reading.error = why || NO_RESULT();
     }
     return reading;
   },
@@ -86,11 +87,10 @@ export default {
         stdio: ["ignore", "pipe", "pipe"],
       });
       // The options this needs came in 0.2.2, and npm's `latest` is behind that for now.
-      if (!help.includes("--approval-policy"))
-        return "DSH 版本太旧，要 0.2.2 或更新：npm install -g @deepseek-ai/dsh@next --allow-scripts=koffi,node-pty,@deepseek-ai/dsh-subprocess-local";
+      if (!help.includes("--approval-policy")) return t("dsh.tooOld");
       return null;
     } catch (error) {
-      return `DSH 用不了：运行 dsh headless "hi" 看看（${(error as Error).message.split("\n")[0]}）`;
+      return t("dsh.unusable", { why: (error as Error).message.split("\n")[0] });
     }
   },
 } satisfies Adapter;

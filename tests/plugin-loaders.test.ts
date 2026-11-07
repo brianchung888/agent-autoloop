@@ -102,7 +102,9 @@ test("解析顺序没有变：这个安装目录里的同名插件，胜过随�
 async function packaged() {
   const engine = join(home, "packaged");
   mkdirSync(engine, { recursive: true });
-  cpSync(join(import.meta.dirname, "..", "host"), join(engine, "host"), { recursive: true });
+  // i18n/ too: what host/ says in words is read from there (host/i18n.ts), and a copy without it imports nothing.
+  for (const part of ["host", "i18n"])
+    cpSync(join(import.meta.dirname, "..", part), join(engine, part), { recursive: true });
   return await import(pathToFileURL(join(engine, "host", "plugins.ts")).href);
 }
 

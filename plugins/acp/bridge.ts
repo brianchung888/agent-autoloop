@@ -3,6 +3,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { t } from "../../host/i18n.ts";
 import { eachLine } from "../../host/lines.ts";
 import { versionName } from "../../host/version.ts";
 import type { Turn } from "../../worker/agents.ts";
@@ -49,7 +50,7 @@ export function permission(turn: Pick<Turn, "access" | "cwd">, params: any) {
 }
 
 export async function bridge(turn: Turn) {
-  if (!turn.command?.length) throw new Error("ACP 要在 command 写启动命令");
+  if (!turn.command?.length) throw new Error(t("acp.noCommand"));
   // The last go may have done its work in this session, so whatever breaks now says nothing about whether a new session
   // would do it again. Only the agent's own no takes this back; see goOn.
   if (turn.resume) console.log(JSON.stringify({ session: turn.resume, started: true }));
@@ -67,7 +68,7 @@ export async function bridge(turn: Turn) {
     pending.clear();
   };
   child.on("error", fail);
-  child.on("exit", (code) => fail(new Error(`ACP 在交回结果前退出：${code}`)));
+  child.on("exit", (code) => fail(new Error(t("acp.exited", { code: String(code) }))));
   child.stdin.on("error", fail);
 
   const toolCalls = new Map<string, object>();
@@ -102,7 +103,7 @@ export async function bridge(turn: Turn) {
       const { id, method, params } = incoming;
       if (method === "session/request_permission" && params?.sessionId === session) {
         send({ id, result: { outcome: permission(turn, { ...params, toolCall: toolCall(params.toolCall) }) } });
-      } else send({ id, error: { code: -32601, message: "不支持这个方法" } });
+      } else send({ id, error: { code: -32601, message: t("acp.noMethod") } });
     } else if (pending.has(incoming.id)) {
       const request = pending.get(incoming.id)!;
       pending.delete(incoming.id);
@@ -126,7 +127,7 @@ export async function bridge(turn: Turn) {
       }
     },
     // An agent that dies ends its output first, and its exit says more. One still there after this has hung up on us.
-    () => setTimeout(() => fail(new Error("ACP 在交回结果前关掉了输出")), 1000).unref(),
+    () => setTimeout(() => fail(new Error(t("acp.closedOutput"))), 1000).unref(),
   );
 
   const rpc = (method: string, params: object) =>
@@ -138,7 +139,7 @@ export async function bridge(turn: Turn) {
   const goOn = async (can: any) => {
     const method = can?.loadSession ? "session/load" : can?.sessionCapabilities?.resume ? "session/resume" : null;
     try {
-      if (!method) throw new Refused("这个 ACP Agent 不支持恢复会话");
+      if (!method) throw new Refused(t("acp.noResume"));
       await rpc(method, { sessionId: session, cwd: turn.cwd, mcpServers: [] });
     } catch (error) {
       if (error instanceof Refused) console.log(JSON.stringify({ started: false }));
@@ -150,13 +151,13 @@ export async function bridge(turn: Turn) {
   try {
     const clientInfo = { name: "agent-autoloop", version: versionName() };
     const init = await rpc("initialize", { protocolVersion: 1, clientCapabilities: {}, clientInfo });
-    if (init.protocolVersion !== 1) throw new Error(`不支持 ACP 版本 ${init.protocolVersion}`);
+    if (init.protocolVersion !== 1) throw new Error(t("acp.badVersion", { version: String(init.protocolVersion) }));
     if (turn.resume) {
       session = turn.resume;
       await goOn(init.agentCapabilities);
     } else {
       const { sessionId } = await rpc("session/new", { cwd: turn.cwd, mcpServers: [] });
-      if (typeof sessionId !== "string" || !sessionId) throw new Error("ACP 没有返回会话编号");
+      if (typeof sessionId !== "string" || !sessionId) throw new Error(t("acp.noSession"));
       session = sessionId;
     }
     // Before the prompt goes: the agent can start on it at once, and this has to be there if the bridge is killed then.
@@ -164,7 +165,8 @@ export async function bridge(turn: Turn) {
     collecting = true;
     const prompt = [{ type: "text", text: turn.prompt }];
     const result = await rpc("session/prompt", { sessionId: session, prompt });
-    if (result.stopReason !== "end_turn" || !text.trim()) throw new Error(`ACP 没有完成这一轮：${result.stopReason}`);
+    if (result.stopReason !== "end_turn" || !text.trim())
+      throw new Error(t("acp.unfinishedWhy", { why: String(result.stopReason) }));
     console.log(JSON.stringify({ session, text, finished: true }));
   } catch (error) {
     // Now and not on the way out: the agent, or what it left holding its output, can keep this process here for good,

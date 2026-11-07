@@ -2,6 +2,7 @@
 // with a subcommand — not `bridge.ts` named as a file. A packaged build has no `.ts` file to name, and naming one is
 // what stopped a turn from running at all there; `internal:plugin acp` is the same words in both modes, and it reaches
 // `main` below through the one loader (host/plugins.ts), as plugins/delivery already does.
+import { t } from "../../host/i18n.ts";
 import { selfExecutable } from "../../host/self.ts";
 import { tail, type Adapter, type Reading } from "../../worker/agents.ts";
 
@@ -22,7 +23,7 @@ export default {
       // What the agent itself said, then why it failed. The bridge says that last, unless the agent went on talking.
       const said = tail(stderr);
       const error = said.endsWith(reading.error ?? "") ? said : tail(`${said}\n${reading.error}`);
-      return { session: reading.session, started: reading.started, error: error || "ACP 没有完成这一轮" };
+      return { session: reading.session, started: reading.started, error: error || t("acp.unfinished") };
     }
     return reading;
   },

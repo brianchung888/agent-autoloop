@@ -5,6 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { t } from "../host/i18n.ts";
 import { loadPlugin } from "../host/plugins.ts";
 import type { Usage } from "../protocol/validate.ts";
 
@@ -105,7 +106,7 @@ export function findProgram(name: string, elsewhere: () => string[] = () => []) 
     found.set(name, onPath ?? elsewhere().find(existsSync) ?? null);
   }
   const program = found.get(name);
-  if (!program) throw new Error(`找不到 ${name}：先装好并登录`);
+  if (!program) throw new Error(t("agents.notFound", { name }));
   return program;
 }
 

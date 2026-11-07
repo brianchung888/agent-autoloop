@@ -31,7 +31,7 @@ const repo = join(import.meta.dirname, "..");
  * this is a packaged build — which is the whole point, since what decides that is asked of the file system.
  */
 const copy = join(dir, "no-entry");
-for (const part of ["cli", "host", "kernel", "plugins", "protocol", "skills", "worker", "package.json"]) {
+for (const part of ["cli", "host", "i18n", "kernel", "plugins", "protocol", "skills", "worker", "package.json"]) {
   cpSync(join(repo, part), join(copy, part), { recursive: true });
 }
 

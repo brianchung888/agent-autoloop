@@ -38,7 +38,18 @@ const repo = join(import.meta.dirname, "..");
 const script = join(repo, "install.sh");
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "agent-autoloop-install-")));
 const copy = join(dir, "the-program");
-for (const part of ["bin", "cli", "host", "kernel", "plugins", "protocol", "skills", "worker", "package.json"]) {
+for (const part of [
+  "bin",
+  "cli",
+  "host",
+  "i18n",
+  "kernel",
+  "plugins",
+  "protocol",
+  "skills",
+  "worker",
+  "package.json",
+]) {
   cpSync(join(repo, part), join(copy, part), { recursive: true });
 }
 const locked: string[] = [];

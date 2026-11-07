@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import path from "node:path";
 import { HOME } from "./home.ts";
+import { t } from "./i18n.ts";
 import { secureDir } from "./permissions.ts";
 import { stablePath } from "./node-path.ts";
 import { alive, bornAt, running } from "../worker/process.ts";
@@ -42,7 +43,7 @@ const started = (options: Pick<UnitOptions, "executable" | "program">) =>
     : [options.executable];
 
 const systemdItem = (text: string, escapeDollar = false) => {
-  if (/[\u0000-\u001f\u007f]/u.test(text)) throw new Error("systemd unit 的值不能包含控制字符");
+  if (/[\u0000-\u001f\u007f]/u.test(text)) throw new Error(t("service.unitControlChars"));
   let escaped = text.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%");
   if (escapeDollar) escaped = escaped.replaceAll("$", () => "$$");
   return `"${escaped}"`;
@@ -76,7 +77,7 @@ export function unit(options: UnitOptions = { home: HOME, executable: process.ex
   const environment = systemdItem(`AGENT_AUTOLOOP_HOME=${options.home}`);
   const command = [...started(options), "up"].map((part) => systemdItem(part, true)).join(" ");
   return `[Unit]
-Description=Agent 自动化中台
+Description=${t("service.description")}
 
 [Service]
 Environment=${environment}
@@ -261,8 +262,7 @@ export function claimUp() {
   const born = bornAt(process.pid);
   // Without it the lock cannot be told from a file left behind, and `up` would rather wait five minutes than start a
   // second hub: whoever reads the log should know which of the two they are about to get.
-  if (born === null && windows())
-    console.error("问不出本进程的创建时刻：up.pid 少了这一项，下一次 up 会说看不清这把锁，而不是把它当空的。");
+  if (born === null && windows()) console.error(t("service.noBornAt"));
   const claim = { pid: process.pid, token, born, startedAt: new Date().toISOString() };
   writeFileSync(tokenFile(), `${token}\n`, { mode: 0o600 });
   writeFileSync(pidFile(), `${JSON.stringify(claim)}\n`);
@@ -336,14 +336,12 @@ export function systemUnit() {
  */
 export function serviceNote() {
   if (!windows()) return null;
-  return taskAtLogon(label())
-    ? "Windows 上靠计划任务常驻：停了之后最多等 5 分钟才会自己回来。"
-    : "Windows 上靠计划任务常驻，而这台电脑不让登录时就启动（通常是加了域）：登录后和停了之后都最多等 5 分钟。";
+  return taskAtLogon(label()) ? t("service.winNote") : t("service.winNoteNoLogon");
 }
 
 /** New code counts once what's running starts again. What can't be restarted from here is said back, for the owner. */
 export function restartService() {
   if (serviceRunning()) return void installService();
   const name = systemUnit();
-  return name ? `这台电脑用的是系统级服务，运行 systemctl restart ${name} 才会用上新版。` : undefined;
+  return name ? t("service.systemUnit", { name }) : undefined;
 }

@@ -5,6 +5,7 @@
 //   "channels": { "feishu": { "name": "飞书", "answerers": ["ou_xxx"] } } in rules.json: who may answer.
 import { execFile, spawn } from "node:child_process";
 import type { Card, ChannelContext } from "../../host/channels.ts";
+import { t } from "../../host/i18n.ts";
 import { eachLine } from "../../host/lines.ts";
 
 /** Feishu sends these values as JSON in a string, which may be empty. */
@@ -19,9 +20,12 @@ function safeJson(text: unknown): any {
 
 function outcomeOf(card: Card) {
   const chosen = card.choice === null ? card.answer : card.options[card.choice];
-  if (card.state === "decided") return `你选了「${chosen}」，已记录，等待处理。`;
-  if (card.state === "done") return `你选了「${chosen}」。${card.result ? `已执行：${card.result}` : "已执行。"}`;
-  if (card.state === "closed" && card.kind === "ask") return `不用决定了：${card.result ?? ""}`;
+  if (card.state === "decided") return t("feishu.decided", { chosen: String(chosen) });
+  if (card.state === "done")
+    return card.result
+      ? t("feishu.doneWithResult", { chosen: String(chosen), result: card.result })
+      : t("feishu.done", { chosen: String(chosen) });
+  if (card.state === "closed" && card.kind === "ask") return t("feishu.closed", { result: card.result ?? "" });
   return card.state === "closed" && card.result ? card.result : null;
 }
 
@@ -42,7 +46,7 @@ export function render(card: Card) {
   const afterwards = outcome ? [{ tag: "markdown", content: `**${outcome}**` }] : [];
   const noteSaid =
     card.kind === "notice" && card.answer
-      ? [{ tag: "div", text: { tag: "plain_text", content: `处理说明：${card.answer}` } }]
+      ? [{ tag: "div", text: { tag: "plain_text", content: t("feishu.note", { note: card.answer }) } }]
       : [];
   const noteForm =
     card.kind === "notice"
@@ -58,16 +62,16 @@ export function render(card: Card) {
                 rows: 2,
                 auto_resize: true,
                 max_length: 1000,
-                label: { tag: "plain_text", content: "处理说明（可不填）" },
+                label: { tag: "plain_text", content: t("feishu.noteLabel") },
                 label_position: "top",
-                placeholder: { tag: "plain_text", content: "比如：已回复他视频下周发；或：群发广告，不用管" },
+                placeholder: { tag: "plain_text", content: t("feishu.notePlaceholder") },
               },
               {
                 tag: "button",
                 name: `handling_note_submit_${card.id}`,
                 form_action_type: "submit",
                 type: "primary",
-                text: { tag: "plain_text", content: "记录并结案" },
+                text: { tag: "plain_text", content: t("feishu.noteSubmit") },
               },
             ],
           },
@@ -106,7 +110,7 @@ export default async function feishu({ hub, options, log, signal }: ChannelConte
     return out;
   };
   const owner = (options.user as string | undefined) ?? (await lark(["auth", "status"], "")).identities?.user?.openId;
-  if (!owner) throw new Error("飞书通道要在 config.json 写 user，或者先 lark-cli auth login");
+  if (!owner) throw new Error(t("feishu.noOwner"));
 
   const updateMessage = (ref: string, content: string) =>
     lark(["im", "messages", "patch", "--message-id", ref, "--as", "bot", "--data", "-"], JSON.stringify({ content }));

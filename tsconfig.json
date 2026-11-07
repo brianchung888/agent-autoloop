@@ -12,6 +12,7 @@
     "types": ["node"]
   },
   "include": [
+    "i18n",
     "bin",
     "build",
     "host",

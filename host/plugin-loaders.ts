@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { HOME } from "./home.ts";
+import { t } from "./i18n.ts";
 import { readManifest } from "./plugin-manifest.ts";
 import { processPlugin } from "./plugin-process.ts";
 import { builtins, registryKey } from "./plugin-registry.ts";
@@ -71,10 +72,7 @@ export const processLoader: PluginLoader = {
       // `folder` is already the plugin's own folder, so the entry file is named in it directly: `entryIn` takes the
       // folder of plugin folders, and asking it here would look for `<name>/<name>/<kind>.ts` and never find one.
       if (!fromSource() && existsSync(join(folder, `${kind}.ts`)))
-        throw new Error(
-          `${name} 是源码插件（plugins/${name}/${kind}.ts），这个打包版跑不了外部的 .ts 文件。` +
-            `在 ${join(folder, "plugin.json")} 里写 {"runtime":"process","entry":"…"}，让它当一个独立程序被调用（见 docs/plugins.md）。`,
-        );
+        throw new Error(t("plugin.sourceInPackaged", { name, kind, manifest: join(folder, "plugin.json") }));
       return null;
     }
     return { plugin: await processPlugin(name, kind, folder, manifest.entry!, manifest.args) };

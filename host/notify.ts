@@ -5,6 +5,7 @@
 // the hub — is not the same answer: a channel can be running, and in good order, and still not reach anybody. Saying
 //「在线」 there would tell someone their Agent's questions arrive on this screen when they do not.
 import { spawnSync } from "node:child_process";
+import { t } from "./i18n.ts";
 
 /** A program this takes to show a notification: there is one, or there is not. */
 export function hasDesktopNotifier() {
@@ -19,9 +20,7 @@ export function hasDesktopNotifier() {
 /** Why notifications don't arrive on this computer, in words a person can act on, or nothing when they do. */
 export function desktopTrouble() {
   if (hasDesktopNotifier()) return null;
-  if (process.platform === "win32") return "桌面通知不可用：Windows 上没有可用的通知程序，卡片会跳过通知";
-  if (process.platform === "linux") {
-    return "桌面通知不可用：这台电脑没有图形会话（DISPLAY 和 WAYLAND_DISPLAY 都没设），卡片会跳过通知";
-  }
-  return "桌面通知不可用：问不到这台电脑的图形会话，卡片会跳过通知";
+  if (process.platform === "win32") return t("notify.trouble.win");
+  if (process.platform === "linux") return t("notify.trouble.linux");
+  return t("notify.trouble.unknown");
 }

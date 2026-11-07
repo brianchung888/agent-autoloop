@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { HOME } from "./home.ts";
+import { t, type Lang } from "./i18n.ts";
 import { secureDir } from "./permissions.ts";
 
 export type ChannelConfig = { use?: string; key: string; [option: string]: unknown };
@@ -13,6 +14,8 @@ export type Config = {
   channels?: Record<string, ChannelConfig>;
   source?: { name: string; key: string };
   owner?: string;
+  /** Which of the two Chinese scripts this install says things in (host/i18n.ts). Unset means: whatever the shell says. */
+  lang?: Lang;
 };
 
 export const CONFIG_FILE = path.join(HOME, "config.json");
@@ -20,16 +23,16 @@ export const CONFIG_FILE = path.join(HOME, "config.json");
 /** The hub's address: host:port, or [host]:port for an IPv6 address. A bare port is a mistake, not every interface. */
 export function parseListen(listen: string) {
   const match = /^\[([0-9a-fA-F:.]+)\]:([0-9]+)$/.exec(listen) ?? /^([^:\s]+):([0-9]+)$/.exec(listen);
-  if (!match) throw new Error(`hub.listen 要写成 主机:端口（IPv6 用 [地址]:端口）：${listen}`);
+  if (!match) throw new Error(t("config.listen.shape", { listen }));
   const port = Number(match[2]);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`hub.listen 的端口要在 1 到 65535 之间：${listen}`);
+    throw new Error(t("config.listen.port", { listen }));
   }
   return { host: match[1], port };
 }
 
 export function readConfig(): Config {
-  if (!existsSync(CONFIG_FILE)) throw new Error("还没装好：先运行 agent-autoloop init");
+  if (!existsSync(CONFIG_FILE)) throw new Error(t("config.notInstalled"));
   return JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as Config;
 }
 
