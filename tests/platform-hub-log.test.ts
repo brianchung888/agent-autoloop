@@ -16,7 +16,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { anyLang } from "../host/i18n.ts";
+import { anyLang, t } from "../host/i18n.ts";
 import { skipUnless } from "./helpers.ts";
 
 const test = skipUnless(
@@ -119,4 +119,28 @@ test("计划任务起的中台，把 webhook 装不起插件的那一整句写�
     sentence.some((one) => wrote.includes(`webhook hooked：${one}`)),
     `404 叫人去读中台日志，而日志里没有这一句（${sentence.join(" / ")}）：\n${wrote}`,
   );
+});
+
+test("还没装好就 up：那一句也得进 up.log，不然计划任务起不来而谁都不知道为什么", () => {
+  // 把日志接上这件事曾经排在 readConfig() 后面，所以比它更早的每一种失败都是静的：计划任务没有 stderr，
+  // 于是中台没起来而机器上一个字也没有（phase3-verification-round4.md 3）。
+  const home = mkdtempSync(join(tmpdir(), "agent-autoloop-up-log-"));
+  try {
+    const env: NodeJS.ProcessEnv = { ...process.env, AGENT_AUTOLOOP_HOME: home };
+    delete env.AGENT_AUTOLOOP_RULES;
+    // config.json 一开始就不在：readConfig() 正是排在接日志之前的那一步。
+    const ran = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", program, "up"], {
+      env,
+      encoding: "utf8",
+      timeout: 120_000,
+    });
+    assert.equal(ran.status, 1, `${ran.stdout}${ran.stderr}`);
+    const logFile = join(home, "logs", "up.log");
+    assert.ok(existsSync(logFile), `up.log 根本没建起来：${ran.stdout}${ran.stderr}`);
+    const wrote = readFileSync(logFile, "utf8");
+    assert.ok(wrote.includes(t("config.notInstalled")), `这一句没进 up.log：${wrote}`);
+    assert.match(wrote, /\[stderr\]/, wrote);
+  } finally {
+    rmSync(home, { recursive: true, force: true, maxRetries: 3 });
+  }
 });

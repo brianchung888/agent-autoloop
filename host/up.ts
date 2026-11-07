@@ -143,15 +143,20 @@ function keepChannelRunning(id: string, { use, key, ...options }: ChannelConfig,
 }
 
 export async function up() {
+  // First of all, before anything that can fail. Under a scheduled task there is no stderr at all, so until this is
+  // wired every failure of a start is silent: a config.json that does not parse, an executable that could not be
+  // tidied away, a data folder `icacls` refused — each one left the task's own log empty and nothing anywhere said
+  // why the hub never came up (phase3-verification-round4.md 3). `LOG_FILE` is a path worked out from `HOME` and
+  // nothing is read to know it, which is what makes it safe to do this first.
+  if (LOG_FILE) {
+    secureDir(path.dirname(LOG_FILE));
+    alsoWrite(console);
+  }
   const config = readConfig();
   // The executable an update moved aside (cli/self-update.ts). Here because this is the start it was waiting for: by
   // now nothing is running it, and Windows lets it be deleted. Source mode has no executable of its own to have moved.
   if (!fromSource()) tidyReplaced(selfProgram());
   secureDir(HOME);
-  if (LOG_FILE) {
-    secureDir(path.dirname(LOG_FILE));
-    alsoWrite(console);
-  }
   const unlock = lock();
   // Plugins run in this process, and an `error` event or a promise nobody handled is theirs to answer for, not the hub's.
   // Everything that matters is in transactions, so the rest can carry on.
