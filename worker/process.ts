@@ -10,6 +10,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { systemTool } from "../host/system-tool.ts";
 
 const WINDOWS = process.platform === "win32";
 /** What started the run is this program's own runtime, so a number now held by anything else is not the run. */
@@ -36,11 +37,15 @@ const ONE_PROCESS_QUERY =
  */
 function tasklistRows(filters: string[]): string[][] | null {
   try {
-    const printed = execFileSync("tasklist", ["/NH", "/FO", "CSV", ...filters.flatMap((filter) => ["/FI", filter])], {
-      encoding: "utf8",
-      timeout: 15_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    const printed = execFileSync(
+      systemTool("tasklist"),
+      ["/NH", "/FO", "CSV", ...filters.flatMap((filter) => ["/FI", filter])],
+      {
+        encoding: "utf8",
+        timeout: 15_000,
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
     return printed
       .split(/\r?\n/)
       .filter((line) => line.startsWith('"'))
@@ -83,7 +88,7 @@ export function forgetProcesses() {
 function readProcessTable(): Table | null {
   try {
     const printed = execFileSync(
-      "powershell",
+      systemTool("powershell"),
       ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", PROCESS_TABLE_QUERY],
       { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "ignore"] },
     );
@@ -143,7 +148,7 @@ export function bornAt(pid: number | undefined): string | null {
   if (!pid || !WINDOWS || !Number.isInteger(pid) || pid <= 0) return null;
   try {
     const printed = execFileSync(
-      "powershell",
+      systemTool("powershell"),
       ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", ONE_PROCESS_QUERY],
       {
         encoding: "utf8",
@@ -519,7 +524,7 @@ export function terminate(pid: number | undefined, hard: boolean, record?: strin
 function kill(pid: number, hard: boolean) {
   try {
     if (WINDOWS) {
-      execFileSync("taskkill", ["/PID", String(pid), "/T", ...(hard ? ["/F"] : [])], {
+      execFileSync(systemTool("taskkill"), ["/PID", String(pid), "/T", ...(hard ? ["/F"] : [])], {
         timeout: 15_000,
         stdio: "ignore",
       });

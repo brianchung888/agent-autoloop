@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import path from "node:path";
 import { HOME } from "./home.ts";
 import { t } from "./i18n.ts";
+import { systemTool } from "./system-tool.ts";
 
 const windows = () => process.platform === "win32";
 /** Beside the files it is about, so another process — `doctor` — can read what was managed. */
@@ -37,7 +38,7 @@ function lockOnWindows(target: string, folder: boolean) {
   const who = process.env.USERNAME;
   if (!who) return t("permissions.noUser");
   const grant = folder ? `${who}:(OI)(CI)F` : `${who}:F`;
-  const done = spawnSync("icacls", [target, "/inheritance:r", "/grant:r", grant], {
+  const done = spawnSync(systemTool("icacls"), [target, "/inheritance:r", "/grant:r", grant], {
     encoding: "utf8",
     timeout: 60_000,
     stdio: ["ignore", "pipe", "pipe"],

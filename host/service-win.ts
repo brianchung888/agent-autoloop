@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { t } from "./i18n.ts";
+import { systemTool } from "./system-tool.ts";
 
 export type TaskOptions = {
   label: string;
@@ -162,11 +163,11 @@ export function installTask(options: TaskOptions) {
   // whoever registers it, and asking for a person on the command line makes schtasks ask for their password.
   const register = ["/Create", "/TN", options.label, "/XML", file, "/F"];
   writeTaskFile(file, taskXml({ ...options, atLogon: true }));
-  if (spawnSync("schtasks", register, { stdio: "ignore", timeout: 60_000 }).status !== 0) {
+  if (spawnSync(systemTool("schtasks"), register, { stdio: "ignore", timeout: 60_000 }).status !== 0) {
     writeTaskFile(file, taskXml({ ...options, atLogon: false }));
-    execFileSync("schtasks", register, { stdio: "ignore", timeout: 60_000 });
+    execFileSync(systemTool("schtasks"), register, { stdio: "ignore", timeout: 60_000 });
   }
-  spawnSync("schtasks", ["/Run", "/TN", options.label], { stdio: "ignore", timeout: 60_000 });
+  spawnSync(systemTool("schtasks"), ["/Run", "/TN", options.label], { stdio: "ignore", timeout: 60_000 });
 }
 
 /** Whether the registered task also starts at logon, or only waits for the repeat. For saying so in `doctor`. */
@@ -183,7 +184,7 @@ export function taskAtLogon(label: string) {
  * Anything with a character outside ASCII in it is read from the file this install wrote, never from here.
  */
 export function registeredXml(label: string) {
-  const asked = spawnSync("schtasks", ["/Query", "/TN", label, "/XML", "ONE"], {
+  const asked = spawnSync(systemTool("schtasks"), ["/Query", "/TN", label, "/XML", "ONE"], {
     encoding: "latin1",
     timeout: 60_000,
     stdio: ["ignore", "pipe", "ignore"],
@@ -205,8 +206,8 @@ export function taskOwned(label: string, home: string, program: string) {
 
 export function removeTask(label: string, home: string, program: string) {
   if (!taskOwned(label, home, program)) return;
-  spawnSync("schtasks", ["/End", "/TN", label], { stdio: "ignore", timeout: 60_000 });
-  spawnSync("schtasks", ["/Delete", "/TN", label, "/F"], { stdio: "ignore", timeout: 60_000 });
+  spawnSync(systemTool("schtasks"), ["/End", "/TN", label], { stdio: "ignore", timeout: 60_000 });
+  spawnSync(systemTool("schtasks"), ["/Delete", "/TN", label, "/F"], { stdio: "ignore", timeout: 60_000 });
   for (const file of [taskFile(home), envFile(home)]) rmSync(file, { force: true });
 }
 
