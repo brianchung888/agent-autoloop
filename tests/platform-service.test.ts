@@ -224,16 +224,32 @@ test("列不出进程的时候，这把锁谁都不许抢", notWindows, (t) => {
   t.after(release);
   assert.equal(runningUp(), process.pid, "先真的有人持锁");
 
-  // tasklist 在 System32 里。把它从 PATH 上拿掉，机器就只能回「看不出来」。以前这被当成「没人在跑」，第二个 up 于是
-  // 覆盖掉第一个的锁，两个 hub 开同一个 SQLite 文件——计划任务的 IgnoreNew 本来就挡掉了重复触发，宁可不抢。
-  const was = process.env.PATH;
+  // 让这台机器真的看不出来，要把两条路都堵上：tasklist 先按 %SystemRoot%\System32 的绝对路径找
+  // （host/system-tool.ts，phase3-verification-round4.md 1），那里没有才退回裸名走 PATH。只裁 PATH 已经不够了——
+  // 那正是那一条修复要干的事。而这条测试要问的是更后面一层：真的一条路都没了的时候，答的得是「看不清」。
+  // 以前这被当成「没人在跑」，第二个 up 于是覆盖掉第一个的锁，两个 hub 开同一个 SQLite 文件——计划任务的
+  // IgnoreNew 本来就挡掉了重复触发，宁可不抢。
+  const was = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, windir: process.env.windir };
   t.after(() => {
-    process.env.PATH = was;
+    process.env.PATH = was.PATH;
+    if (was.SystemRoot === undefined) delete process.env.SystemRoot;
+    else process.env.SystemRoot = was.SystemRoot;
+    if (was.windir === undefined) delete process.env.windir;
+    else process.env.windir = was.windir;
   });
-  process.env.PATH = join(home, "这里什么都没有");
+  const nowhere = join(home, "这里什么都没有");
+  // 先只裁 PATH：System32 还在，所以机器还是看得见——这正是 r4-1 要的那个结果。
+  process.env.PATH = nowhere;
+  assert.equal(runningUp(), process.pid, "PATH 裁掉之后就看不见了，那 System32 那一条路没起作用");
+
+  // 再把 System32 那一条路也堵上，这才是真的无路可走。
+  delete process.env.SystemRoot;
+  delete process.env.windir;
   assert.equal(runningUp(), "unknown", "看不清就不是「没人在跑」");
 
-  process.env.PATH = was;
+  process.env.PATH = was.PATH;
+  if (was.SystemRoot !== undefined) process.env.SystemRoot = was.SystemRoot;
+  if (was.windir !== undefined) process.env.windir = was.windir;
   assert.equal(runningUp(), process.pid, "看得见了，还是这把锁");
 });
 
