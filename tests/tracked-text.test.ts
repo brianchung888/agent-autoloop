@@ -136,11 +136,17 @@ test("程序读的每一个 AGENT_AUTOLOOP_ 环境变量都写进了文件", () 
   const written = ["INSTALL.md", "docs/protocol.md", "docs/plugins.md"]
     .map((file) => readFileSync(join(root, file), "utf8"))
     .join("\n");
+  // Where the name ends is part of the question. `includes` let a prefix through, so a name the program reads would
+  // have counted as written down by a line that happens to mention a longer one — AGENT_AUTOLOOP_RELEASES against a
+  // table that only says AGENT_AUTOLOOP_RELEASES_PAGE (phase3-verification-round3.md #6). The character after the
+  // name has to be one that ends a name: these are spelled in capitals, digits and underscores and nothing else.
+  const mentions = (name: string, where: string) => new RegExp(`AGENT_AUTOLOOP_${name}(?![A-Z0-9_])`).test(where);
+  // And that is checked here rather than taken on trust, because a comparison that is wrong passes quietly.
+  assert.equal(mentions("HOME", "| `AGENT_AUTOLOOP_HOME` | 中台 | …"), true);
+  assert.equal(mentions("HOME", "只写了 AGENT_AUTOLOOP_HOME_DIR 这个别的名字"), false);
   // `SECRET_<来源名>` is one entry: the rest of each name is whatever a person called their source, and a plugin that
   // names its own (plugins/<名字>/source.ts) is naming that person's source and not a variable of this program's.
-  const missing = [...used]
-    .filter((name) => !name.startsWith("SECRET_") && !written.includes(`AGENT_AUTOLOOP_${name}`))
-    .sort();
+  const missing = [...used].filter((name) => !name.startsWith("SECRET_") && !mentions(name, written)).sort();
   assert.deepEqual(missing, [], `这些环境变量没有写进文件里（INSTALL.md 的「环境变量」那张表）：${missing.join("、")}`);
 });
 
