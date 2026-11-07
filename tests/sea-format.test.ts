@@ -18,9 +18,18 @@
 // put, which is how it reaches for `.ts` files it cannot run and says none of the things it is meant to say about that.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { after, test } from "node:test";
 
@@ -175,4 +184,41 @@ test("真二进位怎么读 --env-file：文件在就进环境，不在就是运
     assert.match(gone.stderr, /没有这个文件\.env/, gone.stderr);
     assert.doesNotMatch(gone.stdout + gone.stderr, /装好了|用法：agent-autoloop/, "它接着跑下去了");
   }
+});
+
+test("uninstall 把上一次 update 换下来的 .old 也带走：没有下一次启动替它收尾了", NEEDS_BINARY, () => {
+  // `.old` 是换文件那一步留下的（host/self-replace.ts），up 下一次启动才清掉——而卸完之后永远没有下一次启动，
+  // 于是 96MB 就永远留在那里，而且用的是一个这台机器上再也没人解释得清的名字（phase3-verification-round3.md E）。
+  //
+  // 跑的是真二进位的一份副本：卸载认的是这个可执行文件自己（host/self.ts），所以这一条只有在它身上问才算数。
+  const where = home();
+  const folder = join(dir, "installed");
+  mkdirSync(folder, { recursive: true });
+  const copy = join(folder, process.platform === "win32" ? "agent-autoloop.exe" : "agent-autoloop");
+  try {
+    linkSync(binary!, copy);
+  } catch {
+    copyFileSync(binary!, copy);
+  }
+  // 上一次 update 留下的两份：`.old`，和一份当时 `.old` 还被占着所以带了时间的。旁边还有别人的东西。
+  writeFileSync(`${copy}.old`, "上一版");
+  writeFileSync(`${copy}.old-1700000000000`, "更早那一版");
+  writeFileSync(join(folder, "notes.txt"), "mine");
+  // 真正的 HOME 也指到临时目录：卸载要看的那几个 Agent 目录是按 homedir() 找的，这台机器自己的不该被看一眼。
+  const elsewhere = join(dir, `nobody-${Date.now()}`);
+  mkdirSync(elsewhere, { recursive: true });
+  const done = spawnSync(copy, ["uninstall", "--yes"], {
+    cwd: folder,
+    env: { ...inside(where), USERPROFILE: elsewhere, HOME: elsewhere, PATH: folder },
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  assert.equal(
+    done.status,
+    0,
+    `${done.stdout}
+${done.stderr}`,
+  );
+  // 两份都没了，而别人的东西和这个程序本身都还在：卸载不删自己，它只清掉换文件留下的那几份。
+  assert.deepEqual(readdirSync(folder).sort(), [basename(copy), "notes.txt"].sort(), done.stdout);
 });

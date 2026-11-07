@@ -6,6 +6,7 @@ import path from "node:path";
 import { HOME } from "../host/home.ts";
 import { fromSource, selfProgram } from "../host/self.ts";
 import { skillFolder } from "../host/skill.ts";
+import { tidyReplaced } from "../host/self-replace.ts";
 import { removeService, stopUp } from "../host/service.ts";
 
 const ROOT = path.join(import.meta.dirname, "..");
@@ -113,6 +114,11 @@ export async function uninstall(yes: boolean, ask: ((question: string) => Promis
   removeService();
   stopUp();
   removeLinks();
+  // What the last update moved aside. It is taken away at the next start of this program (host/up.ts) — and after an
+  // uninstall there is no next start, so 96 MB stayed beside the executable for good, under a name nothing on this
+  // machine would ever explain (phase3-verification-round3.md E). Here rather than before `stopUp`: Windows will not
+  // delete an executable while it is running, and the `.old` may be the one the hub that was just stopped was running.
+  if (!fromSource()) tidyReplaced(selfProgram());
   const installedApp = path.join(HOME, "app");
   if (existsSync(installedApp) && realpathSync(installedApp) === realpathSync(ROOT)) {
     rmSync(installedApp, { recursive: true });
