@@ -10,7 +10,7 @@
 // forbids everywhere else.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { skipUnless } from "./helpers.ts";
@@ -56,28 +56,43 @@ const tracked = () =>
  * used to make it (phase3-verification-round2.md #7: any tracked binary was an error, deliberately, and that leaves no
  * way to ship a favicon).
  *
- * What is still checked for one is that it is a file at all. A zero-byte image is what a `git add` of a Git-LFS pointer
- * that was never fetched, or a failed download, leaves behind — and it looks exactly like a working one in a diff, in a
- * review and in a renderer, which is the same failure this whole file is about.
+ * What is still checked for one is that it is the file and not a note standing in for one. A zero-byte image is what a
+ * failed download leaves behind, and a Git-LFS pointer that was never fetched is not zero bytes at all — it is about a
+ * hundred bytes of text beginning `version https://git-lfs.github.com/spec/v1` (phase3-verification-round3.md #7, which
+ * is what the comment here used to describe the zero-byte case as). Either one looks exactly like a working file in a
+ * diff, in a review and in a renderer, which is the same failure this whole file is about.
  */
 const NOT_TEXT = /\.(png|jpg|jpeg|gif|webp|avif|ico|icns|woff|woff2|ttf|otf|eot|pdf|zip|gz|wasm|mp4|webm|mp3|ogg)$/i;
+
+/** The first line a Git-LFS pointer file carries, which is the whole of how one is told from the file it stands for. */
+const LFS_POINTER = "version https://git-lfs.github.com/spec/v1";
 
 /** What is wrong with one file, as sentences, and nothing where nothing is. `null` for a path that is not there. */
 export function troubleWith(folder: string, file: string): string[] | null {
   if (NOT_TEXT.test(file)) {
-    // Not read as text, because it is not text. Only that it is a file at all.
-    let size: number;
+    // Not read as text, because it is not text. Only that it is the file rather than a note standing in for it.
+    let bytes: Buffer;
     try {
-      size = statSync(join(folder, file)).size;
+      bytes = readFileSync(join(folder, file));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
-    if (size > 0) return [];
-    return [
-      `${file}: 0 个字节。这个后缀的文件按二进位处理，不查 UTF-8，但不能是空的` +
-        `——空的通常是没拉下来的 LFS 指针或者下载失败，而它在 diff、评审和渲染里都和好的一模一样`,
-    ];
+    if (bytes.length === 0) {
+      return [
+        `${file}: 0 个字节。这个后缀的文件按二进位处理，不查 UTF-8，但不能是空的` +
+          `——空的通常是下载失败，而它在 diff、评审和渲染里都和好的一模一样`,
+      ];
+    }
+    // A pointer is not an empty file: it is about a hundred bytes of text, and every look a person gives it — the
+    // diff, the review, the renderer — shows something that reads as fine.
+    if (bytes.subarray(0, LFS_POINTER.length).toString("latin1") === LFS_POINTER) {
+      return [
+        `${file}: 这是一个没拉下来的 Git-LFS 指针（开头是 ${LFS_POINTER}），不是那个文件本身。` +
+          `这个仓库不用 LFS：把真正的文件 add 进来`,
+      ];
+    }
+    return [];
   }
   let text: string;
   try {
@@ -156,9 +171,16 @@ test("图标、字体这些二进位按后缀放过，但不能是空的", () =>
     // 一个真的图标：不查 UTF-8，所以里面有什么字节都行——它本来就不是字。
     writeFileSync(join(dir, "favicon.ico"), Buffer.from([0, 0, 1, 0, 0xff, 0x07, 0x1b]));
     assert.deepEqual(troubleWith(dir, "favicon.ico"), []);
-    // 空的那一个：拉不下来的 LFS 指针、断掉的下载，在 diff 和渲染里都和好的一样。
+    // 空的那一个：断掉的下载，在 diff 和渲染里都和好的一样。
     writeFileSync(join(dir, "logo.png"), "");
     assert.match(troubleWith(dir, "logo.png")!.join(""), /0 个字节/);
+    // 没拉下来的 LFS 指针：不是 0 个字节，是一百多个字节的文字，所以按大小查的那一关它是过的。
+    const newline = String.fromCharCode(10);
+    writeFileSync(
+      join(dir, "cover.jpg"),
+      ["version https://git-lfs.github.com/spec/v1", `oid sha256:${"0".repeat(64)}`, "size 12345", ""].join(newline),
+    );
+    assert.match(troubleWith(dir, "cover.jpg")!.join(""), /Git-LFS 指针/);
     // 后缀不在名单里的二进位还是错，而且话里说得出该怎么办。
     writeFileSync(join(dir, "blob.dat"), Buffer.from([0xff, 0xfe, 0x00, 0x41]));
     assert.match(troubleWith(dir, "blob.dat")!.join(""), /不是 UTF-8.*NOT_TEXT/s);
