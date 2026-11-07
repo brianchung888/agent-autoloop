@@ -197,7 +197,7 @@ export const zhCN = {
   "cli.usage.restore":
     "用法：agent-autoloop restore <目录> [--yes]\n\n恢复会替换本机的数据库、主密钥、配置、规则和 secrets.env；先停掉中台，--yes 跳过确认。",
   "cli.usage.lang":
-    "用法：agent-autoloop lang [zh-TW|zh-CN]\n\n这个程序说哪种中文，写进 config.json 的 lang；不写就说现在说的是哪种。\nAGENT_AUTOLOOP_LANG 盖得过它。",
+    "用法：agent-autoloop lang [zh-TW|zh-CN]\n\n这个程序说哪种中文，写进 config.json 的 lang；不写就说现在说的是哪种。\nAGENT_AUTOLOOP_LANG 盖得过它。\n要先 init 才有 config.json 可写；init 之前用 AGENT_AUTOLOOP_LANG 或 init --lang。",
   "cli.usage.add": "用法：agent-autoloop add <git 地址>",
   "cli.usage.answer": "用法：agent-autoloop answer <卡片> [序号] [--text 别的想法]",
   "cli.usage.ask":
