@@ -90,7 +90,16 @@ case " $* " in *" clone "*) for target; do :; done; cp -R "${copy}" "$target"; m
   const program = join(hub, "app", "bin", "agent-autoloop.ts");
   const local = join(person, ".local", "bin");
   const run = (path: string[], args = ["--no-service", "--command", "true", "--port", "3999"], shell = "/bin/sh") => {
-    const env: NodeJS.ProcessEnv = { HOME: person, PATH: [...path, tools].join(":") };
+    // Two variables and nothing else: this computer is to have no PATH, no HOME and no tools but the ones above.
+    // Which language it says things in is the third, and it cannot be left out — every assertion below quotes a
+    // sentence word for word, and in the language tests/lang.env names. install.sh reads this variable itself (it has
+    // to: it runs before the program exists), and so does the program it goes on to run. Dropped, both fall back to
+    // the default and answer in 正體 to a suite written in 简体.
+    const env: NodeJS.ProcessEnv = {
+      HOME: person,
+      PATH: [...path, tools].join(":"),
+      AGENT_AUTOLOOP_LANG: process.env.AGENT_AUTOLOOP_LANG,
+    };
     return spawnSync(shell, [script, ...args], {
       env,
       encoding: "utf8",
