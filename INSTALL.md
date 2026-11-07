@@ -99,6 +99,25 @@ agent-autoloop up
 
 PATH 没有命令时，把 `agent-autoloop` 换成安装器打印的完整路径。临时测试使用假的 `osascript`、`notify-send`，不要发送真实消息；不要给已在线的飞书应用再开监听。
 
+## 环境变量
+
+这台电脑上能改程序行为的全部环境变量，一张表（之前有几个只写在注释里，`phase3-verification-round2.md` #6）。都不是必填的：不设就是表里那个默认行为。
+
+| 变量 | 给谁看 | 作用 |
+|---|---|---|
+| `AGENT_AUTOLOOP_HOME` | 全部 | 数据目录，默认 `~/.agent-autoloop`。换掉它就是另一个独立的安装（常驻的名字跟着变） |
+| `AGENT_AUTOLOOP_RULES` | 中台 | 规则文件的位置，默认 `HOME/rules.json`。临时跑一套规则不用动数据目录时用它 |
+| `AGENT_AUTOLOOP_PUBLIC_URL` | 中台 | 卡片链接写出去时用的地址。`up` 会按 `config.json` 的 `hub.publicUrl`（没有就按 `hub.listen`）自己设好，手动设只在不走 `up` 的时候有意义 |
+| `AGENT_AUTOLOOP_TREE_SAMPLE` | 接单程序 | Windows 上「一轮跑着的时候隔多久走一次它的进程树」，毫秒，默认 30000。走一次整张进程表要 1.3–1.9 秒，所以它不该调小；`0` 是每一拍都走，只有测试这么用 |
+| `AGENT_AUTOLOOP_COMMIT`、`AGENT_AUTOLOOP_RELEASE` | 版本 | `--version` 说哪一版。二进位把自己的版本写成 `\|\|=`，好让部署改得动。报问题之前先 `unset`，否则说出来的不是手上这个文件 |
+| `AGENT_AUTOLOOP_RELEASES` | `update` | 二进位自我更新去问哪个 Release API，默认公开仓库那个。改它只为了拿自建的 Release 试，或者给测试用一个本机的服务器 |
+| `AGENT_AUTOLOOP_REPO` | 安装器 | `install.sh` / `install.ps1` 从哪个仓库装，默认公开仓库。从本地副本装时用它（见上面「临时 HOME」一节） |
+| `AGENT_AUTOLOOP_NO_PATH` | 安装器 | 设成非空就不改 Windows 的用户 PATH（见上面「安装」一节） |
+| `AGENT_AUTOLOOP_CONFORMANCE` | `conformance` | 一致性检查用的凭据文件，等于不写 `--config` 时的默认值 |
+| `AGENT_AUTOLOOP_SECRET_<来源名>` | 中台 | 这个来源验 Webhook 签名用的密钥，来源名里的 `-` 写成 `_` 并大写。平时放 `HOME/secrets.env`，`up` 启动时读进来 |
+
+还有几个是程序**交给**它启动的东西的，不是用来配置这台电脑的：`AGENT_AUTOLOOP_RUN`、`AGENT_AUTOLOOP_CONTEXT`、`AGENT_AUTOLOOP_COMMAND`（接单程序给 Agent 的，见[插件说明](docs/plugins.md)），`AGENT_AUTOLOOP_URL`、`AGENT_AUTOLOOP_KEY`、`AGENT_AUTOLOOP_ONCE`、`AGENT_AUTOLOOP_CLAIM`、`AGENT_AUTOLOOP_RECEIPT`（自己写接单程序或通道时用的，见[协议](docs/protocol.md)），以及 `AGENT_AUTOLOOP_PID`（Windows 上问进程信息的那段 PowerShell 的入参，内部用）。
+
 ## 验证
 
 先查看安装和连接情况，再用真实 Agent 跑完整问答：

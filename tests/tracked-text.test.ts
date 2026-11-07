@@ -1,7 +1,8 @@
 // What this repository ships as text has to read as what was meant. Failure cases: a control character written by a
 // tool that read `\a`, `\b` or `\e` as an escape sits in a file nobody looks at byte by byte — INSTALL.md said
 // `certutil -hashfile .<BEL>gent-autoloop-windows-x64.exe`, which is a command line that cannot be copied and run, and
-// no reader, reviewer or renderer shows the difference; a tracked file stops decoding as UTF-8.
+// no reader, reviewer or renderer shows the difference; a tracked file stops decoding as UTF-8; a switch only
+// whoever wrote it knows about, because the environment variable it reads was never written down anywhere.
 //
 // Every character this file is about is written as a code point and never as an escape in a literal: Prettier rewrites
 // a unicode escape in a string literal into the character itself, which would put in this very file the thing it
@@ -70,4 +71,39 @@ test("被跟踪的文件都是 UTF-8，而且不含 C0 控制字符（制表、�
     }
   }
   assert.deepEqual(wrong, [], `这些文件里有不该有的字符：\n${wrong.join("\n")}`);
+});
+
+/**
+ * Every `AGENT_AUTOLOOP_*` this program reads has to be written down somewhere a person reads, because one that is not
+ * is a switch only whoever wrote it knows about (phase3-verification-round2.md #6: AGENT_AUTOLOOP_TREE_SAMPLE existed
+ * only in a comment). The table is INSTALL.md's 「环境变量」 section, with the ones that are handed to a child process
+ * rather than set by a person named in the paragraph under it.
+ *
+ * Read out of the tracked files rather than out of a list here: a list would be the second place to add a name to, and
+ * the one that gets forgotten.
+ */
+test("程序读的每一个 AGENT_AUTOLOOP_ 环境变量都写进了文件", () => {
+  const code = tracked().filter((file) => /^(cli|host|kernel|protocol|worker|plugins|bin)\//.test(file));
+  const used = new Set<string>();
+  for (const file of code) {
+    let text: string;
+    try {
+      text = readFileSync(join(root, file), "utf8");
+    } catch {
+      continue;
+    }
+    // Only where it is read or written as a whole name: `AGENT_AUTOLOOP_SECRET_${…}` is one entry in the table and the
+    // name it is built into is the source's, not this program's.
+    for (const [, name] of text.matchAll(/AGENT_AUTOLOOP_([A-Z][A-Z_]*)\b/g)) used.add(name);
+  }
+  assert.ok(used.size > 5, `一个都没找到，这条测试就没在看什么（${used.size}）`);
+  const written = ["INSTALL.md", "docs/protocol.md", "docs/plugins.md"]
+    .map((file) => readFileSync(join(root, file), "utf8"))
+    .join("\n");
+  // `SECRET_<来源名>` is one entry: the rest of each name is whatever a person called their source, and a plugin that
+  // names its own (plugins/<名字>/source.ts) is naming that person's source and not a variable of this program's.
+  const missing = [...used]
+    .filter((name) => !name.startsWith("SECRET_") && !written.includes(`AGENT_AUTOLOOP_${name}`))
+    .sort();
+  assert.deepEqual(missing, [], `这些环境变量没有写进文件里（INSTALL.md 的「环境变量」那张表）：${missing.join("、")}`);
 });
