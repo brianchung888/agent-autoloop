@@ -4,7 +4,9 @@
 // holding it finds it dead the moment it is needed.
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { readFileSync } from "node:fs";
 import { connect, type AddressInfo } from "node:net";
+import { join } from "node:path";
 import { after, test } from "node:test";
 import { setup } from "./helpers.ts";
 
@@ -100,6 +102,11 @@ test("中台卡住几秒之后，闲着的那条连接还在：谁拿着它都�
     ask();
     assert.equal(await answers(2), 2, `卡过之后那条连接答不了了：${said}`);
     socket.destroy();
+
+    // 而这是缓解，不是根除：卡过 keepAliveTimeout 那么长，ECONNRESET 就会回来，因为原因一点没变——堵在这个
+    // 进程里的是同步活儿。这一点要写在那个数字旁边，否则下一个读到它的人会以为这事已经没了（phase3-verification-round3.md #3）。
+    const source = readFileSync(join(import.meta.dirname, "..", "host", "http.ts"), "utf8");
+    assert.match(source, /does not take the cause away/, "host/http.ts 没写明这只是缓解");
   } finally {
     server.closeAllConnections();
     server.close();

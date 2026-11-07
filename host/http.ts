@@ -25,6 +25,14 @@ import { makeHandler } from "./server.ts";
  * `headersTimeout` goes with it. It is what limits the time from a request's first byte to its last header, and Node
  * will destroy a connection on whichever of the two comes first — leaving it at its own 60 seconds would put back a
  * shorter limit than the one being raised here.
+ *
+ * What this is, said plainly: it moves the number past anything measured, and it does not take the cause away
+ * (phase3-verification-round3.md #3). A block longer than 70 seconds brings the same ECONNRESET back, for the same
+ * reason — a connection the client was told would live that long, found idle past it by a process catching up. Nothing
+ * here can rule that out, because what blocks is synchronous work in this process: the walk of the process table is
+ * the one that was measured, and a slow disk, a paused virtual machine or a database another process is holding would
+ * all do it. Taking the cause away means the hub not sharing a process with work that blocks it, or that work not
+ * being synchronous — neither of which is this number's to do.
  */
 const KEEP_ALIVE = 70_000;
 const HEADERS = 75_000;
