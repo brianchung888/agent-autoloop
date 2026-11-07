@@ -56,12 +56,31 @@ jobs:
         run: npm run build:registry && npm run build:registry -- --check
       - if: steps.scope.outputs.scope != 'docs'
         run: npm run typecheck
+      # Same reason as the Windows platform step below: whoever has to fix this cannot download the log, so the TAP is
+      # kept and every `not ok` in it becomes an annotation. The reporter is set through NODE_OPTIONS because the
+      # script's own glob comes last on its command line — an appended `--test-reporter=tap` would be read as another
+      # test path and silently ignored. Child processes the tests spawn inherit it and do not care: without `--test`
+      # the flag does nothing.
       - if: steps.scope.outputs.scope == 'normal' || steps.scope.outputs.scope == 'kernel'
-        run: npm run test:quick
+        shell: bash
+        env:
+          NODE_OPTIONS: --test-reporter=tap --test-reporter-destination=stdout
+        run: |
+          ran=0
+          npm run test:quick | tee quick.tap || ran=$?
+          sh scripts/ci-annotate-tap.sh quick.tap 'test:quick'
+          [ "$ran" -eq 0 ] || exit "$ran"
       - if: steps.scope.outputs.scope == 'kernel'
         run: npm run test:sim
       - if: steps.scope.outputs.scope == 'full'
-        run: npm test
+        shell: bash
+        env:
+          NODE_OPTIONS: --test-reporter=tap --test-reporter-destination=stdout
+        run: |
+          ran=0
+          npm test | tee full.tap || ran=$?
+          sh scripts/ci-annotate-tap.sh full.tap 'npm test'
+          [ "$ran" -eq 0 ] || exit "$ran"
       - if: steps.scope.outputs.scope != 'docs'
         run: sh scripts/install-smoke.sh
 
@@ -118,10 +137,22 @@ jobs:
           }
       - if: steps.scope.outputs.scope == 'normal' || steps.scope.outputs.scope == 'kernel'
         shell: bash
+        env:
+          NODE_OPTIONS: --test-reporter=tap --test-reporter-destination=stdout
         run: |
-          npm run test:quick | tee quick.tap
+          ran=0
+          npm run test:quick | tee quick.tap || ran=$?
+          sh scripts/ci-annotate-tap.sh quick.tap 'test:quick'
           echo "skipped on this platform: $(grep -c 'SKIP' quick.tap || true)"
+          [ "$ran" -eq 0 ] || exit "$ran"
       - if: steps.scope.outputs.scope == 'full'
-        run: npm test
+        shell: bash
+        env:
+          NODE_OPTIONS: --test-reporter=tap --test-reporter-destination=stdout
+        run: |
+          ran=0
+          npm test | tee full.tap || ran=$?
+          sh scripts/ci-annotate-tap.sh full.tap 'npm test'
+          [ "$ran" -eq 0 ] || exit "$ran"
       - if: steps.scope.outputs.scope != 'docs'
         run: pwsh -NoProfile -File scripts/install-smoke.ps1
