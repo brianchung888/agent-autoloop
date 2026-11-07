@@ -97,13 +97,25 @@ jobs:
       # A floor, not a count: it may only go up. Nothing being run is the failure this guards against — so a skipped
       # case may not be counted towards it. TAP says `ok` of one too, with `# SKIP` after it, which is the whole point:
       # every one of these could turn into a skip and the number would not move.
+      # Whatever fails here has to be readable by whoever is fixing Windows, and that is not the same thing as being in
+      # the log: downloading a job's log needs admin rights on the repository, and without them the only thing a failed
+      # run says is «Process completed with exit code 1» — which of the forty-odd cases failed, and on what, is in a
+      # file nobody can fetch. Annotations are readable by anybody who can see the run, so the TAP is kept and every
+      # `not ok` in it is printed as one (scripts/ci-annotate-tap.sh). The test run's own exit code is still what
+      # decides the step.
       - if: steps.scope.outputs.scope != 'docs'
         shell: bash
         run: |
-          node --disable-warning=ExperimentalWarning --env-file=tests/lang.env --test --test-reporter=tap tests/platform-*.test.ts | tee platform.tap
+          ran=0
+          node --disable-warning=ExperimentalWarning --env-file=tests/lang.env --test --test-reporter=tap tests/platform-*.test.ts | tee platform.tap || ran=$?
+          sh scripts/ci-annotate-tap.sh platform.tap 'platform-*.test.ts'
           passed=$(grep '^ok ' platform.tap | grep -vc 'SKIP' || true)
           echo "platform tests passed: $passed, skipped: $(grep '^ok ' platform.tap | grep -c 'SKIP' || true)"
-          [ "$passed" -ge 30 ] || { echo "too few platform tests ran: $passed"; exit 1; }
+          [ "$ran" -eq 0 ] || exit "$ran"
+          [ "$passed" -ge 30 ] || {
+            echo "::error title=platform-*.test.ts::too few platform tests ran: $passed"
+            exit 1
+          }
       - if: steps.scope.outputs.scope == 'normal' || steps.scope.outputs.scope == 'kernel'
         shell: bash
         run: |
