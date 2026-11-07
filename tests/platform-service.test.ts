@@ -136,7 +136,19 @@ test("安装路径里有中文时，卸载照样认得出这个任务是自己�
   }
 });
 
-test("`up` is running only when its number is a live process that left a token", () => {
+/**
+ * The POSIX branch of `runningUp` asks `ps` what the number is running and wants to see `agent-autoloop up` — the test
+ * runner is not that, so the claim it takes here is correctly not a hub. That branch is checked for what it is in
+ * tests/service-lock.test.ts, with a stand-in whose command line says `up`; what is below is the Windows branch, where
+ * what is asked is the runtime holding the number, the token beside it and the moment the number came into being.
+ */
+const posixAsksPs = {
+  skip: WINDOWS
+    ? false
+    : "runningUp 在 POSIX 上要 ps 说出 `agent-autoloop up`，测试进程不是；那条分支见 service-lock.test.ts",
+};
+
+test("`up` is running only when its number is a live process that left a token", posixAsksPs, () => {
   const pid = join(home, "up.pid");
   const token = join(home, "up.token");
   rmSync(pid, { force: true });
@@ -159,7 +171,7 @@ test("`up` is running only when its number is a live process that left a token",
   assert.equal(claim.pid, process.pid, "the number stays readable by a person");
   assert.equal(claim.token, readFileSync(token, "utf8").trim(), "and a token says who left it");
   assert.ok(Date.parse(claim.startedAt) > 0, "and when");
-  if (WINDOWS) assert.match(String(claim.born), /^\d+$/, "连这个号是什么时候来的也记下来，不然留下的文件认不出来");
+  assert.match(String(claim.born), /^\d+$/, "连这个号是什么时候来的也记下来，不然留下的文件认不出来");
   assert.equal(runningUp(), process.pid);
   release();
   assert.equal(existsSync(pid), false, "letting go takes both away");
