@@ -211,6 +211,13 @@ export type Replaced = {
   told?: string;
   /** Whether it was this program that had been keeping the hub up, and so whether it is back. */
   restarted?: boolean;
+  /**
+   * Whether the hub was up when this began, and so whether it was stopped for the swap. Without it the one case
+   * nobody is told about is a machine with no service and a hub someone started by hand: it was stopped, it is not
+   * coming back on its own, and what was printed was 「再 agent-autoloop up 就用上新版了」 as though nothing had been
+   * running (phase3-verification-round3.md I).
+   */
+  wasUp?: boolean;
 };
 
 /**
@@ -284,5 +291,5 @@ export async function updateBinary({
     );
   }
   const told = hadService ? restart() : undefined;
-  return { changed: true, to: newest.tag, replaced, told, restarted: hadService && !told };
+  return { changed: true, to: newest.tag, replaced, told, restarted: hadService && !told, wasUp: hadUp };
 }

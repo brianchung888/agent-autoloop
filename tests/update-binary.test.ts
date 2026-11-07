@@ -210,6 +210,29 @@ test("an asset that arrives gzipped is not read as a download that broke", async
   assert.deepEqual(served.sort(), [`/assets/${NAME}`, `/assets/${NAME}.sha256`, "/releases/latest"]);
 });
 
+test("没装常驻、中台却在跑的那台机器，得被告诉中台被停过", async () => {
+  // phase3-verification-round3.md I：换文件前中台被停了一次，而没有常驻可以把它带回来。这是唯一一件这条命令
+  // 收不回来的事（cli/self-update.ts 的开头就这么写），所以它必须进话里。
+  await published();
+  const it = copy();
+  const done = await updateBinary(it.hooks({ service: () => false, upRunning: () => true }));
+  assert.equal(done.changed, true);
+  assert.equal(done.restarted, false);
+  assert.equal(done.wasUp, true, "停过这件事没有带回来");
+  assert.equal(it.stopped.length, 1);
+  assert.equal(it.restarted.length, 0);
+
+  // 而本来没在跑的那台，这句话不应该出现。
+  const quiet = copy();
+  const idle = await updateBinary(quiet.hooks({ service: () => false, upRunning: () => false }));
+  assert.equal(idle.wasUp, false);
+  assert.equal(quiet.stopped.length, 0);
+
+  // 这两句话在 cli/main.ts 里：那边真的按 wasUp 分开说，否则上面这个字没人读。
+  const main = readFileSync(join(import.meta.dirname, "..", "cli", "main.ts"), "utf8");
+  assert.match(main, /done\.wasUp/, "cli/main.ts 没读 wasUp：中台被停过这件事还是没人说");
+});
+
 test("a `.sha256` for another platform's file is refused rather than compared", () => {
   assert.throws(() => sumIn(`${"a".repeat(64)}  agent-autoloop-linux-x64\n`, "agent-autoloop-windows-x64.exe"), /不是/);
   assert.equal(sumIn(`${"a".repeat(64)}  ${NAME}\n`, NAME), "a".repeat(64));

@@ -882,10 +882,15 @@ async function update() {
     const { updateBinary } = await import("./self-update.ts");
     const done = await updateBinary();
     if (!done.changed) return console.log(`已经是最新的（${done.to}）。`);
-    // In this order because it is the order it matters in: what is on the disk now, then whether the hub is back.
+    // In this order because it is the order it matters in: what is on the disk now, then whether the hub is back. The
+    // one thing that must not be left out is a hub that was stopped for this and is not coming back by itself: no
+    // service to bring it up, and whoever started it by hand is the only one who can (phase3-verification-round3.md I).
     const back = done.restarted
       ? "中台已经用新版重新启动。"
-      : (done.told ?? "再 agent-autoloop up 就用上新版了（本机没装常驻）。");
+      : (done.told ??
+        (done.wasUp
+          ? "中台为这次换文件停掉了，而本机没装常驻：再 agent-autoloop up 启一次，用的就是新版。"
+          : "再 agent-autoloop up 就用上新版了（本机没装常驻）。"));
     console.log(`更新好了（${done.to}）。${back}`);
     if (done.replaced) console.log(`旧的那一个还在 ${done.replaced}，下次启动会自己清掉。`);
     return;
