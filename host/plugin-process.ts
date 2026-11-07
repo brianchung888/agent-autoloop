@@ -42,7 +42,14 @@ const where = (folder: string) => ({
 
 /** The one line of JSON the plugin's answer is, read out of what the run left behind. Throws what it said instead. */
 function answerOf(name: string, request: Record<string, unknown>, program: string, ran: Ran): unknown {
-  if (ran.error) throw new Error(`${name} 插件的程序起不来（${program}）：${ran.error.message}`);
+  // The errno travels on the error as well as inside the sentence. What goes back to a webhook caller that has not
+  // been checked yet is the plugin's name and this code and nothing else (host/server.ts), and a code that had to be
+  // parsed back out of a sentence would not survive that sentence being reworded.
+  if (ran.error) {
+    throw Object.assign(new Error(`${name} 插件的程序起不来（${program}）：${ran.error.message}`), {
+      code: (ran.error as NodeJS.ErrnoException).code,
+    });
+  }
   if (ran.signal) throw new Error(`${name} 插件的程序被 ${ran.signal} 结束了，没有答复 ${request.call}`);
   // The answer is the last line it printed: a program is allowed to say things on the way, and a line of its own is
   // what makes the answer findable without counting what came before it.

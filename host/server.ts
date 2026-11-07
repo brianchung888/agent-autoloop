@@ -59,14 +59,21 @@ async function adaptWebhook(source: string, headers: Headers, body: string) {
   if (!adapter || !/^[a-z][a-z0-9-]*$/.test(adapter)) throw new NotFound("这个来源不收 Webhook");
   // Getting the plugin is its own trouble, told apart from what it answers with. Outside a `catch` this threw past
   // every door this file has, and whoever sent the webhook got a 500 saying «中台出错了» while the one sentence that
-  // says what is wrong — a program that cannot be started, a plugin that will not load — went only to the hub's own
-  // log. It is this source's adapter being unusable, which is the same thing the line above is about, said with what
-  // the plugin said: an answer whoever installed it can act on.
+  // says what is wrong went nowhere anybody was looking. It is this source's adapter being unusable, which is the
+  // same thing the line above is about.
+  //
+  // Who is told what, though, is two different answers. Nothing has checked the caller yet — the signature is checked
+  // by the plugin that could not be loaded — so what goes back over the wire is the two things that are about this
+  // source and not about this machine: which adapter it names, and what the machine called the trouble. The sentence
+  // itself names paths on this disk (a plugin's entry, the folder its plugin.json would go in) and goes to the hub's
+  // own log, where whoever installed it is the one reading (phase3-verification-round2.md #4).
   let translate;
   try {
     translate = await loadPlugin(adapter, "source");
   } catch (error) {
-    throw new NotFound((error as Error).message);
+    console.error(`webhook ${source}：${(error as Error).message}`);
+    const code = (error as NodeJS.ErrnoException).code;
+    throw new NotFound(`${adapter} 这个插件装不起来${code ? `（${code}）` : ""}，中台日志里写了是什么`);
   }
   const secret = process.env[`AGENT_AUTOLOOP_SECRET_${source.toUpperCase().replaceAll("-", "_")}`] ?? "";
   try {

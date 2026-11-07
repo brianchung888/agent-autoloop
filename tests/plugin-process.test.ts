@@ -277,9 +277,12 @@ test(
   },
 );
 
-test("entry 起不来的 source 插件，webhook 收到的是插件那句话，不是 500「中台出错了」", async () => {
+test("entry 起不来的 source 插件，webhook 收到的是插件名加 errno，完整那句话进中台日志", async () => {
   // fixture 里 hooks 这个来源的 adapter 就叫 echo，所以把 echo 做成一个起不来的 process 插件，走的就是真的那扇门。
   // 两边都起不来，原因不同：Windows 上 CreateProcess 认不出这个文件，当场抛；POSIX 上这个文件没有执行位，EACCES。
+  //
+  // 回给调用者的东西是另一个问题（phase3-verification-round2.md #4）：这一头还没验签——验签正是那个装不起来的插件
+  // 的活——所以不能把 entry 的绝对路径写进答复。能回的是插件名和 errno；完整那句话走 console.error 进中台日志。
   const folder = join(home, "plugins", "echo");
   mkdirSync(folder, { recursive: true });
   const entry = WINDOWS ? "run.cmd" : "run";
@@ -287,6 +290,9 @@ test("entry 起不来的 source 插件，webhook 收到的是插件那句话，�
   writeFileSync(join(folder, "plugin.json"), JSON.stringify({ runtime: "process", entry }));
   const { serve } = await import("../host/http.ts");
   const server = serve(0, "127.0.0.1");
+  const logged: string[] = [];
+  const wasError = console.error;
+  console.error = (...parts: unknown[]) => void logged.push(parts.map(String).join(" "));
   try {
     await new Promise((resolve) => server.once("listening", resolve));
     const { port } = server.address() as AddressInfo;
@@ -298,8 +304,17 @@ test("entry 起不来的 source 插件，webhook 收到的是插件那句话，�
     const said = await response.text();
     assert.notEqual(response.status, 500, said);
     assert.ok(!said.includes("中台出错了"), said);
-    assert.match(said, /echo 插件的程序起不来/);
+    // 插件名在，errno 在，这台电脑上的路径不在。
+    assert.match(said, /echo 这个插件装不起来/, said);
+    assert.match(said, /（E[A-Z]+）/, `没回 errno：${said}`);
+    assert.ok(!said.includes(JSON.stringify(folder).slice(1, -1)), `回了 entry 的绝对路径：${said}`);
+    assert.ok(!said.includes(entry), `回了 entry 的文件名：${said}`);
+    // 而完整那句话在日志里：谁装的谁看得见。
+    const line = logged.find((line) => line.includes("echo 插件的程序起不来"));
+    assert.ok(line, `中台日志里没有那句完整的话：${JSON.stringify(logged)}`);
+    assert.ok(line.includes(join(folder, entry)), `日志里也没说是哪个文件：${line}`);
   } finally {
+    console.error = wasError;
     server.closeAllConnections();
     server.close();
   }
