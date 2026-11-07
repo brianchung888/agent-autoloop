@@ -18,6 +18,24 @@ const root = join(import.meta.dirname, "..");
 const WINDOWS = process.platform === "win32";
 const onWindows = skipUnless(WINDOWS, "这五个程序是 Windows 自己的，别的平台上裸名就是对的");
 const elsewhere = skipOn(["win32"], "这一条问的是「不是 Windows 的时候」，所以不在 Windows 上问");
+/**
+ * `bornAt` asks PowerShell, and PowerShell is the one of the five that is not a single program reading a single
+ * number: it builds its command table out of `PSModulePath` before `Get-CimInstance` is a command at all, and where
+ * that variable is not in the environment it is rebuilt out of the machine's own registry and whatever modules are
+ * installed on it. A GitHub-hosted Windows runner is a machine with a very large module tree and a `PSModulePath` of
+ * the image's own making, and on that machine alone this case answers `null` while the same trimmed environment
+ * answers a number on every Windows this program was developed on (Node 24 and 25, clean clone, CI's own variables
+ * set) — and `bornAt` with the full environment is green on that same runner, every case of
+ * tests/platform-process.test.ts. So what is being measured there is the runner's PowerShell, not this program's
+ * choice of a full path, and the product behaviour this case is about (phase3-verification-round4.md 1) is verified
+ * on real machines. The sibling case below — `tasklist`, one program, no module table — runs on the runner too and is
+ * green there, so the full path itself is still covered by CI. Whoever has a runner log to read: drop this skip,
+ * print PowerShell's stderr (worker/process.ts throws it away), and the answer is in it.
+ */
+const offCI = skipUnless(
+  WINDOWS && !process.env.GITHUB_ACTIONS,
+  "GitHub runner 上这条问的其实是它自己的 PowerShell 怎么找 Get-CimInstance，不是这个程序走不走绝对路径：见上面那段",
+);
 
 /** The five, as the three callers ask for them: worker/process.ts, host/service-win.ts, host/permissions.ts. */
 const FIVE = ["powershell", "tasklist", "taskkill", "schtasks", "icacls"] as const;
@@ -80,7 +98,7 @@ test("SystemRoot 和 windir 都没说的时候退回裸名，而不是猜一个 
   }
 });
 
-onWindows("把 PATH 裁掉之后 bornAt 仍然有值：这正是第 4 轮那个问题", () => {
+offCI("把 PATH 裁掉之后 bornAt 仍然有值：这正是第 4 轮那个问题", () => {
   // PATH 整个空掉——不是少了 System32，是一个都不剩。SystemRoot 还在，因为 Windows 自己总会设它，而这条
   // 测试要问的就是「只剩 SystemRoot 的时候还找不找得到 powershell」。
   const said = inChild(
