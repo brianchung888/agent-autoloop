@@ -225,6 +225,17 @@ test("那张通行证上的每一个文件确实还有汉字：搬完了就该�
   }
 });
 
+test("host/i18n.ts 不碰 host/home.ts：说一句话不许顺手把「哪个 HOME」定下来", () => {
+  // 哪个 HOME 是 host/home.ts 加载那一刻定下来的，这是故意的。而这个模块是「凡是要说话的文件」都会加载的，
+  // 所以它一 import host/home.ts，那个问题就会被一句话的存在提前定死——tests/helpers.ts 是在 import 之后才
+  // 选 HOME 的，于是一份测试会跑到真正的 ~/.agent-autoloop 里去写东西。实际发生过一次。
+  const words = readFileSync(join(root, "host", "i18n.ts"), "utf8");
+  assert.doesNotMatch(words, /^import .*\.\/home\.ts/m, "host/i18n.ts import 了 host/home.ts");
+  // 它只许 import 这几样：三个 node: 模块和两张表。多一个就可能顺着那条路又摸到 host/home.ts。
+  const imported = [...words.matchAll(/^import .* from "([^"]+)";$/gm)].map((found) => found[1]).sort();
+  assert.deepEqual(imported, ["../i18n/zh-CN.ts", "../i18n/zh-TW.ts", "node:fs", "node:os", "node:path"]);
+});
+
 test("标点不算：顿号和冒号两种中文一样写，所以它们留在代码里不是漏翻", () => {
   for (const mark of [..."、：（）。，；「」【】…"]) assert.doesNotMatch(mark, HAN, mark);
 });

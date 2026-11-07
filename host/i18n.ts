@@ -12,8 +12,8 @@
 // is read here with `readFileSync` rather than through host/config.ts: that file says its own troubles in words, which
 // are these words, and a module cannot be the thing it reads from.
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
-import { HOME } from "./home.ts";
 import { zhCN, type Strings } from "../i18n/zh-CN.ts";
 import { zhTW } from "../i18n/zh-TW.ts";
 
@@ -45,10 +45,24 @@ export function asLang(told: string | undefined | null): Lang | undefined {
   return "zh-CN";
 }
 
+/**
+ * Where this install's config.json is, worked out at the moment it is read and not when this module loads — and
+ * deliberately not `HOME` from host/home.ts, though that is the same two lines.
+ *
+ * Which home this is gets settled the instant host/home.ts loads, on purpose: everything downstream of it is then
+ * talking about one place. But this module is loaded by *anything that says anything*, which is nearly every file
+ * here — so importing host/home.ts from it would settle that question as a side effect of a sentence existing,
+ * before whatever is about to choose a home has run (tests/helpers.ts chooses one after its imports; a test that
+ * reached the real `~/.agent-autoloop` instead would be writing in somebody's install). Asked here instead, at the
+ * one moment it is needed, and only ever read from. tests/i18n.test.ts pins the absence of that import.
+ */
+const configFile = () =>
+  path.join(path.resolve(process.env.AGENT_AUTOLOOP_HOME ?? path.join(homedir(), ".agent-autoloop")), "config.json");
+
 /** `lang` in config.json, read on its own: this is what the rest of the program says its own troubles with. */
 function langInConfig(): Lang | undefined {
   try {
-    const read = JSON.parse(readFileSync(path.join(HOME, "config.json"), "utf8")) as { lang?: string };
+    const read = JSON.parse(readFileSync(configFile(), "utf8")) as { lang?: string };
     return asLang(read?.lang);
   } catch {
     return undefined;

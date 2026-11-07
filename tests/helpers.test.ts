@@ -2,9 +2,9 @@
 // however it spells `test` — a `test.skip` or a `test.only` that quietly runs the case is how a skip becomes a failure
 // nobody asked for, in a file whose whole point is that it cannot run here.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { test } from "node:test";
 import { setup, skipOn } from "./helpers.ts";
 
@@ -37,4 +37,49 @@ test("上一次跑剩下的临时目录，下一次开始时清掉", () => {
   } finally {
     for (const dir of [left, fresh, theirs]) rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
   }
+});
+
+/**
+ * 哪个 HOME 是 host/home.ts 加载那一刻定下来的（它是故意这样的：往下所有东西从此说的是同一个地方）。而
+ * `setup()` 是在一份测试文件的 import 都跑完之后才选那个 HOME 的——静态 import 排在模块体之前，这是语言的
+ * 规矩，不是这里的安排。所以一份测试文件只要在静态 import 里顺着什么路摸到了 host/home.ts，它那一行 `setup()`
+ * 就已经晚了：那一整份测试跑的是真正的 `~/.agent-autoloop`，在别人的安装里写东西，而且一句话都不会说。
+ *
+ * 发生过一次：给人看的话挪进 i18n/ 的时候，host/i18n.ts import 了 host/home.ts，而「凡是要说话的文件」都会
+ * 加载 host/i18n.ts——于是 tests/cards.test.ts 静态 import 的那两个模块把这件事提前定死了。所以这里钉的不是
+ * 那一个 import，是这条路本身。
+ */
+function reaches(from: string, target: string) {
+  const root = join(import.meta.dirname, "..");
+  const seen = new Set<string>();
+  const left = [from];
+  while (left.length) {
+    const file = left.pop()!;
+    if (seen.has(file) || !existsSync(join(root, file))) continue;
+    seen.add(file);
+    if (file === target) return true;
+    const text = readFileSync(join(root, file), "utf8");
+    // 只看静态 import：`await import(...)` 是在模块体里跑的，排在 setup() 之后，这正是别的文件躲开它的办法。
+    // `import type ...` 也不算：它整句被擦掉，那个模块根本不会加载（verbatimModuleSyntax）。
+    for (const found of text.matchAll(/^import\s+(?!type\s)(?:[^;]*?\s+from\s+)?"(\.[^"]+)";$/gm)) {
+      left.push(relative(root, resolve(dirname(join(root, file)), found[1])).replaceAll("\\", "/"));
+    }
+  }
+  return false;
+}
+
+test("没有一份测试在 setup() 之前就把「哪个 HOME」定下来", () => {
+  const root = join(import.meta.dirname, "..");
+  const early: string[] = [];
+  for (const name of readdirSync(join(root, "tests")).filter((name) => name.endsWith(".test.ts"))) {
+    const text = readFileSync(join(root, "tests", name), "utf8");
+    if (!text.includes("setup(")) continue;
+    if (reaches(`tests/${name}`, "host/home.ts")) early.push(`tests/${name}`);
+  }
+  assert.deepEqual(
+    early,
+    [],
+    `这些文件的静态 import 会摸到 host/home.ts，于是它们跑在真正的 ~/.agent-autoloop 里：\n${early.join("\n")}\n` +
+      "把那条路上的 import 改成 setup() 之后的 await import()，或者让那个模块不要再 import host/home.ts。",
+  );
 });
