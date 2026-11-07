@@ -230,12 +230,12 @@ test("打包版的 update 走的是 Release，不是一棵它没有的 checkout"
 
 test("打包版自己读 --env-file：计划任务给的 home 到得了，不会被当成一个子命令", () => {
   // 这是 3.7 真机跑一遍时撞出来的。Windows 的计划任务不带环境，所以 home 是用一个 env 文件交给程序的
-  // （host/service-win.ts）。源码模式下那个 flag 由运行时自己读掉；打包版里没有读命令行的运行时，于是它原样
-  // 落到了子命令的位置——中台每五分钟印一遍帮助、退出码 1，一个带常驻的二进位安装根本起不来。
+  // （host/service-win.ts）。读那个文件是运行时的活，两种建置都是；打包版单缺的是把这个 flag 从命令行上摧掉，
+  // 所以它原样落到了子命令的位置——中台每五分钟印一遍帮助、退出码 1，一个带常驻的二进位安装根本起不来。
   // install-smoke 用的是 --no-service，任务那边只验过 XML，所以这一条谁都没看见。
   //
-  // 这里验的是读这个 flag 的那一段本身：整条命令行在源码模式下走不到它——运行时先把这个 flag 吃掉了（实测
-  // node 25 对 .ts 入口会，退出码 9），而真正那条路只有真二进位走得到，由 3.7 的真机验收跑。
+  // 这里验的是摧掉它的那一段本身：整条命令行在源码模式下走不到它——运行时先把这个 flag 吃掉了（实测
+  // node 25 对 .ts 入口会，文件不在就退出码 9）。真二进位怎么读它，由 tests/sea-format.test.ts 问真二进位。
   const home = join(dir, "env-file-home");
   mkdirSync(home, { recursive: true });
   const file = join(dir, "service.env");
@@ -246,7 +246,8 @@ test("打包版自己读 --env-file：计划任务给的 home 到得了，不会
     // flag 被摘掉，剩下的就是这个程序的命令行；而 home 真的进了环境。
     assert.deepEqual(loadEnvFiles([`--env-file=${file}`, "up"]), { argv: ["up"], loaded: [file] });
     assert.equal(process.env.AGENT_AUTOLOOP_HOME, home);
-    // 只在最前面：子命令之后的词是子命令自己的，一条规则或者一句提示正好这么开头不算这个程序的 flag。
+    // 摧只摧最前面的：子命令之后的词是子命令自己的，一条规则或者一句提示正好这么开头不算这个程序的 flag。
+    // （这只管摧，不管读：运行时不认这个位置，它在哪里都读。）
     assert.deepEqual(loadEnvFiles(["emit", `--env-file=${file}`]), {
       argv: ["emit", `--env-file=${file}`],
       loaded: [],

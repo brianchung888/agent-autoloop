@@ -143,3 +143,36 @@ test("二进位说得出自己是哪一份代码，而且 stderr 上一句话都
   assert.match(said.stdout.trim(), /^agent-autoloop .+（提交 [0-9a-f]{12}）$/, said.stdout);
   assert.doesNotMatch(said.stdout, /提交 dev/, "建置期没把提交号写进去：bug report 里没人放得下这个版本");
 });
+
+test("真二进位怎么读 --env-file：文件在就进环境，不在就是运行时自己的 exit 9", NEEDS_BINARY, () => {
+  // phase3-verification-round3.md 的低项：ed50d3f 把根因说错了。不是「打包版没有谁读这个文件」——单文件版是这个
+  // node 注进一个 blob，它和源码模式一样先读掉自己的 flag。真正只有打包版缺的，是把这个 flag 从命令行上摘掉：
+  // 摘不掉，它就落在子命令的位置上，中台每五分钟印一遍帮助。两件事在这里一起问真二进位。
+  const where = home();
+  const file = join(dir, "real.env");
+  writeFileSync(file, `AGENT_AUTOLOOP_HOME="${where.replaceAll("\\", "\\\\")}"\n`);
+
+  // 文件在：flag 被摘掉，`up` 还是 `up`；而且里面写的 home 真的生效了——key list 读的是那个 home 下的库。
+  const env = { ...inside(where), AGENT_AUTOLOOP_HOME: undefined };
+  const good = spawnSync(binary!, [`--env-file=${file}`, "key", "list"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  assert.equal(good.status, 0, `${good.stdout}\n${good.stderr}`);
+  assert.doesNotMatch(good.stdout + good.stderr, /用法：agent-autoloop/, "flag 被当成子命令了");
+  assert.ok(existsSync(join(where, "hub.db")), "env 文件里那个 home 没生效");
+
+  // 文件不在：运行时抢在这个程序之前，用它自己的话退出 9。不是 host/env-file.ts 那句友善的话——那一句是后备，
+  // 今天的运行时谁也走不到。flag 在后面也一样，它不是「只在开头才算」。
+  for (const args of [
+    [`--env-file=${join(dir, "没有这个文件.env")}`, "status"],
+    ["status", `--env-file=${join(dir, "没有这个文件.env")}`],
+  ]) {
+    const gone = spawnSync(binary!, args, { cwd: root, env, encoding: "utf8", timeout: 120_000 });
+    assert.equal(gone.status, 9, `${args.join(" ")} 的退出码是 ${gone.status}：\n${gone.stdout}\n${gone.stderr}`);
+    assert.match(gone.stderr, /没有这个文件\.env/, gone.stderr);
+    assert.doesNotMatch(gone.stdout + gone.stderr, /装好了|用法：agent-autoloop/, "它接着跑下去了");
+  }
+});
