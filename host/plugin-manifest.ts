@@ -52,7 +52,9 @@ export function readManifest(folder: string, name = folder): PluginManifest {
   const { runtime, entry, args } = declared as { runtime?: unknown; entry?: unknown; args?: unknown };
   if (runtime === undefined || runtime === null) return DEFAULT_MANIFEST;
   if (typeof runtime !== "string" || !RUNTIMES.includes(runtime as PluginRuntime))
-    throw new Error(t("manifest.runtime", { name, allowed: RUNTIMES.join(" 或 "), written: describe(runtime) }));
+    throw new Error(
+      t("manifest.runtime", { name, allowed: RUNTIMES.join(t("manifest.or")), written: describe(runtime) }),
+    );
   if (runtime === "source") return DEFAULT_MANIFEST;
   if (typeof entry !== "string" || !entry) throw new Error(t("manifest.entryMissing", { name }));
   if (isAbsolute(entry) || /^[a-zA-Z]:/.test(entry)) throw new Error(t("manifest.entryAbsolute", { name, entry }));
