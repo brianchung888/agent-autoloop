@@ -343,7 +343,7 @@ export const zhTW: Strings = {
   "cli.plugin.noMain": "{name} 這個外掛沒有可以這樣跑的活（它沒有匯出 main）",
   "cli.update.newest": "已經是最新的（{to}）。",
   "cli.update.restarted": "中台已經用新版重新啟動。",
-  "cli.update.wasUpNoService": "中台為這次換檔停掉了，而本機沒裝常駗：再 agent-autoloop up 啟一次，用的就是新版。",
+  "cli.update.wasUpNoService": "中台為這次換檔停掉了，而本機沒裝常駐：再 agent-autoloop up 啟一次，用的就是新版。",
   "cli.update.upAgain": "再 agent-autoloop up 就用上新版了（本機沒裝常駐）。",
   "cli.update.done": "更新好了（{to}）。{back}",
   "cli.update.oldKept": "舊的那一個還在 {old}，下次啟動會自己清掉。",
