@@ -15,6 +15,8 @@ export const zhCN = {
   "permissions.noUser": "不知道当前用户是谁（USERNAME 没有设）",
   "permissions.icaclsBroken": "icacls 运行不了：{why}",
   "permissions.icaclsRefused": "icacls 没能锁定 {target}",
+  "permissions.icaclsUnreadable": "icacls 问不到 {target} 的权限清单",
+  "permissions.othersLeft": "icacls 没能去掉 {target} 上其他人的权限（{others}）",
   "permissions.neverLocked": "还没有锁过文件权限：运行一次 agent-autoloop init 或 up",
   "permissions.trouble": "{trouble}。同一台电脑上的其他用户可能读得到 {home} 里的东西",
 

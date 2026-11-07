@@ -17,6 +17,8 @@ export const zhTW: Strings = {
   "permissions.noUser": "不知道目前使用者是誰（USERNAME 沒有設）",
   "permissions.icaclsBroken": "icacls 執行不了：{why}",
   "permissions.icaclsRefused": "icacls 沒能鎖定 {target}",
+  "permissions.icaclsUnreadable": "icacls 問不到 {target} 的權限清單",
+  "permissions.othersLeft": "icacls 沒能去掉 {target} 上其他人的權限（{others}）",
   "permissions.neverLocked": "還沒有鎖過檔案權限：執行一次 agent-autoloop init 或 up",
   "permissions.trouble": "{trouble}。同一台電腦上的其他使用者可能讀得到 {home} 裡的東西",
 

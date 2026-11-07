@@ -1,6 +1,8 @@
 // Keeping this install's files to the person whose they are. On POSIX that is the mode they are made with, and nothing
 // here changes it. Windows ignores a mode — chmod there moves one read-only bit and nothing else — so the same thing has
-// to be said in the terms that file system has: an access list with inheritance turned off, granting this user alone.
+// to be said in the terms that file system has: an access list with inheritance turned off, granting this user alone —
+// and "alone" has to be made true rather than assumed, because turning inheritance off leaves whatever the folder was
+// granted in its own right exactly where it was.
 //
 // It is said once, on the folders, not on every file: a list that children inherit covers what is written inside them
 // afterwards, and asking the system about every written file would cost a process each time.
@@ -29,24 +31,86 @@ type Mark = {
 /** One process per folder is cheap; one per folder per call is not. */
 const said = new Map<string, string | null>();
 
+/** icacls, with every part its own argument: nothing is built into a line for a shell to read. */
+function icacls(target: string, ...rest: string[]) {
+  return spawnSync(systemTool("icacls"), [target, ...rest], {
+    encoding: "utf8",
+    timeout: 60_000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+/** The first line of what it said about why it would not, for a person who has to act on it. */
+const complaint = (done: ReturnType<typeof icacls>) =>
+  `${done.stderr ?? ""}${done.stdout ?? ""}`.trim().split(/\r?\n/)[0] ?? "";
+
 /**
- * icacls, with every part its own argument: nothing is built into a line for a shell to read. `/inheritance:r` drops
- * what the folder above granted, `/grant:r` replaces this user's own entry rather than adding to it, and (OI)(CI) is
- * what makes the files and folders written inside it inherit the same.
+ * Whether an entry is this user's own. icacls answers with the name the machine knows it by — `MACHINE\someone`,
+ * `A-DOMAIN\someone` — where USERNAME is the bare half of it, so the comparison is on that half as well as the whole.
+ * Case is not a thing Windows accounts differ by.
+ */
+function isUser(name: string, who: string) {
+  const bare = name.slice(name.lastIndexOf("\\") + 1);
+  return bare.toLowerCase() === who.toLowerCase() || name.toLowerCase() === who.toLowerCase();
+}
+
+/**
+ * Who the access list grants anything to, as icacls prints it: the path and then one `name:(flags)` per entry, the
+ * first of them on the path's own line. The names come back as icacls wrote them and go back in the same way, as their
+ * own argument — this is the file system's answer about itself, not something assembled here.
+ */
+function granted(target: string) {
+  const asked = icacls(target);
+  if (asked.error || asked.status !== 0) return null;
+  const names: string[] = [];
+  for (const line of (asked.stdout ?? "").split(/\r?\n/)) {
+    const entry = line.startsWith(target) ? line.slice(target.length) : line;
+    const colon = entry.indexOf(":");
+    if (colon < 0) continue;
+    const name = entry.slice(0, colon).trim();
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * `/inheritance:r /grant:r` is not by itself enough, and the reason is worth writing down: `/inheritance:r` removes
+ * what was inherited, and `/grant:r` replaces the entry of the user it names — neither touches an entry some other
+ * principal holds on the folder itself. Under a person's own profile there are none, which is why this went unseen; on
+ * a folder that got its list from the creating token instead of its parent (a CI runner's TEMP, an administrator
+ * account) SYSTEM and Administrators are there in their own right, and `/inheritance:r` leaves them exactly where they
+ * were. So they are asked about and removed by name.
+ */
+function dropEveryoneElse(target: string, who: string) {
+  const names = granted(target);
+  if (names === null) return t("permissions.icaclsUnreadable", { target });
+  const others = names.filter((name) => !isUser(name, who));
+  if (others.length === 0) return null;
+  const done = icacls(target, "/remove", ...others);
+  if (done.error) return t("permissions.icaclsBroken", { why: done.error.message });
+  if (done.status !== 0) {
+    const why = complaint(done);
+    return `${t("permissions.othersLeft", { target, others: others.join("、") })}${why ? `：${why}` : ""}`;
+  }
+  return null;
+}
+
+/**
+ * `/inheritance:r` drops what the folder above granted, `/grant:r` replaces this user's own entry rather than adding to
+ * it, and (OI)(CI) is what makes the files and folders written inside it inherit the same. Then whatever else still
+ * holds an entry of its own is taken off, so that what is left is this user and nobody else.
  */
 function lockOnWindows(target: string, folder: boolean) {
   const who = process.env.USERNAME;
   if (!who) return t("permissions.noUser");
   const grant = folder ? `${who}:(OI)(CI)F` : `${who}:F`;
-  const done = spawnSync(systemTool("icacls"), [target, "/inheritance:r", "/grant:r", grant], {
-    encoding: "utf8",
-    timeout: 60_000,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const done = icacls(target, "/inheritance:r", "/grant:r", grant);
   if (done.error) return t("permissions.icaclsBroken", { why: done.error.message });
-  if (done.status === 0) return null;
-  const why = `${done.stderr ?? ""}${done.stdout ?? ""}`.trim().split(/\r?\n/)[0] ?? "";
-  return `${t("permissions.icaclsRefused", { target })}${why ? `：${why}` : ""}`;
+  if (done.status !== 0) {
+    const why = complaint(done);
+    return `${t("permissions.icaclsRefused", { target })}${why ? `：${why}` : ""}`;
+  }
+  return dropEveryoneElse(target, who);
 }
 
 /**

@@ -53,6 +53,36 @@ test("a secured folder grants this user and nobody else, and what is written ins
   assert.equal(accessList(inside).length, 1);
 });
 
+test("先有别人的显式权限条目，锁过之后也只剩当前用户", onlyWindows, () => {
+  // 这条是 GitHub 的 windows runner 上红的那一条，本机重现出来的：`/inheritance:r` 只拿掉「继承来的」，`/grant:r`
+  // 只替换它点名那个用户自己的，谁都没碰到 SYSTEM 和 Administrators 在这个文件夹上「自己持有」的条目。普通用户的
+  // profile 底下这两条是继承来的，所以一直没看出来；用 token 的 default DACL 建出来的文件夹（CI runner 的 TEMP、
+  // 管理员账号）这两条是显式的，`/inheritance:r` 原封不动地留着。所以这里先把那种清单做出来再锁。
+  const dir = join(home, "already-granted-to-others");
+  mkdirSync(dir, { recursive: true });
+  // 用 SID 而不是名字：`NT AUTHORITY\SYSTEM` 这种写法随机器语言变，S-1-5-18 和 S-1-5-32-544 不会。
+  execFileSync(
+    "icacls",
+    [
+      dir,
+      "/inheritance:r",
+      "/grant:r",
+      "*S-1-5-18:(OI)(CI)F",
+      "*S-1-5-32-544:(OI)(CI)F",
+      `${process.env.USERNAME}:(OI)(CI)F`,
+    ],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  );
+  assert.equal(accessList(dir).length, 3, `先摆出三条显式的：${accessList(dir).join(" | ")}`);
+
+  secureDir(dir);
+  const granted = accessList(dir);
+  assert.equal(granted.length, 1, `锁过之后只剩当前用户，却是：${granted.join(" | ")}`);
+  assert.ok(granted[0]!.includes(process.env.USERNAME!), granted[0]);
+  assert.ok(granted[0]!.includes("(OI)(CI)"), `里面写出来的东西照样继承这一条：${granted[0]}`);
+  assert.equal(permissionTrouble(), null, "这不是降级，是本来就该做到的");
+});
+
 test("it is written down that it was done, so doctor can say so", onlyWindows, () => {
   secureDir(join(home, "another-folder"));
   const mark = JSON.parse(readFileSync(join(home, "permissions.json"), "utf8"));
