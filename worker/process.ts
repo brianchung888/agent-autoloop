@@ -60,23 +60,23 @@ type Table = { live: Set<number>; children: Map<number, number[]>; born: Map<num
 
 /**
  * The whole table is one process to ask for and the best part of a second to wait for, and the worker asks about every
- * run it holds within the same tick — while the hub, which shares this process, waits. So it is asked for once and
- * kept for a moment: long enough that a tick pays for one query however many runs are in it, short enough that a loop
- * waiting for something to stop still sees it stop. A tick says outright when what was kept is from before it
- * (forgetProcesses), so every answer inside a tick is one picture of the machine rather than several — and what is kept
- * has to outlast a tick that launches something, because asking the machine when that process came into being takes a
- * second of its own and a picture thrown away in the middle of a tick is a second query for the same tick.
+ * run it holds within the same tick — while the hub, which shares this process, waits. So it is asked for once a tick
+ * and kept: a tick says outright that whatever is kept is from before it (worker/worker.ts: tick calls
+ * forgetProcesses first), and until something says so the picture stands, so every answer inside a tick is one
+ * picture of the machine rather than several.
+ *
+ * What it may not also do is expire on a stopwatch. A tick boundary is said out loud, and a timer on top of it is a
+ * second, silent one that goes off in the middle: a tick that launches something asks the machine when that process
+ * came into being, which costs a second or two of its own, and on a machine slow enough that one query is the whole
+ * of the window — a Windows CI runner is — the picture went stale inside the very tick that took it, and the tick
+ * listed the machine over and over. `retaken` below is the one exception, and it is a tick's worth as well.
  */
-const FRESH = 3000;
-let kept: { at: number; table: Table | null } | null = null;
+let kept: { table: Table | null; retaken: boolean } | null = null;
 
 function processTable(): Table | null {
-  if (kept && Date.now() - kept.at < FRESH) return kept.table;
-  // Timed from when the answer arrived, not from when it was asked for: the asking is the slow part, and starting the
-  // clock before it would throw the answer away before anyone in the same tick could use it.
-  const table = readProcessTable();
-  kept = { at: Date.now(), table };
-  return table;
+  if (kept) return kept.table;
+  kept = { table: readProcessTable(), retaken: false };
+  return kept.table;
 }
 
 /** Said at the start of a tick: whatever is kept is from before it, and this tick asks again. */
@@ -199,12 +199,15 @@ function sameAsRecorded(pid: number, record: string | undefined) {
   if (confirmed.get(pid) === record) return true;
   // What was kept may have been taken before this process existed, and this is only ever asked about a number that is
   // a live process this moment: a picture without it in it was taken too early, and the one thing it would answer —
-  // "nothing by that number" — is the one answer that must not be given here. So such a picture is thrown away once.
-  const early = kept && Date.now() - kept.at < FRESH ? kept : null;
+  // "nothing by that number" — is the one answer that must not be given here. So such a picture is thrown away once a
+  // tick: the one taken instead has everything of this moment in it, so the next number asked about in the same tick
+  // has no reason to throw it away again.
+  const early = kept && !kept.retaken ? kept : null;
   let born = processTable()?.born.get(pid);
   if (born === undefined && early) {
     forgetProcesses();
     born = processTable()?.born.get(pid);
+    if (kept) kept.retaken = true;
   }
   if (born === undefined) return true;
   if (born !== record) return false;
@@ -458,9 +461,9 @@ export function sampleTree(pid: number | undefined, record?: string) {
   if (!WINDOWS || !pid || record === undefined) return;
   if (!dueToSample(record)) return;
   orphans(pid, record, true);
-  // Timed from when the walk was done rather than from when it was asked for, as the kept table is (processTable):
-  // the walk is closer to two seconds of its own (1.3–1.9 s measured), and a clock started before it would make a
-  // period shorter than the walk no period at all.
+  // Timed from when the walk was done rather than from when it was asked for: the walk is closer to two seconds of
+  // its own (1.3–1.9 s measured), and a clock started before it would make a period shorter than the walk no period
+  // at all.
   sampled.set(record, Date.now());
 }
 
