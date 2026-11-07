@@ -872,20 +872,20 @@ async function runPlugin(args: string[]) {
 }
 
 async function update() {
-  // A packaged build has no checkout to pull. Downloading the next one is how it is upgraded — saying so is the whole
-  // of it, because telling someone their upgrade worked when nothing moved is worse than telling them to download.
-  // (计划 plan-c 3.7，二进位的自我更新，另案；INSTALL.md 的「单一二进位」一节讲的就是这几步。)
+  // A packaged build has no checkout to pull. What it does instead is fetch the executable the newest Release carries
+  // for this platform, check it against the `.sha256` beside it, and put it where this one is — the four steps a
+  // person used to be told to do by hand (计划 plan-c 3.7；cli/self-update.ts).
   if (!fromSource()) {
-    return console.log(
-      [
-        `这是单一二进位的版本（${versionLine()}）。它的升级方式是重新下载：`,
-        "  1. 到 https://github.com/KKKKhazix/agent-autoloop/releases 取你这个平台的那一个，和它旁边的 .sha256",
-        "  2. 对一遍校验和（Windows：certutil -hashfile <文件> SHA256；macOS / Linux：shasum -a 256 <文件>）",
-        `  3. 往 ${path.join(HOME, "stop")} 写一个空文件，等中台收尾（Windows 上别直接杀进程）`,
-        "  4. 把那个可执行文件换掉，再启动一次",
-        "本机的规则、密钥和记录都不动：它们在数据目录里，不在这个文件里。",
-      ].join("\n"),
-    );
+    const { updateBinary } = await import("./self-update.ts");
+    const done = await updateBinary();
+    if (!done.changed) return console.log(`已经是最新的（${done.to}）。`);
+    // In this order because it is the order it matters in: what is on the disk now, then whether the hub is back.
+    const back = done.restarted
+      ? "中台已经用新版重新启动。"
+      : (done.told ?? "再 agent-autoloop up 就用上新版了（本机没装常驻）。");
+    console.log(`更新好了（${done.to}）。${back}`);
+    if (done.replaced) console.log(`旧的那一个还在 ${done.replaced}，下次启动会自己清掉。`);
+    return;
   }
   const { updateCode } = await import("./update.ts");
   const { changed, to } = updateCode(ROOT);

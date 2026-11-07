@@ -36,7 +36,7 @@ for (const part of ["cli", "host", "kernel", "plugins", "protocol", "skills", "w
 
 let homes = 0;
 /** One run of the command line out of that tree, in a throwaway home of its own. */
-function run(args: string[], home = join(dir, `home-${++homes}`)) {
+function run(args: string[], home = join(dir, `home-${++homes}`), more: NodeJS.ProcessEnv = {}) {
   mkdirSync(home, { recursive: true });
   const done = spawnSync(
     process.execPath,
@@ -48,6 +48,7 @@ function run(args: string[], home = join(dir, `home-${++homes}`)) {
         ...process.env,
         AGENT_AUTOLOOP_HOME: home,
         AGENT_AUTOLOOP_RULES: join(home, "rules.json"),
+        ...more,
       },
     },
   );
@@ -195,18 +196,22 @@ test("源码模式下 skill 还是树里那个目录，一个字节都不写", (
   assert.equal(assetText("skills/agent-autoloop/SKILL.md"), readFileSync(join(skillFolder(), "SKILL.md"), "utf8"));
 });
 
-test("二进位的升级方式是重新下载：update 不去动一棵它没有的 checkout", () => {
-  // 二进位自我更新（计划 3.7）另案。在它做完之前这条命令要说实话：它不会 git fetch 一棵不存在的仓库，
-  // 也不会说「已经是最新的」——那是在没有发生任何事的时候报告升级成功。
-  const done = run(["update"]);
-  assert.equal(done.status, 0, done.stderr);
-  assert.match(done.stdout, /升级方式是重新下载/);
-  assert.match(done.stdout, /releases/, "没说去哪里取");
-  assert.match(done.stdout, /SHA256|sha256/, "没说要对校验和");
-  assert.doesNotMatch(done.stdout, /已经是最新的|更新好了/, "什么都没动，却说升级过了");
-  assert.doesNotMatch(done.stderr, /git/, "去动 git 了");
-  // 文件里写的也是这一条：README 和 INSTALL 都得说得出「重新下载」。
-  for (const file of ["INSTALL.md", "README.md"]) {
-    assert.match(readFileSync(join(repo, file), "utf8"), /重新下载/, `${file} 没写二进位怎么升级`);
+test("打包版的 update 走的是 Release，不是一棵它没有的 checkout", () => {
+  // 计划 3.7：这条命令在打包版里下载新的可执行文件（cli/self-update.ts）。这里只走到「问发布页」那一步就断——
+  // 这个测试跑的是源码树的副本，它的 process.execPath 是 node 自己，再往下一步就会去换 node.exe。
+  // 真正的打包版里 execPath 就是 agent-autoloop.exe，所以那一步由 tests/update-binary.test.ts 在一个临时目录里验。
+  //
+  // 要钉的是三件事：不碰 git；问不出来的时候给一句能照着做的话；而且绝不在什么都没发生的时候说升级成功。
+  const done = run(["update"], undefined, { AGENT_AUTOLOOP_RELEASES: "http://127.0.0.1:1" });
+  assert.notEqual(done.status, 0, done.stdout);
+  const said = done.stdout + done.stderr;
+  assert.match(said, /连不上发布页/, said);
+  assert.match(said, /releases/, "没说手动去哪里取");
+  assert.doesNotMatch(said, /已经是最新的|更新好了/, "什么都没动，却说升级过了");
+  assert.doesNotMatch(said, /\bgit\b/, "去动 git 了");
+  // 文件里写的也是这一条：README 和 INSTALL 都得说得出二进位怎么升级，而且不能再说「只能重新下载」。
+  assert.match(readFileSync(join(repo, "INSTALL.md"), "utf8"), /升级也是 `agent-autoloop update`/);
+  for (const file of ["README.md", "README.en.md"]) {
+    assert.doesNotMatch(readFileSync(join(repo, file), "utf8"), /升级要重新下载|re-downloading to upgrade/, file);
   }
 });

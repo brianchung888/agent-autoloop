@@ -7,6 +7,8 @@ import { loadChannel } from "./channels.ts";
 import { parseListen, readConfig, type ChannelConfig } from "./config.ts";
 import { HOME } from "./home.ts";
 import { secureDir } from "./permissions.ts";
+import { fromSource, selfProgram } from "./self.ts";
+import { tidyReplaced } from "./self-replace.ts";
 import { claimUp, runningUp, stopFile } from "./service.ts";
 import { commitOf } from "./version.ts";
 import { hubClient } from "../protocol/client.ts";
@@ -120,6 +122,9 @@ function keepChannelRunning(id: string, { use, key, ...options }: ChannelConfig,
 
 export async function up() {
   const config = readConfig();
+  // The executable an update moved aside (cli/self-update.ts). Here because this is the start it was waiting for: by
+  // now nothing is running it, and Windows lets it be deleted. Source mode has no executable of its own to have moved.
+  if (!fromSource()) tidyReplaced(selfProgram());
   secureDir(HOME);
   if (LOG_FILE) secureDir(path.dirname(LOG_FILE));
   const unlock = lock();

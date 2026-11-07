@@ -52,7 +52,7 @@ AGENT_AUTOLOOP_REPO=/path/to/agent-autoloop sh /path/to/agent-autoloop/install.s
 |---|---|---|
 | 前置 | Node.js 24+、Git | 没有 |
 | 下载体积 | 约 1.5 MB | 约 96 MB（里面就是一整个 Node） |
-| 怎么升级 | `agent-autoloop update` | 重新下载（见下） |
+| 怎么升级 | `agent-autoloop update` | `agent-autoloop update`（自己换掉自己，见下） |
 | 第三方 `.ts` 插件 | 可以 | 不行，要带 `runtime: "process"`（见[插件说明](docs/plugins.md#源码插件在打包版下的限制)） |
 | 数据、规则、密钥 | 都在 `~/.agent-autoloop` | 一样，而且两种装法可以互换 |
 
@@ -73,7 +73,11 @@ chmod +x ./agent-autoloop-macos-arm64
 
 **Windows 上会被 SmartScreen 拦。** 这个文件没有签章：注入那一步会破坏 node.exe 原本的 Authenticode 签章，所以产物是「未签章」而不是「签章坏了」。第一次运行会弹「Windows 已保护你的电脑」，要点「更多信息 → 仍要运行」；下载时浏览器也可能先说一句。对完 `.sha256` 再放行——那串校验和是唯一可以用来确认这个文件没被换过的东西。给组织内部分发时，自己用组织的证书重签一次最省事。要对的是 Release 上那一份 `.sha256`：同一个提交自己再建一次，SHA256 不会和它一样（blob 里带着 V8 的 code cache，由建置那台机器的运行时产生），所以这不是可重现建置，别拿自己重建的那一份去比。
 
-**升级就是重新下载。** 在二进位里 `agent-autoloop update` 不会去动任何东西，它只会把下面这几步印出来：到 Release 页面取新的那一个、对校验和、往 `AGENT_AUTOLOOP_HOME/stop` 写一个空文件等中台收尾（Windows 上别直接杀进程，也别在中台还在跑的时候覆盖这个 exe——Windows 会直接拒绝）、把文件换掉、再启动一次。规则、密钥和记录都在数据目录里，不在这个文件里，所以换文件不丢任何东西，两种装法之间来回换也不会让投影重建（两种模式算出来的投影格式逐字相同，`tests/sea-format.test.ts` 钉着这一条）。
+**升级也是 `agent-autoloop update`，它自己换掉自己。** 在二进位里这条命令会去问最新的 Release 是哪一版，下载这台电脑这个平台的那一个和它旁边的 `.sha256`，对完校验和才动手：往 `AGENT_AUTOLOOP_HOME/stop` 写一个文件等中台收尾，把手上这个 exe 改名成 `.old`、把下载下来的 `.new` 改成正名，再重启常驻（计划任务指的是路径不是文件，所以不用重装）。`.old` 下次启动时自己清掉——Windows 不让删正在跑的 exe，但允许改名，这整套就是为这一点设计的。
+
+出错的时候一律不动手上这一版：下载断了、`.sha256` 对不上、改名没成功，都会把下载删掉、把原文件放回去，并说清楚发生了什么。只有一件事它收不回来——中台已经被停过一次，所以消息里会写它有没有重新启动。没网、被限流（没登录的调用按出口地址限次）或者这个平台 Release 里没建，都会让它直接说出来并给出手动下载的地址；手动那条路还在：到 Release 页面取文件、对校验和（Windows：`certutil -hashfile <文件> SHA256`；macOS / Linux：`shasum -a 256 <文件>`）、写 `stop` 文件、换掉文件、再启动一次。别在中台还在跑的时候直接覆盖这个 exe——Windows 会直接拒绝。
+
+规则、密钥和记录都在数据目录里，不在这个文件里，所以换文件不丢任何东西，两种装法之间来回换也不会让投影重建（两种模式算出来的投影格式逐字相同，`tests/sea-format.test.ts` 钉着这一条）。
 
 二进位里 `uninstall` 删的是它自己放进去的东西（常驻、Skill、PATH 上的链接），不删你下载的那个文件——那是你放的。
 
