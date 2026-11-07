@@ -489,6 +489,19 @@ export function createWorker({
     unlinkSync(path.join(entry.dir, "entry.json"));
   }
 
+  /**
+   * An error with what was underneath it. `fetch` says «TypeError: fetch failed» and puts the only useful word — the
+   * errno, or the name of what the socket did — in `cause`, so a log line without it says that the hub could not be
+   * reached and nothing about why (phase3-verification-round2.md #3: a line reading only «fetch failed» was what made a
+   * single blip impossible to place). One level deep: `cause` of a `cause` is undici's own wrapping, not news.
+   */
+  function because(error: unknown) {
+    const cause = (error as { cause?: unknown } | null)?.cause;
+    if (cause === undefined || cause === null) return String(error);
+    const code = (cause as NodeJS.ErrnoException).code;
+    return `${error}（${code ? `${code}: ` : ""}${cause}）`;
+  }
+
   /** Nothing else can tell the owner when the hub is what's gone. */
   function watchHub(reachable: boolean, moment: number) {
     if (reachable) {
@@ -555,7 +568,7 @@ export function createWorker({
         await start(answer.job);
       }
     } catch (error) {
-      log(`couldn't reach the hub: ${error}`);
+      log(`couldn't reach the hub: ${because(error)}`);
       reachable = false;
     }
     watchHub(reachable, now());
