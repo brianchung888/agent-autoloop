@@ -255,3 +255,37 @@ test("a hub restarting without its rules file comes up on the rules it had; a ne
   assert.notEqual(fresh.status, 0);
   assert.match(fresh.stderr, /找不到/);
 });
+
+test("这两个环境变量设成空字符串，算没设，而不是工作目录", () => {
+  // `??` 留着空字符串，而 `path.resolve("")` 是当前工作目录：AGENT_AUTOLOOP_RULES= 的结果是「程序恰好在哪个
+  // 目录被启动」的 rules.json，而不是默认那一份（phase3-verification-round3.md L）。env 文件里一行等号后面什么
+  // 都没写、shell 展开了一个不存在的名字，都会变成这个样子。
+  const where = join(import.meta.dirname, "..");
+  const asked = (over: NodeJS.ProcessEnv) =>
+    JSON.parse(
+      spawnSync(
+        process.execPath,
+        [
+          "--disable-warning=ExperimentalWarning",
+          "--input-type=module",
+          "-e",
+          'const h = await import("./host/home.ts"); console.log(JSON.stringify({ home: h.HOME, rules: h.RULES_FILE }));',
+        ],
+        {
+          cwd: where,
+          env: { ...process.env, AGENT_AUTOLOOP_HOME: undefined, AGENT_AUTOLOOP_RULES: undefined, ...over },
+          encoding: "utf8",
+          timeout: 60_000,
+        },
+      ).stdout,
+    ) as { home: string; rules: string };
+
+  const unset = asked({});
+  const empty = asked({ AGENT_AUTOLOOP_HOME: "", AGENT_AUTOLOOP_RULES: "" });
+  assert.deepEqual(empty, unset, "空字符串没有当成「没设」");
+  assert.notEqual(empty.rules, join(where, "rules.json"), "规则文件落到了工作目录");
+  // 空白也是同一件事；而真的写了路径就认那个路径。
+  assert.deepEqual(asked({ AGENT_AUTOLOOP_RULES: "   " }).rules, unset.rules);
+  const named = join(home, "另一份.json");
+  assert.equal(asked({ AGENT_AUTOLOOP_RULES: named }).rules, named);
+});

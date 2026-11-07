@@ -59,8 +59,9 @@ function run(args: string[], more: Record<string, string | null> = {}, home = jo
     {
       encoding: "utf8",
       timeout: 60_000,
-      // `null` takes a variable away rather than setting it to nothing: an empty string is a value, and a value is
-      // what `??` keeps — AGENT_AUTOLOOP_RULES="" resolves to the working directory, not to the default.
+      // `null` takes a variable away rather than setting it to nothing. host/home.ts reads the two as the same thing
+      // now — it used to resolve AGENT_AUTOLOOP_RULES="" to the working directory — but a run that means to have no
+      // variable at all says so, rather than relying on that.
       env: environment(home, more),
     },
   );
