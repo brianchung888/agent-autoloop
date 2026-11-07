@@ -237,6 +237,28 @@ test("a rename that fails puts the running one back, and says so with the hub's 
   assert.equal(it.restarted.length, 1);
 });
 
+test("the first rename failing leaves nothing behind and says it as a sentence", async () => {
+  // EBUSY on the running executable is the one of the two renames Windows really does refuse — something has it open
+  // in a way that forbids a rename. It used to be thrown outside the `try`, so the 96 MB that had just been verified
+  // stayed beside the program as a `.new` nobody would ever take away, and what the person read was a bare errno
+  // (phase3-verification-round3.md A).
+  await published();
+  const it = copy();
+  const swap = (executable: string) =>
+    swapSelf(executable, {
+      rename: () => {
+        throw Object.assign(new Error("EBUSY: resource busy or locked, rename"), { code: "EBUSY" });
+      },
+    });
+  await assert.rejects(() => updateBinary(it.hooks({ swap })), /什么都没动.*已经删掉.*中台已经被停过一次/s);
+  assert.equal(it.says(), "手上这一个");
+  // Nothing of the 96 MB is left, and nothing was moved aside either: what is beside it is what was there before.
+  assert.equal(existsSync(stagedName(it.executable)), false);
+  assert.equal(existsSync(replacedName(it.executable)), false);
+  assert.deepEqual(it.beside(), [`agent-autoloop${process.platform === "win32" ? ".exe" : ""}`]);
+  assert.equal(it.restarted.length, 1);
+});
+
 test("a Release without this platform's two files says which one is missing and where to look", async () => {
   await published({ without: [`${NAME}.sha256`] });
   const it = copy();

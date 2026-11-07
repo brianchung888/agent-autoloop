@@ -46,7 +46,25 @@ export function swapSelf(executable: string, { rename = renameSync } = {}) {
   if (!existsSync(staged)) throw new Error(`没有要换上去的文件：${staged} 不在`);
   const old = freeOldName(executable);
   const running = existsSync(executable);
-  if (running) rename(executable, old);
+  if (running) {
+    try {
+      rename(executable, old);
+    } catch (error) {
+      // The first rename, which is the one Windows really does refuse: something holding the executable open in a way
+      // that forbids a rename (a virus scanner reading it, a debugger attached). Nothing has moved yet, so there is
+      // nothing to put back — but the staged download has to go, or 96 MB sits beside the program for ever and the
+      // next update's `rmSync` is the only thing that ever takes it away. And it is said as a sentence: a bare errno
+      // thrown from here reached the person as `EBUSY: resource busy or locked, rename ...` and nothing else
+      // (phase3-verification-round3.md A).
+      try {
+        rmSync(staged, { force: true });
+      } catch {}
+      throw new Error(
+        `没能把手上这个 ${basename(executable)} 换开，什么都没动，下载到的那份已经删掉（${(error as Error).message}）：` +
+          `这个文件被别的程序打开着（杀毒软件在读、调试器挂着）就是这样，过一阵再来一次`,
+      );
+    }
+  }
   try {
     rename(staged, executable);
   } catch (error) {
