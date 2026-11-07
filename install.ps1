@@ -10,7 +10,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$Published = "https://github.com/KKKKhazix/agent-autoloop.git"
+$Published = "https://github.com/brianchung888/agent-autoloop.git"
 $Repo = if ($env:AGENT_AUTOLOOP_REPO) { $env:AGENT_AUTOLOOP_REPO } else { $Published }
 $Root = if ($env:AGENT_AUTOLOOP_HOME) { $env:AGENT_AUTOLOOP_HOME } else { Join-Path $env:USERPROFILE ".agent-autoloop" }
 $App = Join-Path $Root "app"

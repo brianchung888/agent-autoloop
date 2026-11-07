@@ -4,10 +4,10 @@
 
 ## 去哪里交流
 
-- [Issues](https://github.com/KKKKhazix/agent-autoloop/issues/new/choose)：可以复现的故障和有明确场景的功能建议。能做的由维护者修复，修复提交会署上报告者。
-- [使用问答](https://github.com/KKKKhazix/agent-autoloop/discussions/categories/q-a)：安装、规则、Agent 和通道配置。
-- [想法交流](https://github.com/KKKKhazix/agent-autoloop/discussions/categories/ideas)：讨论还没形成开发任务的想法。
-- [实践分享](https://github.com/KKKKhazix/agent-autoloop/discussions/categories/show-and-tell)：分享插件、场景模板和使用经验。
+- [Issues](https://github.com/brianchung888/agent-autoloop/issues/new/choose)：可以复现的故障和有明确场景的功能建议。能做的由维护者修复，修复提交会署上报告者。
+- [使用问答](https://github.com/brianchung888/agent-autoloop/discussions/categories/q-a)：安装、规则、Agent 和通道配置。
+- [想法交流](https://github.com/brianchung888/agent-autoloop/discussions/categories/ideas)：讨论还没形成开发任务的想法。
+- [实践分享](https://github.com/brianchung888/agent-autoloop/discussions/categories/show-and-tell)：分享插件、场景模板和使用经验。
 - 安全问题按 [安全说明](SECURITY.md) 联系维护者，不在公开讨论中披露利用细节。
 
 ## 贡献范围

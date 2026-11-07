@@ -3,7 +3,7 @@
 // fail on a copy it had moved.
 import { spawnSync } from "node:child_process";
 
-const PUBLISHED = "https://github.com/KKKKhazix/agent-autoloop.git";
+const PUBLISHED = "https://github.com/brianchung888/agent-autoloop.git";
 const RELEASE = /refs\/tags\/(v(\d+)\.(\d+)\.(\d+))$/;
 
 function git(root: string, ...args: string[]) {

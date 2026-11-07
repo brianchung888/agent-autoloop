@@ -66,7 +66,7 @@ function computer({ node = "real" }: { node?: "real" | "old" | "none" } = {}) {
     join(tools, "git"),
     `echo "git $*" >> "${called}"
 case " $* " in *" clone "*) for target; do :; done; cp -R "${copy}" "$target"; mkdir "$target/.git" ;; esac
-[ "$3" != config ] || echo https://github.com/KKKKhazix/agent-autoloop.git`,
+[ "$3" != config ] || echo https://github.com/brianchung888/agent-autoloop.git`,
   );
   // `launchctl print` failing says nothing's loaded, which is what lets a first load go ahead at once.
   executable(join(tools, "launchctl"), `echo "launchctl $*" >> "${called}"\n[ "$1" != print ]`);
@@ -234,7 +234,7 @@ test("running it again updates and doesn't set anything up over what's there", (
   // This stand-in lists no releases. What happens with some is in releases.test.ts, with the real git.
   assert.deepEqual(readFileSync(it.called, "utf8").trim().split("\n"), [
     `git -C ${join(it.hub, "app")} config --get remote.origin.url`,
-    "git ls-remote --refs --tags https://github.com/KKKKhazix/agent-autoloop.git v*",
+    "git ls-remote --refs --tags https://github.com/brianchung888/agent-autoloop.git v*",
     `git -C ${join(it.hub, "app")} pull --ff-only --quiet`,
   ]);
 

@@ -27,7 +27,7 @@ import { restartService, runningUp, serviceRunning, stopUp } from "../host/servi
 import { releaseOf } from "../host/version.ts";
 
 /** The one repository whose Releases this follows, spelled as cli/update.ts spells the same decision for a checkout. */
-const PUBLISHED = "KKKKhazix/agent-autoloop";
+const PUBLISHED = "brianchung888/agent-autoloop";
 /** Where a person goes when this cannot: the only address in any message here that a browser can be pointed at. */
 export const RELEASES_PAGE = `https://github.com/${PUBLISHED}/releases`;
 /**

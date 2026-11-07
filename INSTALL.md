@@ -13,13 +13,13 @@
 本仓库已公开，安装脚本和代码都可匿名下载，不需要 GitHub 账号、登录或 GitHub CLI（`gh`）。下面的命令安装并启用登录后常驻服务：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.sh | sh
 ```
 
 Windows 用 PowerShell，不需要管理员：
 
 ```powershell
-irm https://raw.githubusercontent.com/KKKKhazix/agent-autoloop/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.ps1 | iex
 ```
 
 它把 `agent-autoloop.cmd` 放进 `%USERPROFILE%\.local\bin` 并加进你自己的 PATH（不动系统 PATH），所以装完要重开一个终端，`agent-autoloop` 才认得。本地仓库安装时和 POSIX 一样设 `AGENT_AUTOLOOP_REPO`，再运行该目录下的 `install.ps1`。
