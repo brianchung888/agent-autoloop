@@ -296,6 +296,42 @@ test("being rate limited is said as rate limiting, with the page to go to by han
   assert.equal(it.stopped.length, 0);
 });
 
+test("BUILT \u8ddf release.yml \u7684 matrix \u662f\u540c\u4e00\u5f20\u8868\uff1a\u4e24\u8fb9\u5404\u6539\u4e00\u534a\u5c31\u662f\u4e0b\u8f7d\u4e0d\u5230", () => {
+  // assetName() \u8bf4\u7684\u662f\u300c\u8fd9\u53f0\u7535\u8111\u8be5\u53bb\u62ff\u54ea\u4e00\u4e2a\u6587\u4ef6\u300d\uff0c\u800c\u771f\u6b63\u6302\u4e0a\u53bb\u7684\u540d\u5b57\u662f .github/workflows/release.yml \u51b3\u5b9a\u7684\u3002
+  // \u4e24\u8fb9\u4ece\u6ca1\u6709\u4efb\u4f55\u4e1c\u897f\u8fde\u7740\uff1a\u6539\u4e00\u8fb9\u4e0d\u6539\u53e6\u4e00\u8fb9\uff0c\u7ed3\u679c\u662f\u6574\u4e2a\u5e73\u53f0\u7684 update \u6c38\u8fdc\u8bf4\u300c\u8fd9\u4e00\u7248\u6ca1\u6709\u9644\u300d\uff0c\u800c release.yml
+  // \u4ece\u672a\u8dd1\u8fc7\uff08phase3-verification-round3.md J\uff09\u3002\u8fd9\u6761\u6d4b\u8bd5\u628a\u5b83\u4eec\u8fde\u8d77\u6765\u3002
+  const yml = readFileSync(join(import.meta.dirname, "..", ".github", "workflows", "release.yml"), "utf8");
+  const include = /matrix:\n\s*include:\n((?:[^\S\n]*- os: .+\n[^\S\n]*name: .+\n)+)/.exec(yml);
+  assert.ok(
+    include,
+    "release.yml \u91cc\u8bfb\u4e0d\u51fa matrix.include\uff1a\u8fd9\u6761\u6d4b\u8bd5\u6ca1\u5728\u770b\u4ec0\u4e48",
+  );
+  const matrix = [...include[1].matchAll(/- os: (\S+)\n\s*name: (\S+)/g)].map(([, os, name]) => ({ os, name }));
+  assert.equal(
+    matrix.length,
+    3,
+    `matrix \u91cc\u662f ${matrix.length} \u4e2a\u5e73\u53f0\uff0cBUILT \u91cc\u662f 3 \u4e2a`,
+  );
+
+  // \u540d\u5b57\u662f\u600e\u4e48\u62fc\u7684\uff0c\u4e5f\u8bfb release.yml \u81ea\u5df1\u90a3\u4e00\u6b65\uff0c\u800c\u4e0d\u662f\u5728\u8fd9\u91cc\u518d\u62c4\u4e00\u904d\u3002
+  assert.match(yml, /suffix="\.exe"/, "Windows \u90a3\u4e00\u4efd\u4e0d\u518d\u662f \.exe \u7ed3\u5c3e\u4e86");
+  assert.match(
+    yml,
+    /named="agent-autoloop-\$\{\{ matrix\.name \}\}\$suffix"/,
+    "\u6302\u4e0a\u53bb\u7684\u540d\u5b57\u6362\u4e86\u62fc\u6cd5",
+  );
+  const attached = matrix.map(({ os, name }) => `agent-autoloop-${name}${os.startsWith("windows") ? ".exe" : ""}`);
+  // \u8fd9\u4e09\u4e2a\u5e73\u53f0\u5c31\u662f BUILT \u91cc\u7684\u4e09\u4e2a\u952e\uff0c\u6309 assetName() \u95ee\u51fa\u6765\u3002
+  const wanted = [assetName("win32", "x64"), assetName("darwin", "arm64"), assetName("linux", "x64")];
+  assert.deepEqual(attached.sort(), wanted.sort());
+  // \u65c1\u8fb9\u90a3\u4efd `.sha256` \u4e5f\u662f\u540c\u4e00\u4e2a\u540d\u5b57\u52a0\u540e\u7f00\uff0c\u56e0\u4e3a newestRelease() \u5c31\u662f\u8fd9\u4e48\u627e\u5b83\u7684\u3002
+  assert.match(
+    yml,
+    /"\$named" > "\$named\.sha256"/,
+    "`.sha256` \u4e0d\u518d\u662f\u300c\u540c\u4e00\u4e2a\u540d\u5b57\u52a0 .sha256\u300d\u4e86",
+  );
+});
+
 test("a platform the Release has no binary for is told outright", () => {
   assert.throws(() => assetName("sunos", "mips"), /sunos-mips.*源码/s);
   assert.equal(assetName("win32", "x64"), "agent-autoloop-windows-x64.exe");
