@@ -142,6 +142,12 @@ test("校验和不是拿来比两次建置的：这不是可重现建置，两�
   assert.match(install, /可重现建置/, "INSTALL.md 没说这不是可重现建置");
   assert.match(install, /AGENT_AUTOLOOP_COMMIT/, "INSTALL.md 没说 export 了这个会盖掉二进位自己说的版本");
   assert.match(install, /AGENT_AUTOLOOP_RELEASE/);
+  // 而且说清楚这串校验和能证明到哪里。以前写的是「唯一可以用来确认这个文件没被换过的东西」——它和文件是
+  // 同一个 Release 发出来的，所以换掉发布端的人两份一起换就行；它挡的是传输与镜像，不是恶意发布端
+  // （phase3-verification-round3.md）。
+  assert.match(install, /同一个 Release 发出来的/, "INSTALL.md 没说 `.sha256` 和文件是同源的");
+  assert.match(install, /没有任何签署/, "INSTALL.md 没明说这整套发布没有签署");
+  assert.doesNotMatch(install, /唯一可以用来确认/, "那句说大了的话又回来了");
 });
 
 test("改一份文档也会去看被跟踪的文字：那一步不挂在 scope 上", () => {
