@@ -36,6 +36,13 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 
 /** This platform's name in a Release, which is also what the test's own server has to be asked for. */
 const NAME = assetName();
+/**
+ * Some other platform's name -- whichever this one is not. Written out as `agent-autoloop-linux-x64`, the lines below
+ * that stand for "another platform's" are this platform's own name on Linux: the assertion that such a line gets
+ * refused then asks for a refusal that must not happen, and the one that picks this platform's line out of three has
+ * two lines to pick from that both say this platform.
+ */
+const OTHER = NAME === assetName("linux", "x64") ? assetName("darwin", "arm64") : assetName("linux", "x64");
 
 type Release = {
   /** What the new executable says. */
@@ -263,12 +270,12 @@ test("`.sha256` 里读的是哪一行：锚在行上、大小写不论、文件�
   assert.equal(sumIn(`${hex.toUpperCase()}  ${NAME}\n`, NAME), hex);
   // BSD / `shasum --tag` 那一种写法：以前整行被当成「没有文件名」，于是文件名一眼都没核过。
   assert.equal(sumIn(`SHA256 (${NAME}) = ${hex}\n`, NAME), hex);
-  assert.throws(() => sumIn(`SHA256 (agent-autoloop-linux-x64) = ${hex}\n`, NAME), /不是/);
+  assert.throws(() => sumIn(`SHA256 (${OTHER}) = ${hex}\n`, NAME), /不是/);
   // 带路径的名字按 basename 比，这是 `sha256sum build/x` 写出来的样子。
   assert.equal(sumIn(`${hex}  build/${NAME}\n`, NAME), hex);
 
   // 别的平台那一份，还是被拒掉而不是拿来比。
-  assert.throws(() => sumIn(`${hex}  agent-autoloop-linux-x64\n`, "agent-autoloop-windows-x64.exe"), /不是/);
+  assert.throws(() => sumIn(`${hex}  ${OTHER}\n`, NAME), /不是/);
   assert.throws(() => sumIn("no digest here", NAME), /读不出校验和/);
   // 没有文件名的裸校验和不算一行：没有名字就没有东西可核，而核是这里必做的事。
   assert.throws(() => sumIn(`${hex}\n`, NAME), /读不出校验和/);
@@ -276,7 +283,7 @@ test("`.sha256` 里读的是哪一行：锚在行上、大小写不论、文件�
   // 「对不上」——说的是让人别用这个文件，而真正的毛病是发布端附错了一个 `.sha512`。
   assert.throws(() => sumIn(`${"b".repeat(128)}  ${NAME}\n`, NAME), /读不出校验和/);
   // 多行的一份（一个 Release 把三个平台写在一起）：按名字挑自己这一行。
-  const many = `${"c".repeat(64)}  agent-autoloop-linux-x64\n${hex}  ${NAME}\n`;
+  const many = `${"c".repeat(64)}  ${OTHER}\n${hex}  ${NAME}\n`;
   assert.equal(sumIn(many, NAME), hex);
 });
 
