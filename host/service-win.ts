@@ -35,8 +35,13 @@ const EVERY = "PT5M";
 const localTime = (at: Date) =>
   new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().replace(/\.\d+Z$/, "");
 
-export const taskFile = (home: string) => path.join(home, "service.xml");
-export const envFile = (home: string) => path.join(home, "service.env");
+// `path.win32`, not `path`: every path this file writes is a Windows path, and the one place that matters is the task
+// XML — what goes into `<Arguments>` is read back by Task Scheduler, and by tests/platform-service.test.ts, which
+// checks the words of that XML on every platform (the comment at the top of that file says why). Under plain `path` on
+// POSIX the same call writes `...\.agent-autoloop/service.env`, one path spelt two ways. On Windows the two are the
+// same function, so nothing about the machine this runs on changes.
+export const taskFile = (home: string) => path.win32.join(home, "service.xml");
+export const envFile = (home: string) => path.win32.join(home, "service.env");
 
 /**
  * What one install knows itself by inside the registered task: this home and this program, said in hexadecimal.
