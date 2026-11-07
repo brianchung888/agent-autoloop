@@ -416,9 +416,9 @@ function remember(record: string, written: Launch | null, found: number[], table
 export const leftBehind = (pid: number, record?: string): true | number[] | null => orphans(pid, record);
 
 /**
- * How often a run that is still going has its tree walked. The whole process table is the best part of a second of
- * this process's own time, and the worker shares it with the hub, so this is that second once every thirty with a run
- * in hand — against the window above, which without it is every level of every run that ends together with its
+ * How often a run that is still going has its tree walked. The whole process table is closer to two seconds of this
+ * process's own time (measured on Windows 11: 1.3–1.9 s a walk), and the worker shares it with the hub, so this is
+ * those two seconds once every thirty with a run in hand — against the window above, which without it is every level of every run that ends together with its
  * parent. A test cannot wait thirty seconds, so the period can be said in the environment.
  */
 const SAMPLE_EVERY = 30_000;
@@ -454,8 +454,8 @@ export function sampleTree(pid: number | undefined, record?: string) {
   if (!dueToSample(record)) return;
   orphans(pid, record, true);
   // Timed from when the walk was done rather than from when it was asked for, as the kept table is (processTable):
-  // the walk is the best part of a second of its own, and a clock started before it would make a period shorter than
-  // the walk no period at all.
+  // the walk is closer to two seconds of its own (1.3–1.9 s measured), and a clock started before it would make a
+  // period shorter than the walk no period at all.
   sampled.set(record, Date.now());
 }
 

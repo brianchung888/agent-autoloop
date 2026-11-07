@@ -430,7 +430,9 @@ test("根和中间层同时没了，孙子还找得着：一轮跑着的时候�
   // 根还活着的时候一次树都没走过——orphans 在「根活着而且还是启动的那一个」时直接答 true，launch-N.json 于是整轮
   // 都是空的。根和中间层在两拍之间一起没了，孙子身上那个父号这时谁都不是，机器上和记录里都没有一句话说它曾经是这
   // 一轮的：树看起来是空的，被 stop 的一轮交出 cancelled，而活儿还在干。所以跑着的时候也要隔一阵走一次树。
-  process.env.AGENT_AUTOLOOP_TREE_SAMPLE = "300";
+  // 取样周期得比走一次树还长，不然每一拍都到期，这一条要的那两幕就分不开：实测一次 1.3–1.9 秒，取 1.5 秒，
+  // 下面每次等 2 秒。
+  process.env.AGENT_AUTOLOOP_TREE_SAMPLE = "1500";
   t.after(() => {
     delete process.env.AGENT_AUTOLOOP_TREE_SAMPLE;
   });
@@ -460,17 +462,17 @@ test("根和中间层同时没了，孙子还找得着：一轮跑着的时候�
   assert.equal(written().tree, undefined, "根活着的时候没有谁会去走树——这就是那个窗口");
 
   // 等一个取样周期，取样走一次：答案照旧，但走到的每一层都记下来了。
-  await pause(400);
+  await pause(2000);
   forgetProcesses();
   sampleTree(root.pid, record);
   assert.match(String(written().tree?.[String(middlePid)]), /^\d+$/, "中间层没被记下来");
   assert.match(String(written().tree?.[String(grand)]), /^\d+$/, "孙子没被记下来");
 
-  // 同一个周期里再叫一次不会再走一遍：整张进程表是将近一秒的机器时间，每一拍都付一次谁都受不了。
+  // 同一个周期里再叫一次不会再走一遍：整张进程表接近两秒的机器时间，每一拍都付一次谁都受不了。
   writeFileSync(record, JSON.stringify({ pid: root.pid, born }));
   sampleTree(root.pid, record);
   assert.equal(written().tree, undefined, "同一个取样周期里又把整张表走了一遍");
-  await pause(400);
+  await pause(2000);
   forgetProcesses();
   sampleTree(root.pid, record);
   assert.ok(written().tree, "下一个周期该再走一次");
