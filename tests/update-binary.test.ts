@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
+import { gzipSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -46,6 +47,8 @@ type Release = {
   without?: string[];
   /** Say more bytes are coming than are sent, and then stop: a download that broke. */
   truncate?: boolean;
+  /** Serve the executable gzipped, which is what a CDN in front of a Release may do of its own accord. */
+  gzip?: boolean;
   /** Answer the lookup with this status instead. */
   status?: number;
 };
@@ -71,6 +74,13 @@ async function published(release: Release = {}) {
       return void res.end(`${release.sum ?? sha256(body)}  ${NAME}\n`);
     }
     if (url.pathname === `/assets/${NAME}`) {
+      if (release.gzip) {
+        // `content-length` is the length of the packed body, and `fetch` hands the caller the unpacked one: the two
+        // numbers are about two different things, which is the whole of phase3-verification-round3.md H.
+        const packed = gzipSync(Buffer.from(body));
+        res.writeHead(200, { "content-encoding": "gzip", "content-length": String(packed.length) });
+        return void res.end(packed);
+      }
       if (release.truncate) {
         // More promised than sent, and then the connection goes: the shape a download that broke arrives in.
         res.writeHead(200, { "content-length": String(Buffer.byteLength(body) + 1000) });
@@ -184,6 +194,20 @@ test("a download that stops halfway is told from a different file, and nothing i
   assert.equal(it.says(), "手上这一个");
   assert.equal(existsSync(stagedName(it.executable)), false);
   assert.equal(it.stopped.length, 0);
+});
+
+test("an asset that arrives gzipped is not read as a download that broke", async () => {
+  // What a CDN in front of a Release does on its own, and what `fetch` does on its own: the request goes out asking
+  // for gzip, the body comes back packed with `content-length` saying how long the packed body is, and the runtime
+  // unpacks it before anything here sees a byte. Comparing that length against what was counted said «断了» every
+  // single time, so `update` could never go through at all — phase3-verification-round3.md H.
+  const { served } = await published({ gzip: true });
+  const it = copy();
+  const done = await updateBinary(it.hooks());
+  assert.equal(done.changed, true);
+  // The whole file, and the sum of the whole file: what is on the disk is the unpacked bytes the `.sha256` is of.
+  assert.equal(it.says(), "新的那一个");
+  assert.deepEqual(served.sort(), [`/assets/${NAME}`, `/assets/${NAME}.sha256`, "/releases/latest"]);
 });
 
 test("a `.sha256` for another platform's file is refused rather than compared", () => {

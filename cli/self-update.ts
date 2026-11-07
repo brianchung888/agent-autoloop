@@ -149,6 +149,13 @@ export function sumIn(text: string, name: string) {
  * A body that stops early is told apart from one that finished: `content-length` is what the far end said it would
  * send, and a count that falls short of it is a broken download and not a different file. A download that stops early
  * without having said how long it would be fails the digest below instead, which is the same answer by another road.
+ *
+ * Unless the body arrived compressed, and then those are two different counts of two different things. `fetch` asks
+ * for gzip of its own accord and hands back what it unpacked, while `content-length` stays the length of what was
+ * packed — so comparing them says «断了» on every single download of an asset a CDN chose to compress, and an
+ * update that can never go through is worse than one that cannot tell a short read from a whole file
+ * (phase3-verification-round3.md H). Where there is a `content-encoding` the length is not compared, and a body that
+ * stopped early goes to the digest, which is where one that never said its length goes too.
  */
 async function downloadTo(url: string, file: string, name = basename(file)) {
   /** A download that did not finish, whichever of the three ways it failed to. Nothing half-written is left behind. */
@@ -166,7 +173,8 @@ async function downloadTo(url: string, file: string, name = basename(file)) {
     throw error;
   }
   if (!response.body) throw broke("答复里没有内容");
-  const said = Number(response.headers.get("content-length"));
+  const packed = response.headers.get("content-encoding");
+  const said = packed ? NaN : Number(response.headers.get("content-length"));
   const digest = createHash("sha256");
   let got = 0;
   const bytes = Readable.fromWeb(response.body as never);
@@ -179,7 +187,17 @@ async function downloadTo(url: string, file: string, name = basename(file)) {
   } catch (error) {
     throw broke(because(error));
   }
-  if (Number.isInteger(said) && said > 0 && got !== said) throw broke(`说好 ${said} 个字节，只到了 ${got} 个`);
+  // Two different things, said as two. A backstop rather than the first line of defence: HTTP framing catches most
+  // short bodies before this, as a request that failed (above). Long is what a compressed body used to be reported
+  // as — «说好 40 个字节，只到了 96000000 个», which is not what happened — and the encoding is accounted for above now.
+  // Both sentences are kept anyway: a mismatch described backwards is worse than one line that is rarely read.
+  if (Number.isInteger(said) && said > 0 && got !== said) {
+    throw broke(
+      got < said
+        ? `说好 ${said} 个字节，只到了 ${got} 个`
+        : `说好 ${said} 个字节，来的却是 ${got} 个：发布端说的长度不对`,
+    );
+  }
   return { sum: digest.digest("hex"), bytes: got };
 }
 
