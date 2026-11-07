@@ -1,0 +1,13 @@
+# 这个仓库里的文件一律以 LF 存、以 LF 取出，Windows 上也一样。
+#
+# 不这么定的话，取出时按各自机器的 core.autocrlf 办：GitHub 的 windows runner 上它是 true，于是每个文件都变成 CRLF，
+# 而 prettier 的 endOfLine 默认就是 lf —— `npm run format:check` 于是把每个文件都报一遍，报的还不是任何人写错的东西。
+# 真正该定下来的是行尾本身，不是让检查去迁就机器：这里的 .ts / .sh / .ps1 都在 LF 下写成、在 LF 下验过（PowerShell 5.1
+# 读 LF 的 .ps1 没问题，install-smoke.ps1 跑过），POSIX 的 sh 更是只认 LF。
+* text=auto eol=lf
+
+# 唯一的例外：cmd.exe 的批处理按 Windows 自己的规矩来。文件在仓库里存的仍是 LF，只是取出到 Windows 上给 CRLF。
+*.cmd text eol=crlf
+
+# 图是文本（diff 得出来），但不要让任何格式化工具去碰。
+*.svg text eol=lf
