@@ -1,5 +1,6 @@
 // The protocol's own checks, with no state behind them: the hub applies them at its door, and a worker applies them to
 // an Agent's receipt before handing it in, while the Agent can still be asked to write it again.
+import { t } from "../host/i18n.ts";
 import { InputError } from "../kernel/errors.ts";
 
 export const EVENT_TYPE = /^[a-z][a-z0-9_.-]{0,63}$/;
@@ -51,19 +52,21 @@ const FIELDS = ["id", "type", "subject", "summary", "detail", "link", "hops"];
 
 export function parseEvent(input: unknown): EventInput {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw new InputError("事件要是一个 JSON 对象");
+    throw new InputError(t("protocol.event.notObject"));
   }
   const given = input as Record<string, unknown>;
-  for (const name of Object.keys(given)) if (!FIELDS.includes(name)) throw new InputError(`不认识的字段：${name}`);
+  for (const name of Object.keys(given))
+    if (!FIELDS.includes(name)) throw new InputError(t("protocol.event.unknownField", { name }));
   const field = (name: keyof typeof LIMITS | "type", required = false) => {
     const value = given[name] ?? "";
-    if (typeof value !== "string") throw new InputError(`${name} 要是文字`);
-    if (required && !value) throw new InputError(`缺少 ${name}`);
-    if (name !== "type" && [...value].length > LIMITS[name]) throw new InputError(`${name} 最多 ${LIMITS[name]} 个字`);
+    if (typeof value !== "string") throw new InputError(t("protocol.event.text", { name }));
+    if (required && !value) throw new InputError(t("protocol.event.missing", { name }));
+    if (name !== "type" && [...value].length > LIMITS[name])
+      throw new InputError(t("protocol.event.tooLong", { name, limit: LIMITS[name] }));
     return value;
   };
   const hops = given.hops === undefined ? 0 : given.hops;
-  if (!Number.isSafeInteger(hops) || (hops as number) < 0) throw new InputError("hops 要是非负整数");
+  if (!Number.isSafeInteger(hops) || (hops as number) < 0) throw new InputError(t("protocol.event.hops"));
   const event = {
     id: field("id", true),
     type: field("type", true),
@@ -74,13 +77,13 @@ export function parseEvent(input: unknown): EventInput {
     hops: hops as number,
   };
   // Half a Unicode character is stored and looked up as different bytes, so the same id would never be recognised again.
-  if (!event.id.isWellFormed()) throw new InputError("id 里有不完整的字符");
-  if (!EVENT_TYPE.test(event.type)) throw new InputError("type 只能用小写字母、数字和 . _ -，以字母开头");
+  if (!event.id.isWellFormed()) throw new InputError(t("protocol.event.illFormedId"));
+  if (!EVENT_TYPE.test(event.type)) throw new InputError(t("protocol.event.type"));
   // The subject and link go into the Agent's prompt, so neither may carry words: a subject is an identifier, a link a
   // web address in plain ASCII (anything else percent-encoded).
-  if (!/^[A-Za-z0-9#._:\/@-]*$/.test(event.subject)) throw new InputError("subject 只能用字母、数字和 # . _ : / @ -");
+  if (!/^[A-Za-z0-9#._:\/@-]*$/.test(event.subject)) throw new InputError(t("protocol.event.subject"));
   if (event.link && !/^https?:\/\/[\x21-\x7e]+$/.test(event.link)) {
-    throw new InputError("link 要是网址，非 ASCII 的字要先编码");
+    throw new InputError(t("protocol.event.link"));
   }
   return event;
 }
@@ -154,33 +157,33 @@ const validUsage = (usage: unknown) =>
 
 export function parseResult(input: unknown): Result {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw new InputError("结果要是一个 JSON 对象");
+    throw new InputError(t("protocol.result.notObject"));
   }
   const result = { ...input } as Item;
   if (
     !only(result, ["outcome", "summary", "error", "session", "usage", "ask", "notice", "resolve", "later", "events"])
   ) {
-    throw new InputError("结果里有不认识的字段");
+    throw new InputError(t("protocol.result.unknownField"));
   }
   if (!["done", "nothing", "failed", "cancelled"].includes(result.outcome as string)) {
-    throw new InputError("outcome 只能是 done、nothing、failed、cancelled");
+    throw new InputError(t("protocol.result.outcome"));
   }
   if (!optional(result.summary, 500) || !optional(result.error, 500) || !optional(result.session, 500)) {
-    throw new InputError("summary、error、session 最多 500 字");
+    throw new InputError(t("protocol.result.tooLong"));
   }
-  if (!validUsage(result.usage)) throw new InputError("usage 要是对象，里面要是有限的非负数字");
+  if (!validUsage(result.usage)) throw new InputError(t("protocol.result.usage"));
   if (!listOf(result.ask, 5, validAsk)) {
-    throw new InputError("ask 每一项要有 title、text 和 2 到 5 个 options，recommend 是其中一个的序号，最多 5 项");
+    throw new InputError(t("protocol.result.ask"));
   }
-  if (!listOf(result.notice, 10, validNotice)) throw new InputError("notice 每一项要有 title 和 text，最多 10 项");
+  if (!listOf(result.notice, 10, validNotice)) throw new InputError(t("protocol.result.notice"));
   if (!listOf(result.resolve, 50, validResolve)) {
-    throw new InputError("resolve 每一项要有卡片编号和 1000 字以内的核实依据，最多 50 项");
+    throw new InputError(t("protocol.result.resolve"));
   }
   if (!listOf(result.later, 10, validLater)) {
-    throw new InputError("later 每一项要有 key，以及带时区的 at 和 about，或者 cancel: true，最多 10 项");
+    throw new InputError(t("protocol.result.later"));
   }
   if (result.events !== undefined) {
-    if (!items(result.events, 100)) throw new InputError("events 最多 100 项");
+    if (!items(result.events, 100)) throw new InputError(t("protocol.result.events"));
     result.events = result.events.map(parseEvent);
   }
   return result as Result;

@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { shellOnPath } from "./helpers.ts";
+import { anyLang } from "../host/i18n.ts";
 import { readMessage, resultFrom } from "../worker/contract.ts";
 
 /** 这几条在 Windows 上跳过，理由写进 skip 里；其余的照常跑。 */
@@ -86,7 +87,12 @@ test("agent-autoloop check refuses a recipe that was changed for the worse", () 
   writeFileSync(file, JSON.stringify(broken));
   const checked = check(file);
   assert.notEqual(checked.status, 0);
-  assert.match(checked.stderr, /不是已登记的 Agent/);
+  // cleanEnv 把 AGENT_AUTOLOOP_* 都清掉了，AGENT_AUTOLOOP_LANG 也在里面：这个子进程说的是「谁都没说」时的那种话，
+  // 不是这套测试的那种。所以比的是两种说法，哪一种都算。
+  assert.ok(
+    anyLang("protocol.rules.unknownAgentIs", { to: "nobody" }).some((words) => checked.stderr.includes(words)),
+    checked.stderr,
+  );
 });
 
 async function freePort() {

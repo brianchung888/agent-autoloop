@@ -197,9 +197,9 @@ const HAN = /\p{Script=Han}/u;
 
 // kernel 也在里面，可是它不说 t()：内核不许问环境，所以它那些话走 i18n/t.ts 的 say(lang, key)，lang 是调用端
 // 传进去的（kernel/decide.ts、kernel/http.ts）。这条测试要的只是「写死的汉字一个都没有」，两种说法都算数。
-test("kernel、cli、host、worker、plugins 里没有绕过两张表的汉字", () => {
+test("kernel、protocol、cli、host、worker、plugins 里没有绕过两张表的汉字", () => {
   const bypassing: string[] = [];
-  for (const folder of ["kernel", "cli", "host", "worker", "plugins"]) {
+  for (const folder of ["kernel", "protocol", "cli", "host", "worker", "plugins"]) {
     for (const name of readdirSync(join(root, folder), { recursive: true }).map(String)) {
       if (!name.endsWith(".ts")) continue;
       const file = `${folder}/${name.replaceAll("\\", "/")}`;
