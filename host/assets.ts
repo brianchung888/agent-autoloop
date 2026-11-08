@@ -27,7 +27,11 @@ export const ASSETS = [
   "kernel/credentials.ts",
   "protocol/schema.json",
   // Not read to run: written back out, so that an Agent's own `skills/` has something to be linked to (host/skill.ts).
+  // One per language, because what is written out is read by an Agent and by the person next to it: host/skill.ts
+  // picks which of these two it is. `SKILL.md` is the 简体 one — the manual was written in it, and that is why it is
+  // the name without a tag — and a build that carried only it would hand a 正體 install a 简体 manual.
   "skills/agent-autoloop/SKILL.md",
+  "skills/agent-autoloop/SKILL.zh-TW.md",
 ] as const;
 
 export type Asset = (typeof ASSETS)[number];

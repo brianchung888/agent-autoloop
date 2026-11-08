@@ -161,7 +161,7 @@ agent-autoloop uninstall
 
 ## 文档
 
-- [配置手册](skills/agent-autoloop/SKILL.md)：接事件插件、通道、多台电脑和交付流水线。
+- [配置手册](skills/agent-autoloop/SKILL.md)：接事件插件、通道、多台电脑和交付流水线。手册按语言分两份（简体 `SKILL.md`、正体 `SKILL.zh-TW.md`），`agent-autoloop lang` 或 `AGENT_AUTOLOOP_LANG` 换了语言之后，下一次 `up` 或 `init` 会把新语言那一份放到 Agent 读的 `SKILL.md`。
 - [协议](docs/protocol.md)：HTTP、回执、事实日志和故障恢复。
 - [插件](docs/plugins.md)：三个可运行的最小例子。
 - [安全边界](SECURITY.md)：密钥、执行权限和交付审查。
