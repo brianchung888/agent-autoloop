@@ -1,10 +1,14 @@
-// Every sentence a person reads, in one place per language, and one way of asking for it.
+// 说哪一种话，是这个文件决定的；每一句话本身在 `i18n/zh-CN.ts`（key 的事实来源，就是这个程序原来那些字）和
+// `i18n/zh-TW.ts`（正體，台湾用语）里，取词和填空在 `i18n/t.ts`。
 //
 // The program is written in Chinese, and there are two of those: 简体 as it was written, 正體 as Taiwan writes it. A
 // sentence that is a literal in the middle of a function cannot be the second one as well, so the literals moved out
-// to `i18n/zh-CN.ts` word for word — that file is the key set, and the type below is read off it, so a key the one
-// table has and the other has not is a typecheck failure rather than a sentence that silently comes out in the wrong
-// script. Whichever is asked for, something is always said: a missing key falls back to 简体 rather than to the key.
+// to `i18n/zh-CN.ts` word for word — that file is the key set, and the type is read off it, so a key the one table has
+// and the other has not is a typecheck failure rather than a sentence that silently comes out in the wrong script.
+//
+// 为什么取词的那一半在 `i18n/t.ts` 而不在这里：这个文件要问环境、要读磁盘、还要把答案记住，内核一件都不许做
+// （`tests/purity.test.ts`）。所以这里只剩「决定说哪一种」，取词是那个纯模块的事，`t()` 是把这两半合起来给
+// 外壳用的那一个函数——内核不用它，内核拿到的是调用端传进去的 `lang`。
 //
 // Why `AGENT_AUTOLOOP_LANG` first and the environment's own `LANG` last: the first is this program being told, by a
 // person or by its own `lang` command's config, and the last is a guess from a machine that was set up for something
@@ -14,19 +18,9 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { zhCN, type Strings } from "../i18n/zh-CN.ts";
-import { zhTW } from "../i18n/zh-TW.ts";
+import { DEFAULT_LANG, say, sayAny, type Key, type Lang, type Params } from "../i18n/t.ts";
 
-/** 正體 first: it is what this program says when nobody has said otherwise. */
-export const LANGS = ["zh-TW", "zh-CN"] as const;
-export type Lang = (typeof LANGS)[number];
-export const DEFAULT_LANG: Lang = "zh-TW";
-
-export type Key = keyof Strings;
-/** What a sentence is filled in with. Numbers are said by the locale that asked for them, so they arrive as strings. */
-export type Params = Record<string, string | number>;
-
-export const TABLES: Record<Lang, Strings> = { "zh-TW": zhTW, "zh-CN": zhCN };
+export { DEFAULT_LANG, LANGS, TABLES, WRITTEN_LANG, type Key, type Lang, type Params } from "../i18n/t.ts";
 
 /**
  * One of the two, from however it was spelt. A tag names a script more often than it names a place — `zh-Hant` is the
@@ -74,6 +68,9 @@ let chosen: Lang | undefined;
 /**
  * Which of the two this install says things in. Asked once and remembered: it is read for every sentence, and the
  * answer cannot change under a running command — `useLang` is how a command that just wrote a new one says so.
+ *
+ * 内核拿不到这个函数，是故意的：它得由调用端当一个值传进去（`decide()`、`createHandler()`、`describeCron()`
+ * 都收一个 `lang`），不然内核的输出就跟着这台电脑的环境变数和磁盘上的 config.json 变了。
  */
 export function lang(): Lang {
   if (chosen) return chosen;
@@ -92,15 +89,9 @@ export function useLang(told: Lang | undefined) {
   chosen = told;
 }
 
-/** `{name}` in a sentence is a name in `params`. One left unfilled stays as it is, so that it can be seen and fixed. */
-function fill(text: string, params?: Params) {
-  if (!params) return text;
-  return text.replace(/\{(\w+)\}/g, (whole, name: string) => (name in params ? String(params[name]) : whole));
-}
-
 /** The sentence, in this install's language, with its names filled in. */
 export function t(key: Key, params?: Params): string {
-  return fill(TABLES[lang()][key] ?? zhCN[key], params);
+  return say(lang(), key, params);
 }
 
 /**
@@ -109,5 +100,5 @@ export function t(key: Key, params?: Params): string {
  * What was written is one of these, and which one is not worth keeping a record of.
  */
 export function anyLang(key: Key, params?: Params): string[] {
-  return [...new Set(LANGS.map((one) => fill(TABLES[one][key], params)))];
+  return sayAny(key, params);
 }

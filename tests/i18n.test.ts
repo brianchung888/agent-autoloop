@@ -231,9 +231,15 @@ test("host/i18n.ts 不碰 host/home.ts：说一句话不许顺手把「哪个 HO
   // 选 HOME 的，于是一份测试会跑到真正的 ~/.agent-autoloop 里去写东西。实际发生过一次。
   const words = readFileSync(join(root, "host", "i18n.ts"), "utf8");
   assert.doesNotMatch(words, /^import .*\.\/home\.ts/m, "host/i18n.ts import 了 host/home.ts");
-  // 它只许 import 这几样：三个 node: 模块和两张表。多一个就可能顺着那条路又摸到 host/home.ts。
+  // 它只许 import 这几样：三个 node: 模块和取词那个纯模块（两张表在它后面）。多一个就可能顺着那条路又摸到
+  // host/home.ts。
   const imported = [...words.matchAll(/^import .* from "([^"]+)";$/gm)].map((found) => found[1]).sort();
-  assert.deepEqual(imported, ["../i18n/zh-CN.ts", "../i18n/zh-TW.ts", "node:fs", "node:os", "node:path"]);
+  assert.deepEqual(imported, ["../i18n/t.ts", "node:fs", "node:os", "node:path"]);
+  // 而取词那个纯模块只许 import 两张表：内核 import 的是它，它一碰 node: 就把环境和磁盘带进内核了
+  // （tests/purity.test.ts 的「时间和熵从外壳传入」）。
+  const pure = readFileSync(join(root, "i18n", "t.ts"), "utf8");
+  const inPure = [...pure.matchAll(/^import .* from "([^"]+)";$/gm)].map((found) => found[1]).sort();
+  assert.deepEqual(inPure, ["./zh-CN.ts", "./zh-TW.ts"]);
 });
 
 test("标点不算：顿号和冒号两种中文一样写，所以它们留在代码里不是漏翻", () => {
