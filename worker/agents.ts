@@ -7,6 +7,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { t } from "../host/i18n.ts";
 import { loadPlugin } from "../host/plugins.ts";
+import { fromSource } from "../host/self.ts";
 import type { Usage } from "../protocol/validate.ts";
 
 export type { Usage } from "../protocol/validate.ts";
@@ -79,6 +80,36 @@ const QUOTED = /"([^"\r\n]*)"/g;
 const SCRIPT = /\.(js|cjs|mjs)$/i;
 const EXECUTABLE = /\.(exe|com)$/i;
 
+/** Every real executable by this name on PATH, nearest first. Windows only: where.exe is what there is to ask. */
+function executablesOnPath(name: string) {
+  try {
+    const printed = execFileSync("where.exe", [name], {
+      encoding: "utf8",
+      timeout: 15_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    // where.exe prints every match, nearest on PATH first, which is the one that would run.
+    return printed
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The node a shim means by `%_prog%` when there is none beside it: the one on PATH. A source install is itself running
+ * on a node and could stand in for it — a packaged build is not (`process.execPath` is then this program, which would
+ * be handed a script it knows nothing about), and must find a real one or give up.
+ */
+function nodeOnPath(): string | null {
+  return (
+    executablesOnPath("node").find((match) => /\bnode\.exe$/i.test(match)) ?? (fromSource() ? process.execPath : null)
+  );
+}
+
 /**
  * What a batch shim on PATH actually starts, or nothing when it is not one of the shapes below. Only the fixed shape a
  * package manager writes for a global install is read — never anything else in the file, and never by running it:
@@ -86,9 +117,9 @@ const EXECUTABLE = /\.(exe|com)$/i;
  *     "%dp0%\<...>\thing.exe"  %*                        a real program beside the shim
  *     "%_prog%"  "%dp0%\<...>\thing.js" %*               node, named by the shim's own IF/ELSE, and a script
  *
- * `%dp0%` is the shim's own folder; `%_prog%` is the node beside it if there is one, else whatever `node` on PATH would
- * be — and for that this program's own runtime stands in, since it is a node and is certainly there. Anything left
- * unexpanded, any file that isn't there, or any other shape at all: nothing, so the caller goes on looking elsewhere.
+ * `%dp0%` is the shim's own folder; `%_prog%` is the node beside it if there is one, else the `node` on PATH that the
+ * shim itself would have started. Anything left unexpanded, any file that isn't there, no node to be found, or any
+ * other shape at all: nothing, so the caller goes on looking elsewhere.
  */
 function whatTheShimStarts(shim: string): Program | null {
   let text: string;
@@ -107,7 +138,8 @@ function whatTheShimStarts(shim: string): Program | null {
   const beside = path.join(folder, "node.exe");
   const names: Record<string, string> = {
     "%dp0%": `${folder}${path.sep}`,
-    "%_prog%": text.includes('SET "_prog=%dp0%\\node.exe"') && existsSync(beside) ? beside : process.execPath,
+    "%_prog%":
+      (text.includes('SET "_prog=%dp0%\\node.exe"') && existsSync(beside) ? beside : nodeOnPath()) ?? "%_prog%",
   };
   const words = [...line.matchAll(QUOTED)]
     .map(([, word]) => word!)
@@ -131,17 +163,7 @@ export function findProgram(name: string, elsewhere: () => string[] = () => []):
     let onPath: Program | null = null;
     try {
       if (process.platform === "win32") {
-        // where.exe prints every match, nearest on PATH first, which is the one that would run.
-        const printed = execFileSync("where.exe", [name], {
-          encoding: "utf8",
-          timeout: 15_000,
-          stdio: ["ignore", "pipe", "ignore"],
-        });
-        const matches = printed
-          .trim()
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean);
+        const matches = executablesOnPath(name);
         // A .cmd / .bat shim is a script for the command interpreter and cannot be started as a program: Windows
         // refuses it outright. A real executable is therefore what is wanted; failing that, a shim of the one fixed
         // shape a package manager writes says in so many words what it would have started, and that — the program it
