@@ -4,8 +4,26 @@
 // `{名字}` 是 host/i18n.ts 的 `t` 填进去的值；另一份表（i18n/zh-TW.ts）的类型是从这里读的，少一个 key 或多一个
 // key 都过不了 typecheck。
 //
-// 分区按它们被说出来的地方排：host、worker、plugins、cli。一句话只属于一个地方。
+// 分区按它们被说出来的地方排：kernel、host、worker、plugins、cli。一句话只属于一个地方。kernel 排第一个，因为
+// 它那些话不走 `t()`：内核不许问环境，说哪一种是调用端传进去的 `lang`（`i18n/t.ts` 的 `say(lang, key)`）。
 export const zhCN = {
+  // ---- kernel/cron.ts ----
+  // 内核里的话，语言由调用端当参数传进来（host/i18n.ts 的 t() 是外壳在用的，内核拿不到它）。
+  "kernel.cron.everyDay": "每天 {at}",
+  "kernel.cron.everyWeek": "每周{day} {at}",
+  "kernel.cron.weekdayNames": "日一二三四五六日",
+  "kernel.cron.workdays": "工作日 {at}",
+  "kernel.cron.everyMonth": "每月 {day} 日 {at}",
+
+  // ---- kernel/card-page.ts ----
+  "kernel.card.howHandled": "我实际怎么处理的（可不填）",
+  "kernel.card.handling": "处理说明",
+  "kernel.card.otherThought": "别的想法",
+  "kernel.card.closeWithNote": "记录并结案",
+  "kernel.card.send": "发送",
+  "kernel.card.chose": "你选了「{option}」",
+  "kernel.card.handlingWas": "处理说明：{text}",
+
   // ---- host/notify.ts ----
   "notify.trouble.win": "桌面通知不可用：Windows 上没有可用的通知程序，卡片会跳过通知",
   "notify.trouble.linux": "桌面通知不可用：这台电脑没有图形会话（DISPLAY 和 WAYLAND_DISPLAY 都没设），卡片会跳过通知",

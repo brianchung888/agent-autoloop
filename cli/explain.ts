@@ -12,7 +12,7 @@ const when = (rule: Rule, rules: Rules, now: number) =>
   eventRule(rule)
     ? t("cli.explain.whenEvent", { source: rule.when.source, types: rule.when.types.join("、") })
     : t("cli.explain.whenCron", {
-        cron: describeCron(cronOf(rule)),
+        cron: describeCron(cronOf(rule), lang()),
         next: new Date(nextRun(parseCron(cronOf(rule))!, now, rules.timezone)!).toLocaleString(
           lang(),
           clock(rules.timezone),
@@ -82,7 +82,7 @@ export function explainRules(text: string, now = Date.now(), zone = localZone())
       t("cli.explain.elsewhereLine", {
         name: task.name,
         where: task.where,
-        cron: describeCron(task.cron),
+        cron: describeCron(task.cron, lang()),
         answers,
       }),
     );

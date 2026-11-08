@@ -2,6 +2,7 @@
 // week both given take either, but when either starts with * a day must match both; 0 and 7 are Sunday. A wall-clock
 // moment that doesn't exist (clocks going forward) is skipped, and one that happens twice (clocks going back) counts
 // the first time, so a schedule fires at most once per wall-clock moment.
+import { say, WRITTEN_LANG, type Lang } from "../i18n/t.ts";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -113,18 +114,23 @@ export function dayStart(now: number, zone: string) {
 }
 
 // With the rest of the cron and not with the status summary: a client's own page can import this file, which needs nothing
-// of Node.
-const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六", "日"];
+// of Node — and i18n/t.ts needs nothing of it either, so saying this in two languages keeps that true.
 
-/** A common schedule in plain words (每天 18:00, 每周日 06:00, 工作日 09:00, 每月 1 日 04:00); any other as written. */
-export function describeCron(text: string) {
+/**
+ * A common schedule in plain words (每天 18:00, 每周日 06:00, 工作日 09:00, 每月 1 日 04:00); any other as written.
+ * Which language it is said in comes in as an argument: this file reads no environment of its own.
+ */
+export function describeCron(text: string, lang: Lang = WRITTEN_LANG) {
   const [minute, hour, day, month, weekday] = text.trim().split(/\s+/);
   const number = /^\d+$/;
   if (!number.test(minute) || !number.test(hour) || month !== "*" || !parseCron(text)) return text;
   const at = `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
-  if (day === "*" && weekday === "*") return `每天 ${at}`;
-  if (day === "*" && number.test(weekday)) return `每周${WEEKDAYS[Number(weekday)]} ${at}`;
-  if (day === "*" && weekday === "1-5") return `工作日 ${at}`;
-  if (number.test(day) && weekday === "*") return `每月 ${Number(day)} 日 ${at}`;
+  if (day === "*" && weekday === "*") return say(lang, "kernel.cron.everyDay", { at });
+  if (day === "*" && number.test(weekday)) {
+    const named = [...say(lang, "kernel.cron.weekdayNames")][Number(weekday)];
+    return say(lang, "kernel.cron.everyWeek", { day: named, at });
+  }
+  if (day === "*" && weekday === "1-5") return say(lang, "kernel.cron.workdays", { at });
+  if (number.test(day) && weekday === "*") return say(lang, "kernel.cron.everyMonth", { day: Number(day), at });
   return text;
 }

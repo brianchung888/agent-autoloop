@@ -7,6 +7,23 @@
 import type { Strings } from "./zh-CN.ts";
 
 export const zhTW: Strings = {
+  // ---- kernel/cron.ts ----
+  // 內核裡的話，語言由呼叫端當參數傳進來（host/i18n.ts 的 t() 是外殼在用的，內核拿不到它）。
+  "kernel.cron.everyDay": "每天 {at}",
+  "kernel.cron.everyWeek": "每週{day} {at}",
+  "kernel.cron.weekdayNames": "日一二三四五六日",
+  "kernel.cron.workdays": "工作日 {at}",
+  "kernel.cron.everyMonth": "每月 {day} 日 {at}",
+
+  // ---- kernel/card-page.ts ----
+  "kernel.card.howHandled": "我實際怎麼處理的（可不填）",
+  "kernel.card.handling": "處理說明",
+  "kernel.card.otherThought": "別的想法",
+  "kernel.card.closeWithNote": "記錄並結案",
+  "kernel.card.send": "發送",
+  "kernel.card.chose": "你選了「{option}」",
+  "kernel.card.handlingWas": "處理說明：{text}",
+
   // ---- host/notify.ts ----
   "notify.trouble.win": "桌面通知無法使用：Windows 上沒有可用的通知程式，卡片會跳過通知",
   "notify.trouble.linux":

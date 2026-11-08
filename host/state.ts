@@ -1,6 +1,7 @@
 // What's going on, for the owner's own clients, read from what's there: rules, cards, runs and who has been seen. Nothing
 // is decided by it, so it's no part of the kernel.
 import type { SQLInputValue } from "node:sqlite";
+import { lang } from "./i18n.ts";
 import { describeCron, dayStart, nextRun, parseCron } from "../kernel/cron.ts";
 import { SEEN_EVERY } from "../kernel/due.ts";
 import { iso, type Row } from "../kernel/evolve.ts";
@@ -122,13 +123,13 @@ export function stateOf(now: number, before: number | undefined, rules: Rules, {
       agent: rule.to,
       source: eventRule(rule) ? rule.when.source : SCHEDULE,
       types: eventRule(rule) ? rule.when.types : [],
-      every: eventRule(rule) ? null : describeCron(cronOf(rule)),
+      every: eventRule(rule) ? null : describeCron(cronOf(rule), lang()),
       next: eventRule(rule) ? null : iso(nextRun(parseCron(cronOf(rule))!, now, rules.timezone)!),
       totals: tally(counts.filter((row) => row.rule === rule.name)),
     })),
     elsewhere: rules.elsewhere.map(({ name, source, to, cron, where }) => {
       const next = iso(nextRun(parseCron(cron)!, now, rules.timezone) ?? now);
-      return { id: name, name, source, agent: to, cron, every: describeCron(cron), next, where };
+      return { id: name, name, source, agent: to, cron, every: describeCron(cron, lang()), next, where };
     }),
     agents: Object.entries(rules.agents).map(([id, { name, use, worker }]) => {
       const totals = tally(counts.filter((row) => row.agent === id));
