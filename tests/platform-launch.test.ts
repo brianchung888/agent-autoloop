@@ -8,7 +8,7 @@
 // real executable sat in the places `elsewhere` names.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -126,20 +126,106 @@ test("a .cmd shim is 127, not a wrapper that dies without saying anything", ONLY
   assert.match(done.err, /启动不了/);
 });
 
-test("只有 .cmd 在 PATH 上时，查找当作没找到，去看 elsewhere 给的位置", ONLY_WINDOWS, () => {
+test("只有不认得的 .cmd 在 PATH 上时，查找当作没找到，去看 elsewhere 给的位置", ONLY_WINDOWS, () => {
   const onlyShim = join(dir, "bin");
   mkdirSync(onlyShim, { recursive: true });
-  writeFileSync(join(onlyShim, "agent-autoloop-fake.cmd"), "@echo off\r\n");
+  writeFileSync(join(onlyShim, "agent-autoloop-fake.cmd"), "@echo off\r\necho 我不是包装\r\n");
   const realPath = process.env.PATH;
   try {
     process.env.PATH = `${onlyShim};${realPath}`;
     // The shim is the nearest thing on PATH and the only one. A real executable elsewhere is what must come back.
-    assert.equal(
+    assert.deepEqual(
       findProgram("agent-autoloop-fake", () => [process.execPath]),
-      process.execPath,
+      {
+        program: process.execPath,
+        prefix: [],
+      },
     );
     // And with nowhere else to look, not finding it is the answer — never the shim.
     assert.throws(() => findProgram("agent-autoloop-fake-2"), /找不到/);
+  } finally {
+    process.env.PATH = realPath;
+  }
+});
+
+/** One folder on PATH with a shim by this name in it, and that folder. */
+function shimmed(name: string, contents: string) {
+  const bin = join(dir, `shim-${counter++}`);
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, `${name}.cmd`), contents);
+  return bin;
+}
+
+test("PATH 上只有包管理器那种 .cmd 时，解析成它真正会起的 node 加脚本，整轮跑得通", ONLY_WINDOWS, async () => {
+  // This is the shape npm writes for a package whose command is a .js file, verbatim: the program is node — the one
+  // beside the shim if there is one, else `node` on PATH — and the script is under node_modules beside the shim.
+  const name = "agent-autoloop-fake-npm";
+  const bin = shimmed(
+    name,
+    [
+      "@ECHO off",
+      "GOTO start",
+      ":find_dp0",
+      "SET dp0=%~dp0",
+      "EXIT /b",
+      ":start",
+      "SETLOCAL",
+      "CALL :find_dp0",
+      "",
+      'IF EXIST "%dp0%\\node.exe" (',
+      '  SET "_prog=%dp0%\\node.exe"',
+      ") ELSE (",
+      '  SET "_prog=node"',
+      "  SET PATHEXT=%PATHEXT:;.JS;=;%",
+      ")",
+      "",
+      'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@example\\fake\\bin\\cli.js" %*',
+      "",
+    ].join("\r\n"),
+  );
+  const inside = join(bin, "node_modules", "@example", "fake", "bin");
+  mkdirSync(inside, { recursive: true });
+  const script = join(inside, "cli.js");
+  // A stand-in for the agent: it prints the arguments it was given, so the whole launch can be read back.
+  writeFileSync(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
+
+  const realPath = process.env.PATH;
+  let found: ReturnType<typeof findProgram>;
+  try {
+    process.env.PATH = `${bin};${realPath}`;
+    found = findProgram(name);
+  } finally {
+    process.env.PATH = realPath;
+  }
+  // No shim ever reaches the launcher: what comes back is a program that can be started, and the script it has to be
+  // given before the caller's own words.
+  assert.equal(found.program, process.execPath, "旁边没有 node.exe 时，用的是本程序自己的运行时");
+  // where.exe answers with the long form of a path the temporary folder may have given in its 8.3 form.
+  assert.deepEqual(
+    found.prefix.map((each) => realpathSync.native(each)),
+    [realpathSync.native(script)],
+  );
+
+  const done = await launched([found.program, ...found.prefix, "说这个"]);
+  assert.equal(done.exit, "0\n", done.err);
+  assert.deepEqual(JSON.parse(done.out), ["说这个"]);
+});
+
+test("不是包管理器那种形状的 .cmd 还是「找不到」", ONLY_WINDOWS, () => {
+  // Anything else at all: a shim that runs something of its own first, one whose script isn't there, one that is no
+  // shim. Reading further into such a file is how a lookup would come to run something nobody named.
+  const cases = {
+    "agent-autoloop-fake-other": '@echo off\r\ncall "%dp0%\\setup.cmd" && "%dp0%\\node_modules\\x\\a.js" %*\r\n',
+    "agent-autoloop-fake-gone":
+      '@ECHO off\r\nSET "_prog=%dp0%\\node.exe"\r\n"%_prog%"  "%dp0%\\node_modules\\x\\no-such.js" %*\r\n',
+    "agent-autoloop-fake-plain": "@echo off\r\nstart notepad\r\n",
+  };
+  const realPath = process.env.PATH;
+  try {
+    for (const [name, contents] of Object.entries(cases)) {
+      process.env.PATH = `${shimmed(name, contents)};${realPath}`;
+      assert.throws(() => findProgram(name), /找不到/, name);
+    }
   } finally {
     process.env.PATH = realPath;
   }
