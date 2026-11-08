@@ -94,7 +94,8 @@ export async function reviewSnapshot(bare: string, snapshot: string, main: strin
   const level = paths.some((path) => matches(path, config.review.xhigh)) ? "xhigh" : "high";
   const output = join(snapshot, "review.json");
   const { command } = config.review;
-  const argv = command ?? [findProgram("codex", () => IN_THE_APP), ...codexCommand(output, level)];
+  const reviewer = command ? null : findProgram("codex", () => IN_THE_APP);
+  const argv = command ?? [reviewer!.program, ...reviewer!.prefix, ...codexCommand(output, level)];
   const args = argv.slice(1).map((arg) => arg.replaceAll("{input}", changesFile));
   const child = execFile(argv[0], args, { cwd: snapshot, timeout: 600000, maxBuffer: 8 * 1024 * 1024 });
   child.stdin!.end(prompt);

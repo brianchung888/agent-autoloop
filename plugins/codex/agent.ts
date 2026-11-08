@@ -9,8 +9,9 @@ import { findProgram, tail, type Adapter } from "../../worker/agents.ts";
 const SANDBOX = { read: "read-only", edit: "workspace-write", full: "danger-full-access" };
 /**
  * Where it is when the worker does not share the PATH the person installed it on: inside the desktop app, or in the
- * folders an install of its own uses. Only real executables — a batch shim such as the one npm writes cannot be started
- * as a program, so naming one here would only trade a clear "not installed" for an obscure failure at the first turn.
+ * folders an install of its own uses. Only real executables — a batch shim cannot be started as a program, and a path
+ * named here is taken as one. (A shim of a package manager's own shape is read on PATH instead — worker/agents.ts
+ * findProgram — and comes back as the program it names, with the script it hands it.)
  */
 function elsewhere() {
   if (process.platform !== "win32")
@@ -31,7 +32,8 @@ export const IN_THE_APP = elsewhere();
 
 export default {
   command: (turn) => [
-    findProgram("codex", () => IN_THE_APP),
+    // A shim's `prefix` is the script its program has to be given first; for a program of its own there is none.
+    ...((found) => [found.program, ...found.prefix])(findProgram("codex", () => IN_THE_APP)),
     "exec",
     ...(turn.resume ? ["resume"] : []),
     "--json",
@@ -90,11 +92,12 @@ export default {
   link: (session) => `codex://threads/${session}`,
   check() {
     try {
-      execFileSync(
-        findProgram("codex", () => IN_THE_APP),
-        ["login", "status"],
-        { encoding: "utf8", timeout: 20_000, stdio: ["ignore", "pipe", "pipe"] },
-      );
+      const { program, prefix } = findProgram("codex", () => IN_THE_APP);
+      execFileSync(program, [...prefix, "login", "status"], {
+        encoding: "utf8",
+        timeout: 20_000,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
       return null;
     } catch (error) {
       return t("codex.notLoggedIn", { why: (error as Error).message.split("\n")[0] });

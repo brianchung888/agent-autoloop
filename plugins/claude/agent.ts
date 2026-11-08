@@ -17,8 +17,8 @@ const INSIDE_BUILD = WINDOWS ? "claude.exe" : "claude.app/Contents/MacOS/claude"
 
 /**
  * Where an install of its own puts it, for those whose PATH the worker does not share. Only real executables: a batch
- * shim such as the one npm writes cannot be started as a program, so naming one here would only trade a clear "not
- * installed" for an obscure failure at the first turn.
+ * shim cannot be started as a program, and a path named here is taken as one. (A shim of a package manager's own shape
+ * is read on PATH instead — worker/agents.ts findProgram — and comes back as the program it names.)
  */
 function installedSeparately() {
   if (!WINDOWS) return [];
@@ -49,7 +49,8 @@ export function inTheApp() {
 
 export default {
   command: (turn) => [
-    findProgram("claude", inTheApp),
+    // A shim's `prefix` is the script its program has to be given first; for a program of its own there is none.
+    ...((found) => [found.program, ...found.prefix])(findProgram("claude", inTheApp)),
     "-p",
     turn.prompt,
     ...(turn.resume ? ["--resume", turn.resume] : ["--session-id", turn.session]),
@@ -113,8 +114,10 @@ export default {
   link: (session) => `claude://resume?session=${session}`,
   check() {
     try {
-      const program = findProgram("claude", inTheApp);
-      const status = JSON.parse(execFileSync(program, ["auth", "status"], { encoding: "utf8", timeout: 20_000 }));
+      const { program, prefix } = findProgram("claude", inTheApp);
+      const status = JSON.parse(
+        execFileSync(program, [...prefix, "auth", "status"], { encoding: "utf8", timeout: 20_000 }),
+      );
       return status.loggedIn ? null : t("claude.notLoggedIn");
     } catch (error) {
       return t("claude.unusable", { why: (error as Error).message.split("\n")[0] });

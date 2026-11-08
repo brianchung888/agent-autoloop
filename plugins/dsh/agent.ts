@@ -30,7 +30,7 @@ function stepUsage(reported: any): Usage | undefined {
 
 export default {
   command: (turn) => [
-    findProgram("dsh"),
+    ...((found) => [found.program, ...found.prefix])(findProgram("dsh")),
     "headless",
     "--json",
     "--permission-mode",
@@ -81,7 +81,8 @@ export default {
   },
   check() {
     try {
-      const help = execFileSync(findProgram("dsh"), ["headless", "--help"], {
+      const dsh = findProgram("dsh");
+      const help = execFileSync(dsh.program, [...dsh.prefix, "headless", "--help"], {
         encoding: "utf8",
         timeout: 20_000,
         stdio: ["ignore", "pipe", "pipe"],

@@ -78,10 +78,11 @@ try {
       JSON.stringify({ url: `http://127.0.0.1:${server.address().port}`, owner: hub.addKey("owner", "smoke") }),
     );
     const { findProgram } = await import("../worker/agents.ts");
-    const codex = findProgram("codex", () => [
+    const { program: codex, prefix } = findProgram("codex", () => [
       "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
     ]);
     const out = await execute(codex, [
+      ...prefix,
       "exec",
       "--ignore-user-config",
       "--ephemeral",

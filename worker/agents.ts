@@ -3,7 +3,7 @@
 // then the ones that ship. Anything with a print mode needs no file at all: `use: "command"` with a command line in
 // rules.json.
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { t } from "../host/i18n.ts";
 import { loadPlugin } from "../host/plugins.ts";
@@ -65,16 +65,70 @@ export async function adapterFor(use: string): Promise<Adapter> {
   return adapter;
 }
 
-const found = new Map<string, string | null>();
+/**
+ * What to start, and the words that have to come before the ones the caller wants. `prefix` is empty for a program that
+ * is a program; it carries the script when what was found on PATH is a batch shim that only starts one (a package
+ * manager's global install writes such a shim instead of an executable).
+ */
+export type Program = { program: string; prefix: string[] };
+
+const found = new Map<string, Program | null>();
+
+/** The files in a shim's line, with the two names such a shim defines for itself filled in. */
+const QUOTED = /"([^"\r\n]*)"/g;
+const SCRIPT = /\.(js|cjs|mjs)$/i;
+const EXECUTABLE = /\.(exe|com)$/i;
+
+/**
+ * What a batch shim on PATH actually starts, or nothing when it is not one of the shapes below. Only the fixed shape a
+ * package manager writes for a global install is read — never anything else in the file, and never by running it:
+ *
+ *     "%dp0%\<...>\thing.exe"  %*                        a real program beside the shim
+ *     "%_prog%"  "%dp0%\<...>\thing.js" %*               node, named by the shim's own IF/ELSE, and a script
+ *
+ * `%dp0%` is the shim's own folder; `%_prog%` is the node beside it if there is one, else whatever `node` on PATH would
+ * be — and for that this program's own runtime stands in, since it is a node and is certainly there. Anything left
+ * unexpanded, any file that isn't there, or any other shape at all: nothing, so the caller goes on looking elsewhere.
+ */
+function whatTheShimStarts(shim: string): Program | null {
+  let text: string;
+  try {
+    if (statSync(shim).size > 8_192) return null;
+    text = readFileSync(shim, "utf8");
+  } catch {
+    return null;
+  }
+  const line = text
+    .split(/\r?\n/)
+    .filter((each) => each.includes("%*"))
+    .at(-1);
+  if (!line) return null;
+  const folder = path.dirname(shim);
+  const beside = path.join(folder, "node.exe");
+  const names: Record<string, string> = {
+    "%dp0%": `${folder}${path.sep}`,
+    "%_prog%": text.includes('SET "_prog=%dp0%\\node.exe"') && existsSync(beside) ? beside : process.execPath,
+  };
+  const words = [...line.matchAll(QUOTED)]
+    .map(([, word]) => word!)
+    .map((word) => path.normalize(word.replace(/%dp0%|%_prog%/g, (found) => names[found]!)));
+  if (!words.length || words.length > 2 || words.some((word) => word.includes("%"))) return null;
+  const [first, second] = words;
+  // A program and nothing else; or node and the one script it is given.
+  if (words.length === 1 && EXECUTABLE.test(first!)) return existsSync(first!) ? { program: first!, prefix: [] } : null;
+  if (words.length === 2 && first === names["%_prog%"] && SCRIPT.test(second!))
+    return existsSync(second!) ? { program: first!, prefix: [second!] } : null;
+  return null;
+}
 
 /**
  * Where a program is: on the login shell's PATH (launchd and systemd start with a bare one), or in one of these. A name
  * is only ever an argument to the shell, never part of the script it runs. Windows has no login shell and no `command
  * -v`: a scheduled task already starts with its owner's environment, so its own PATH is the one to ask about.
  */
-export function findProgram(name: string, elsewhere: () => string[] = () => []) {
+export function findProgram(name: string, elsewhere: () => string[] = () => []): Program {
   if (!found.has(name)) {
-    let onPath: string | null = null;
+    let onPath: Program | null = null;
     try {
       if (process.platform === "win32") {
         // where.exe prints every match, nearest on PATH first, which is the one that would run.
@@ -88,11 +142,19 @@ export function findProgram(name: string, elsewhere: () => string[] = () => []) 
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean);
-        // A .cmd / .bat shim, such as the one npm writes, is a script for the command interpreter and cannot be
-        // started as a program: Windows refuses it outright. So only a real executable counts as being on PATH —
-        // anything else is as good as nothing here, and the places in `elsewhere()` are looked at instead. Taking the
-        // nearest match whatever it is would both shadow those places and hand the launcher a name it can't start.
-        onPath = matches.find((match) => /\.(exe|com)$/i.test(match)) ?? null;
+        // A .cmd / .bat shim is a script for the command interpreter and cannot be started as a program: Windows
+        // refuses it outright. A real executable is therefore what is wanted; failing that, a shim of the one fixed
+        // shape a package manager writes says in so many words what it would have started, and that — the program it
+        // names, with the script it hands it — is as good as having found the program itself. Anything else is as good
+        // as nothing here, and the places in `elsewhere()` are looked at instead: taking the nearest match whatever it
+        // is would both shadow those places and hand the launcher a name it can't start.
+        const real = matches.find((match) => EXECUTABLE.test(match));
+        onPath = real
+          ? { program: real, prefix: [] }
+          : (matches
+              .filter((match) => /\.(cmd|bat)$/i.test(match))
+              .map(whatTheShimStarts)
+              .find(Boolean) ?? null);
       } else {
         const shell = process.env.SHELL ?? "/bin/sh";
         const printed = execFileSync(shell, ["-lc", 'command -v "$1"', "sh", name], {
@@ -100,10 +162,12 @@ export function findProgram(name: string, elsewhere: () => string[] = () => []) 
           timeout: 15_000,
           stdio: ["ignore", "pipe", "ignore"],
         });
-        onPath = printed.trim().split("\n").at(-1) || null;
+        const where = printed.trim().split("\n").at(-1);
+        onPath = where ? { program: where, prefix: [] } : null;
       }
     } catch {}
-    found.set(name, onPath ?? elsewhere().find(existsSync) ?? null);
+    const other = elsewhere().find(existsSync);
+    found.set(name, onPath ?? (other ? { program: other, prefix: [] } : null));
   }
   const program = found.get(name);
   if (!program) throw new Error(t("agents.notFound", { name }));
