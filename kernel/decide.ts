@@ -519,7 +519,7 @@ function nextCard(draft: Draft, channel: string) {
     }
     const attempt = { tries: delivery.tries + 1, first_try_at: firstTry ?? draft.at, not_before: iso(now + MINUTE) };
     put(draft, "deliveries", key, { card_id: card.id, channel, ...attempt });
-    return cardView(card, draft.env, delivery.ref, draft.rules.channels[channel]?.links === true);
+    return cardView(card, draft.env, delivery.ref, draft.rules.channels[channel]?.links === true, draft.lang);
   }
   return null;
 }

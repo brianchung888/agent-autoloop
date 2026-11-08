@@ -491,6 +491,21 @@ test("quiet notices are absent from channel delivery", () => {
   assert.equal(decide(v, { type: "nextCard", args: ["chat"] }, 1000, environment).value, null);
 });
 
+test("an open notice card's lone option follows the lang given to nextCard, not the written-in default", () => {
+  let v = seeded();
+  v = evolve(
+    v,
+    decide(
+      v,
+      { type: "createCard", args: [{ key: "notice", kind: "notice", title: "通知", text: "记录" }] },
+      1000,
+      environment,
+    ).facts,
+  );
+  const { value } = decide(v, { type: "nextCard", args: ["chat"] }, 1000, environment, "zh-TW");
+  assert.deepEqual(value.options, ["已處理"]);
+});
+
 test("a stale writer receives a conflict and cannot change the committed view", async () => {
   const { DatabaseSync } = await import("node:sqlite");
   const { commit, iterateLog } = await import("../kernel/store.ts");
