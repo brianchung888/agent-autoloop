@@ -3,7 +3,7 @@
 import { watch } from "node:fs";
 import { basename, dirname } from "node:path";
 import { RULES_FILE } from "./home.ts";
-import { t } from "./i18n.ts";
+import { lang, t } from "./i18n.ts";
 import { loadPlugin } from "./plugins.ts";
 import * as hub from "./runtime.ts";
 import { AuthError, NotFound } from "../kernel/errors.ts";
@@ -134,6 +134,9 @@ export function makeHandler(commit = "dev") {
     if (file && sameName(file)) fire();
   });
   const handle = createHandler({
+    // The one place this hub is told which of the two it answers in: every door takes it from here, and none asks
+    // the machine itself (tests/purity.test.ts).
+    lang: lang(),
     commit,
     now: Date.now,
     view: hub.getView,

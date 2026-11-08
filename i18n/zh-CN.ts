@@ -78,6 +78,32 @@ export const zhCN = {
   // ---- kernel/store.ts ----
   "kernel.store.logMoved": "日志已变化，请重读后再提交",
 
+  // ---- kernel/http.ts ----
+  "kernel.http.owner": "本人",
+  "kernel.http.worker": "接单程序",
+  "kernel.http.channel": "通道",
+  "kernel.http.source": "来源",
+  "kernel.http.needKey": "要{whom}自己的密钥",
+  "kernel.http.notJson": "不是 JSON",
+  "kernel.http.noSuchCard": "没有这张卡片",
+  "kernel.http.linkExpired":
+    "这个链接过期了。在装它的电脑上运行 agent-autoloop status，还没答的卡片都在那里，可以接着回答",
+  "kernel.http.byLink": "链接",
+  "kernel.http.noWebhook": "这个来源不收 Webhook",
+  "kernel.http.needSourceOrWorker": "要来源或接单程序的密钥",
+  "kernel.http.tellShape": "要有正确的 key 和 text，接单程序还要写 task，text 最多 20000 字；问你的写 task 和 ask",
+  "kernel.http.noSuchTask": "这台接单程序没有这个定时任务",
+  "kernel.http.askShape": "问你的只写 task 和 ask，ask 和回执里的一样：title、text、2 到 5 个 options",
+  "kernel.http.claimShape": "claim 是这次领活的编号，最多 200 字",
+  "kernel.http.keyGone": "密钥已失效",
+  "kernel.http.resolveReason": "写一句处理结果，最多 1000 字",
+  "kernel.http.needVersion": "要说明是哪个版本",
+  "kernel.http.badId": "编号不正确",
+  "kernel.http.badSeq": "日志序号不正确",
+  "kernel.http.badKeyName": "密钥名字不正确",
+  "kernel.http.noSuchPath": "没有这个地址",
+  "kernel.http.tooLarge": "请求最多 1024 KB",
+
   // ---- host/notify.ts ----
   "notify.trouble.win": "桌面通知不可用：Windows 上没有可用的通知程序，卡片会跳过通知",
   "notify.trouble.linux": "桌面通知不可用：这台电脑没有图形会话（DISPLAY 和 WAYLAND_DISPLAY 都没设），卡片会跳过通知",
