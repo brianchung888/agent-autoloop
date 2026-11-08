@@ -4,7 +4,7 @@
 
 ## 安装
 
-支持 macOS、Linux、Windows 11。Windows 是原生安装，不需要 WSL2，但有四处降级，装之前要知道：桌面通知在 Windows 上一律跳过（卡片仍然进 `agent-autoloop status` 和别的通道）；常驻靠计划任务而不是服务管理器，停了之后最多等 5 分钟才会自己回来，加了域的电脑还不让“登录时启动”，登录后也要等最多 5 分钟；文件权限没有 `0700`，改用 `icacls` 锁到当前用户，锁不上时不拦着启动、由 `agent-autoloop doctor` 报一条降级（详见下面）；Agent 的程序得是能启动的东西，`.cmd` / `.bat` 不能当程序启动，不过 npm 全域安装写出来的那两种固定形状的包装脚本会被读出来、解析成它真正要起的东西（一个 `.exe`，或 `node` 加一支 js），所以 npm 装的 `claude` / `codex` 能用；别的形状的 `.cmd` 仍然算没找到，`agent-autoloop init` 会说找不到。另外还有一处 Windows 才有的开销，不是降级但会看得见：有一轮在跑的时候，中台每 30 秒会有一次约 2 秒不应答——这一拍它在走整张进程表，为的是这一轮停下来时找得着孙子进程（POSIX 上是进程组，不需要走），所以这时候 `status` 一类的命令偶尔会慢这么一下。仍然想用 WSL2 的话按 Linux 装，注意系统服务要发行版开着 systemd（`/etc/wsl.conf` 里 `systemd=true`，没开就加 `--no-service`，自己运行 `agent-autoloop up`），没人登录时不启动要 `loginctl enable-linger`，桌面通知也到不了 Windows 桌面，WSL2 本身还要占 1GB 左右内存。
+支持 macOS、Linux、Windows 11。Windows 是原生安装，不需要 WSL2，但有四处降级，装之前要知道：桌面通知在 Windows 上一律跳过（卡片仍然进 `agent-autoloop status` 和别的通道）；常驻靠计划任务而不是服务管理器，停了之后最多等 5 分钟才会自己回来，加了域的电脑还不让“登录时启动”，登录后也要等最多 5 分钟；文件权限没有 `0700`，改用 `icacls` 锁到当前用户，锁不上时不拦着启动、由 `agent-autoloop doctor` 报一条降级（详见下面）；Agent 的程序得是能启动的东西，`.cmd` / `.bat` 不能当程序启动，不过 npm 全域安装写出来的那两种固定形状的包装脚本会被读出来、解析成它真正要起的东西（一个 `.exe`，或 PATH 上的 `node` 加一支 js），所以 npm 装的 `claude` / `codex` 能用；别的形状的 `.cmd` 仍然算没找到，`agent-autoloop init` 会说找不到。另外还有一处 Windows 才有的开销，不是降级但会看得见：有一轮在跑的时候，中台每 30 秒会有一次约 2 秒不应答——这一拍它在走整张进程表，为的是这一轮停下来时找得着孙子进程（POSIX 上是进程组，不需要走），所以这时候 `status` 一类的命令偶尔会慢这么一下。仍然想用 WSL2 的话按 Linux 装，注意系统服务要发行版开着 systemd（`/etc/wsl.conf` 里 `systemd=true`，没开就加 `--no-service`，自己运行 `agent-autoloop up`），没人登录时不启动要 `loginctl enable-linger`，桌面通知也到不了 Windows 桌面，WSL2 本身还要占 1GB 左右内存。
 
 需要 Node.js 24 或更新、Git，以及一个已经登录的命令行 Agent。下载安装脚本在 macOS / Linux 用 curl，Windows 用 PowerShell 自带的 `irm`，两边都不需要额外装东西。
 
