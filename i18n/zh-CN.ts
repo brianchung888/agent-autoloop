@@ -24,6 +24,12 @@ export const zhCN = {
   "kernel.card.chose": "你选了「{option}」",
   "kernel.card.handlingWas": "处理说明：{text}",
 
+  // ---- kernel/query.ts ----
+  "kernel.query.handled": "已处理",
+
+  // ---- kernel/store.ts ----
+  "kernel.store.logMoved": "日志已变化，请重读后再提交",
+
   // ---- host/notify.ts ----
   "notify.trouble.win": "桌面通知不可用：Windows 上没有可用的通知程序，卡片会跳过通知",
   "notify.trouble.linux": "桌面通知不可用：这台电脑没有图形会话（DISPLAY 和 WAYLAND_DISPLAY 都没设），卡片会跳过通知",

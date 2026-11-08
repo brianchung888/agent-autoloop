@@ -180,8 +180,6 @@ const WRITTEN_IN = {
   // 交给 Agent 的提示词和回执协议，不是给人看的界面：第一行结论那两个词（没跑成、没事可做）是被解析的。
   "worker/contract.ts": "这是发给 Agent 的提示词和它答复的协议",
   "plugins/codex/agent.ts": "这一段是发给 Agent 的提示词",
-  // 卡片上那个选项是中台自己给的（kernel/query.ts），中台没有跟着翻，所以这里比的还是它给的那个词。
-  "plugins/webhook/channel.ts": "比的是中台给的选项文字，不是这里说的话",
   // 交付这一套是一份业务配方：它的话发到 GitHub 的提交状态和它自己的审查提示词里，不是这个程序的界面。
   "plugins/delivery": "业务配方，话是发给 GitHub 和审查用的 Agent 的",
 } as const;

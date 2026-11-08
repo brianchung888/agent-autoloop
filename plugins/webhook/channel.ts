@@ -4,7 +4,7 @@
 //                               "body": { "msgtype": "text", "text": { "content": "{text}" } } } }
 import { accepted, payload } from "./templates.ts";
 import type { Card, ChannelContext } from "../../host/channels.ts";
-import { t } from "../../host/i18n.ts";
+import { anyLang, t } from "../../host/i18n.ts";
 
 function fill(template: unknown, text: string): unknown {
   if (typeof template === "string") return template.replaceAll("{text}", () => text);
@@ -28,7 +28,7 @@ function words(card: Card, platform = "") {
     card.kind === "notice" &&
     card.state === "open" &&
     card.options.length === 1 &&
-    card.options[0] === "已处理" &&
+    anyLang("kernel.query.handled").includes(card.options[0]) &&
     card.link
   )
     return [card.title, source, card.text, `[${t("webhook.openCard")}](${card.link})`].filter(Boolean).join("\n\n");

@@ -24,6 +24,12 @@ export const zhTW: Strings = {
   "kernel.card.chose": "你選了「{option}」",
   "kernel.card.handlingWas": "處理說明：{text}",
 
+  // ---- kernel/query.ts ----
+  "kernel.query.handled": "已處理",
+
+  // ---- kernel/store.ts ----
+  "kernel.store.logMoved": "日誌已變化，請重讀後再提交",
+
   // ---- host/notify.ts ----
   "notify.trouble.win": "桌面通知無法使用：Windows 上沒有可用的通知程式，卡片會跳過通知",
   "notify.trouble.linux":

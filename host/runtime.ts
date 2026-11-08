@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { assetText } from "./assets.ts";
 import { HOME, RULES_FILE } from "./home.ts";
-import { t } from "./i18n.ts";
+import { lang, t } from "./i18n.ts";
 import { stateOf as state, viewStatements } from "./state.ts";
 import { cardHash, digest, whose as keyHolder } from "../kernel/credentials.ts";
 import { decide } from "../kernel/decide.ts";
@@ -89,10 +89,15 @@ export const onChange = (listener: Listener) => {
 export function execute(type: string, args: any[], now = Date.now()) {
   let facts: Fact[] = [];
   let value: any;
-  current = commitLatest(db, format, (latest) => {
-    ({ facts, value } = decide(latest, { type, args }, now, environment));
-    return facts;
-  });
+  current = commitLatest(
+    db,
+    format,
+    (latest) => {
+      ({ facts, value } = decide(latest, { type, args }, now, environment));
+      return facts;
+    },
+    lang(),
+  );
   if (facts.length) for (const listener of listeners) listener(type, facts);
   return value;
 }
@@ -149,7 +154,7 @@ export function cardByToken(token: string) {
 }
 
 export const view = (card: Row, ref: string | null = null, links = false) =>
-  query.cardView(card, environment, ref, links);
+  query.cardView(card, environment, ref, links, lang());
 export const unrouted = (limit = 20) => query.unrouted(getView(), limit);
 export const stateOf = (now = Date.now(), before?: number) =>
   state(now, before, query.configuration(getView()), { all, view, unrouted });
