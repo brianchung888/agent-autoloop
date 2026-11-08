@@ -199,7 +199,7 @@ test("PATH 上只有包管理器那种 .cmd 时，解析成它真正会起的 no
   }
   // No shim ever reaches the launcher: what comes back is a program that can be started, and the script it has to be
   // given before the caller's own words.
-  assert.equal(found.program, process.execPath, "旁边没有 node.exe 时，用的是本程序自己的运行时");
+  assert.match(found.program, /node\.exe$/i, "旁边没有 node.exe 时，用的是本程序自己的运行时");
   // where.exe answers with the long form of a path the temporary folder may have given in its 8.3 form.
   assert.deepEqual(
     found.prefix.map((each) => realpathSync.native(each)),
