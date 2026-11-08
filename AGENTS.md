@@ -58,14 +58,16 @@ PR 一开出来就开审查，几个 PR 同时审，不排队。审查报的问�
 
 ## 内核边界
 
-`decide(view, input, now, environment)` 只能产生事实；判断和提交在同一事务中，视图按索引读取，判断只保留这次的改动；`evolve` 独占持久投影写入，`commit` 独占日志追加。内核不读时钟、不取随机数、不读环境或文件。时间、规则变更、主密钥和请求从外壳传入；`host/http.ts` 只把 Node 请求变成 Request。视图随时从日志重建，不能绕过日志改业务数据。规则版本、回答、回执都能用 `why` 和 `/v1/stream` 读到。
+`decide(view, input, now, environment, lang)` 只能产生事实；判断和提交在同一事务中，视图按索引读取，判断只保留这次的改动；`evolve` 独占持久投影写入，`commit` 独占日志追加。内核不读时钟、不取随机数、不读环境或文件。时间、规则变更、主密钥、说哪种中文和请求从外壳传入；`host/http.ts` 只把 Node 请求变成 Request。视图随时从日志重建，不能绕过日志改业务数据。规则版本、回答、回执都能用 `why` 和 `/v1/stream` 读到。
 
 ## 说话的边界
 
-- 给人看的每一句话都在 `i18n/zh-CN.ts`（key 的事实来源，就是这个程序原来那些字）和 `i18n/zh-TW.ts`（正體，台湾用语）里，代码只写 `t("key", { 名字 })`（`host/i18n.ts`）。两张表的 key 由类型钉住：少一个多一个都过不了 typecheck。
+- 给人看的每一句话都在 `i18n/zh-CN.ts`（key 的事实来源，就是这个程序原来那些字）和 `i18n/zh-TW.ts`（正體，台湾用语）里。两张表的 key 由类型钉住：少一个多一个都过不了 typecheck。
+- 说一句话分两半：取词在 `i18n/t.ts` 的 `say(lang, key, { 名字 })`——纯函数，只 import 两张表，不碰 fs、env、Date、process；决定说哪一种在 `host/i18n.ts`，它包着前者，外壳用的那一个函数是 `t("key", { 名字 })`。
 - 语言的顺序：`AGENT_AUTOLOOP_LANG` → `config.json` 的 `lang`（`agent-autoloop lang` 和 `init --lang` 写它）→ 环境的 `LC_ALL` / `LC_MESSAGES` / `LANG` → 默认 `zh-TW`。一个进程里只问一次。
-- `cli/`、`host/`、`worker/`、`plugins/` 里不许再出现写死的汉字，`tests/i18n.test.ts` 扫这件事；标点（、：（））两种中文一样写，不算。故意留在原地的那几个文件写在那份测试的 `WRITTEN_IN` 里，每一条都要说清为什么。
-- `kernel/` 和 `protocol/` 还没跟上：卡片文字、cron 的说法和协议错误都还是简体。要跟上得让语言作为资料传进 `decide()`，不能让内核去读环境——`tests/purity.test.ts` 钉的就是这件事。
+- `kernel/` 不许 import `host/i18n.ts`，也不许问环境：**语言是外壳传进去的一个值**，跟时间和熵一样（`tests/purity.test.ts` 第七条）。`decide(view, input, now, env, lang)`、`createHandler({ lang, … })`、`describeCron(text, lang)`、`cardPage(card, lang)`、`wordsPage(words, lang)`、`cardView(card, env, ref, links, lang)`、`commit`/`commitLatest(…, lang)` 都收它；调用端是 `host/runtime.ts`、`host/server.ts`、`host/state.ts`、`cli/explain.ts`，一律传 `lang()`。少传就是 `WRITTEN_LANG`（`zh-CN`，程序原来那些字），不是去猜。卡片网页的 `<html lang>` 跟着这个值。
+- `kernel/`、`cli/`、`host/`、`worker/`、`plugins/` 里不许再出现写死的汉字，`tests/i18n.test.ts` 扫这件事；标点（、：（））两种中文一样写，不算。故意留在原地的那几个文件写在那份测试的 `WRITTEN_IN` 里，每一条都要说清为什么。
+- `protocol/` 还没跟上：`check`、`rules explain`、`/v1/events` 的验证错误还是简体。它不受 purity 第七条管（只扫 `kernel/*.ts`），而且 `protocol/schema.ts` 已经 import 了 `host/assets.ts`，所以它直接用 `t()` 就行，不必像内核那样传参。
 - 写下来之后再读回去的字（`rules.json` 里的规则名、卡片标题），用 `anyLang()` 比，不要用今天这一种话去比。
 - 安装脚本跑在程序还不存在的时候，所以 `install.sh` 和 `install.ps1` 自己带着两种说法（`say` / `Say`）。
 
