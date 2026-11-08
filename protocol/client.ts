@@ -1,5 +1,7 @@
 // A hub, from the outside: how a worker, a channel or the command line reaches it. Nothing here is more than an HTTP
 // request, which is the whole of what it takes to plug into the hub.
+import { t } from "../host/i18n.ts";
+
 export class HubError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -26,7 +28,8 @@ export function hubClient(url: string, key: string) {
     try {
       data = text ? JSON.parse(text) : null;
     } catch {}
-    if (!response.ok) throw new HubError(response.status, data?.error ?? `中台返回 ${response.status}`);
+    if (!response.ok)
+      throw new HubError(response.status, data?.error ?? t("protocol.client.status", { status: response.status }));
     return data;
   }
   return {

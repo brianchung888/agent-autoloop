@@ -4,6 +4,7 @@
 // it inside the executable instead, and this module is read at import time — so a build that could not find it would
 // not start at all. That reader installs nothing either; it asks the runtime's own `node:sea` and otherwise the disk.
 import { assetText } from "../host/assets.ts";
+import { t } from "../host/i18n.ts";
 import { dateTime } from "./validate.ts";
 
 export const schemas = JSON.parse(assetText("protocol/schema.json"));
@@ -56,6 +57,6 @@ function visit(schema: any, item: any, path: string): string[] {
 }
 
 export function checkSchema(name: string, value: unknown): string[] {
-  if (!Object.hasOwn(schemas.$defs, name)) throw new Error(`没有这个协议类型：${name}`);
+  if (!Object.hasOwn(schemas.$defs, name)) throw new Error(t("protocol.schema.unknownType", { name }));
   return visit(schemas.$defs[name], value, name);
 }

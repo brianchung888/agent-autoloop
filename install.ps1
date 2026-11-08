@@ -71,7 +71,10 @@ function RunGit {
   } finally {
     $ErrorActionPreference = $before
   }
-  if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') 没成功：$(@($output) -join [Environment]::NewLine)" }
+  if ($LASTEXITCODE -ne 0) {
+    $trouble = @($output) -join [Environment]::NewLine
+    throw (Say "git $($args -join ' ') 沒成功：$trouble" "git $($args -join ' ') 没成功：$trouble")
+  }
   return $output
 }
 

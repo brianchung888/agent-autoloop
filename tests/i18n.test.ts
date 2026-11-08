@@ -197,9 +197,9 @@ function codeOf(text: string) {
 
 const HAN = /\p{Script=Han}/u;
 
-test("cli、host、worker、plugins 里没有绕过 t() 的汉字", () => {
+test("cli、host、protocol、worker、plugins 里没有绕过 t() 的汉字", () => {
   const bypassing: string[] = [];
-  for (const folder of ["cli", "host", "worker", "plugins"]) {
+  for (const folder of ["cli", "host", "protocol", "worker", "plugins"]) {
     for (const name of readdirSync(join(root, folder), { recursive: true }).map(String)) {
       if (!name.endsWith(".ts")) continue;
       const file = `${folder}/${name.replaceAll("\\", "/")}`;
