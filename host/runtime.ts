@@ -93,7 +93,7 @@ export function execute(type: string, args: any[], now = Date.now()) {
     db,
     format,
     (latest) => {
-      ({ facts, value } = decide(latest, { type, args }, now, environment));
+      ({ facts, value } = decide(latest, { type, args }, now, environment, lang()));
       return facts;
     },
     lang(),

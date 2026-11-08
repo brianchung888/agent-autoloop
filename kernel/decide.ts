@@ -30,6 +30,7 @@ import {
   type Rejected,
   type Result,
 } from "../protocol/validate.ts";
+import { say, WRITTEN_LANG, type Lang, type Params } from "../i18n/t.ts";
 
 export type Input = { type: string; args: any[] };
 
@@ -63,15 +64,24 @@ const DEFAULTS: Partial<Record<Table, Row>> = {
   deliveries: NOT_DELIVERED,
 };
 
-type Given = { type: string; seq: number; now: number; at: string; env: Environment; rules: Rules };
+type Given = { type: string; seq: number; now: number; at: string; env: Environment; rules: Rules; lang: Lang };
 /** One input being decided: what holds throughout, and the view with its changes so far. */
 type Draft = Given & { view: View; changes: Change[] };
 
-export function decide(view: View, input: Input, now: number, env: Environment): { facts: Fact[]; value: any } {
+/** What this decision says, in the language it was asked to say it in: which one that is came in, like the clock. */
+const words = ({ lang }: Draft, key: Parameters<typeof say>[1], params?: Params) => say(lang, key, params);
+
+export function decide(
+  view: View,
+  input: Input,
+  now: number,
+  env: Environment,
+  lang: Lang = WRITTEN_LANG,
+): { facts: Fact[]; value: any } {
   const { type, args } = input;
-  if (!Object.hasOwn(HANDLERS, type)) throw new InputError(`不认识的输入：${type}`);
+  if (!Object.hasOwn(HANDLERS, type)) throw new InputError(say(lang, "kernel.decide.unknownInput", { type }));
   const rules = configuration(view);
-  const draft: Draft = { view: view.fork(), seq: view.seq + 1, type, now, at: iso(now), env, rules, changes: [] };
+  const draft: Draft = { view: view.fork(), seq: view.seq + 1, type, now, at: iso(now), env, rules, lang, changes: [] };
   const value = HANDLERS[type](draft, ...args);
   // With nothing changed nothing new can come due, and what only the clock changes has a deadline of its own to bring a tick.
   if (!draft.changes.length && type !== "tick") return { facts: [], value };
@@ -151,7 +161,7 @@ const closeStopped = (draft: Draft, run: number, result: string) =>
   closeOpen(draft, (key) => key === `run:${run}:failing` || key === `run:${run}:unknown`, result);
 
 const closeOffline = (draft: Draft, worker: string) =>
-  closeOpen(draft, (key) => key.startsWith(`worker:${worker}:offline:`), "连上了");
+  closeOpen(draft, (key) => key.startsWith(`worker:${worker}:offline:`), words(draft, "kernel.decide.backOnline"));
 
 /** Whether a new stamp would tell nothing this one doesn't. One in the future means a clock was set back: it gets redone. */
 function justSeen({ now }: Draft, row?: Row) {
@@ -219,8 +229,8 @@ function ingest(draft: Draft, source: string, given: unknown) {
   const routed = matched.map((rule) => rule.name);
   const id = recordEvent(draft, source, event, routed);
   if (tooDeep) {
-    const words = `同一条处理链已超过 ${MAX_HOPS} 层，后续事件已记录，没有继续派发。`;
-    notify(draft, `hops:${source}:${event.id}`, "事件循环已停止", words, { once: true });
+    const said = words(draft, "kernel.decide.tooDeep", { hops: MAX_HOPS });
+    notify(draft, `hops:${source}:${event.id}`, words(draft, "kernel.decide.loopStopped"), said, { once: true });
   }
   for (const rule of matched) enqueue(draft, rule, id, rule.parallel ? event.subject : "");
   return { event: id, duplicate: false, routed };
@@ -229,7 +239,9 @@ function ingest(draft: Draft, source: string, given: unknown) {
 function heldRun(draft: Draft, id: number, token: string, states: string[]) {
   const run = draft.view.get("runs", id);
   const issued = run && states.includes(run.state) && run.issued !== null;
-  if (!issued || credential(draft.env, "run", id, run.issued) !== token) throw new AuthError("这件活不归这个令牌");
+  if (!issued || credential(draft.env, "run", id, run.issued) !== token) {
+    throw new AuthError(words(draft, "kernel.decide.notYourRun"));
+  }
   return run;
 }
 
@@ -257,8 +269,8 @@ function sweep(draft: Draft) {
       for (const run of rows(draft.view, "runs", { state: "claimed" }).filter(inDoubt)) {
         put(draft, "runs", run.id, { state: "unknown" });
         const agent = configuration(draft.view, run.rules_version).agents[run.agent].name;
-        const words = `交给 ${agent} 后超过 5 分钟没有回音，不确定做没做完；后续新任务照常处理。`;
-        notify(draft, `run:${run.id}:unknown`, run.rule, words, threadOf(run));
+        const said = words(draft, "kernel.decide.runInDoubt", { agent });
+        notify(draft, `run:${run.id}:unknown`, run.rule, said, threadOf(run));
       }
     }
     const waiting = waitingOn(draft.view, worker, now);
@@ -268,11 +280,11 @@ function sweep(draft: Draft) {
     if (since <= OFFLINE_AFTER || told) continue;
     const minutes = Math.floor(since / MINUTE);
     const neverSeen = lastSeen === undefined;
-    const situation = neverSeen
-      ? `${worker} 一直没连上中台，有 ${waiting.length} 件任务等了 ${minutes} 分钟没人接`
-      : `${worker} 已经 ${minutes} 分钟没连上中台，有 ${waiting.length} 件任务在排队或在跑`;
-    const check = neverSeen ? "有没有开机联网" : "是不是关机、休眠或断网了";
-    notify(draft, key, "接单程序没连上", `${situation}（请看一眼那台电脑${check}）。`);
+    const which = neverSeen ? "kernel.decide.workerNeverSeen" : "kernel.decide.workerSilent";
+    const situation = words(draft, which, { worker, waiting: waiting.length, minutes });
+    const check = words(draft, neverSeen ? "kernel.decide.checkPower" : "kernel.decide.checkOffline");
+    const title = words(draft, "kernel.decide.workerOffline");
+    notify(draft, key, title, words(draft, "kernel.decide.workerOfflineWords", { situation, check }));
   }
 }
 
@@ -309,9 +321,9 @@ function stopRun(draft: Draft, run: Row, why: string, summary: string, words: st
   notify(draft, `run:${run.id}:${why}`, run.rule, words, threadOf(run));
 }
 
-const ruleGone = (run: Row): [string, string] => [
-  `规则「${run.rule}」不在了，不再派发`,
-  `规则「${run.rule}」不在了（删掉或改名了），排着的这一轮不再派发。还要做的话重新触发这件事。`,
+const ruleGone = (draft: Draft, run: Row): [string, string] => [
+  words(draft, "kernel.decide.ruleGone", { rule: run.rule }),
+  words(draft, "kernel.decide.ruleGoneWords", { rule: run.rule }),
 ];
 
 /** A run that didn't get through waits to try again, and takes along whatever came in for the same thing meanwhile. */
@@ -319,25 +331,27 @@ function retryLater(draft: Draft, run: Row, result: Result) {
   const { id } = run;
   const attempts = run.attempts + 1;
   const notBefore = draft.now + Math.min(5 * MINUTE * 2 ** (attempts - 1), 60 * MINUTE);
-  const error = (result.error ?? "").trim().replace(/[。.]+$/, "") || "没说原因";
+  const error = (result.error ?? "").trim().replace(/[。.]+$/, "") || words(draft, "kernel.decide.noReason");
   const unclaimed = nulls("claim", "claimed_at", "seen_at", "cancel_at");
   const rejected: Rejected[] = [];
   for (const what of ["ask", "resolve", "later", "events"] as const) {
-    for (const _ of result[what] ?? []) rejected.push({ what, reason: "没跑成的一轮只能发通知" });
+    for (const _ of result[what] ?? []) {
+      rejected.push({ what, reason: words(draft, "kernel.decide.onlyNoticeWhenFailed") });
+    }
   }
   for (const notice of result.notice ?? []) cardFromReceipt(draft, run, "notice", notice);
   const failure = { attempts, error, ...unclaimed };
   if (!ruleNamed(draft, run.rule)) {
     put(draft, "runs", id, failure);
-    stopRun(draft, run, "rule-gone", ...ruleGone(run));
+    stopRun(draft, run, "rule-gone", ...ruleGone(draft, run));
     return rejected;
   }
   if (attempts >= MAX_ATTEMPTS) {
     // Runs queued for this thread stay apart: they came in since, and get their own count and their own go.
-    const summary = `连续 ${MAX_ATTEMPTS} 次没跑成，不再自动重试`;
-    const words = `连续 ${MAX_ATTEMPTS} 次自动处理没跑完（卡在：${error}），不再自动重试。解决后重新触发这件事，它会从头开始。`;
+    const summary = words(draft, "kernel.decide.gaveUp", { tries: MAX_ATTEMPTS });
+    const said = words(draft, "kernel.decide.gaveUpWords", { tries: MAX_ATTEMPTS, error });
     put(draft, "runs", id, failure);
-    stopRun(draft, run, "stopped", summary, words);
+    stopRun(draft, run, "stopped", summary, said);
     return rejected;
   }
   put(draft, "runs", id, { state: "queued", not_before: iso(notBefore), ...failure });
@@ -352,9 +366,10 @@ function retryLater(draft: Draft, run: Row, result: Result) {
   }
   if (!result.notice?.some((notice) => !notice.fyi) && attempts === 3) {
     const clock = { timeZone: draft.rules.timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
-    const time = new Intl.DateTimeFormat("zh-CN", clock).format(notBefore);
-    const words = `连续 3 次自动处理没跑完（卡在：${error}），${time} 会自动再试。`;
-    notify(draft, `run:${id}:failing`, run.rule, words, threadOf(run));
+    // The locale only shapes the digits here (h23, two and two), which both of these two write the same way.
+    const time = new Intl.DateTimeFormat(draft.lang, clock).format(notBefore);
+    const said = words(draft, "kernel.decide.failingWords", { error, time });
+    notify(draft, `run:${id}:failing`, run.rule, said, threadOf(run));
   }
   assignQueued(draft, draft.view.get("runs", id)!);
   return rejected;
@@ -381,16 +396,16 @@ function applyReceipt(draft: Draft, run: Row, result: Result) {
   const summary = result.summary ?? "";
   const rejected: Rejected[] = [];
   put(draft, "runs", id, { state: result.outcome, finished_at: draft.at, summary, error: null, cancel_at: null });
-  closeOpen(draft, (key) => key === `run:${id}:failing`, "后来跑成了");
-  closeOpen(draft, (key) => key === `run:${id}:unknown`, "结果回来了");
+  closeOpen(draft, (key) => key === `run:${id}:failing`, words(draft, "kernel.decide.laterRan"));
+  closeOpen(draft, (key) => key === `run:${id}:unknown`, words(draft, "kernel.decide.resultCameBack"));
   const eventIds = eventsOf(draft.view, id).map((event) => event.id);
   for (const card of rows(draft.view, "cards", { answer_event: eventIds, state: "decided" })) {
     put(draft, "cards", card.id, { state: "done", result: summary, closed_at: draft.at, version: card.version + 1 });
   }
   for (const item of result.resolve ?? []) {
     const card = openInScope(draft.view, run).find((card) => card.id === item.card);
-    if (card) closeCard(draft, card, item.reason.trim(), `第 ${id} 轮`);
-    else rejected.push({ card: item.card, reason: "不在本轮核对范围" });
+    if (card) closeCard(draft, card, item.reason.trim(), words(draft, "kernel.decide.byRound", { id }));
+    else rejected.push({ card: item.card, reason: words(draft, "kernel.decide.outOfScope") });
   }
   for (const ask of result.ask ?? []) cardFromReceipt(draft, run, "ask", ask);
   for (const notice of result.notice ?? []) cardFromReceipt(draft, run, "notice", notice);
@@ -402,7 +417,10 @@ function applyReceipt(draft: Draft, run: Row, result: Result) {
   for (const event of result.events ?? []) {
     if (rule?.emits && typeMatches(rule.emits.types, event.type)) {
       ingest(draft, rule.emits.source, { ...event, hops: hopsOf(draft, run) + 1 });
-    } else rejected.push({ what: "events", reason: `规则「${run.rule}」没有写可以发 ${event.type}` });
+    } else {
+      const reason = words(draft, "kernel.decide.cannotEmit", { rule: run.rule, type: event.type });
+      rejected.push({ what: "events", reason });
+    }
   }
   return rejected;
 }
@@ -412,7 +430,7 @@ function finish(draft: Draft, id: number, token: string, given: unknown) {
   const prior = draft.view.get("runs", id);
   // The same execution handing in again means the answer got lost: it gets the same answer, and nothing happens twice.
   if (prior && prior.last_issued !== null && credential(draft.env, "run", id, prior.last_issued) === token) {
-    if (prior.last_result !== hash) throw new Conflict("这一次执行已经交过不一样的结果");
+    if (prior.last_result !== hash) throw new Conflict(words(draft, "kernel.decide.handedInOther"));
     return { rejected: JSON.parse(prior.last_answer ?? "[]"), duplicate: true };
   }
   const run = heldRun(draft, id, token, ["claimed", "unknown"]);
@@ -431,7 +449,7 @@ function finish(draft: Draft, id: number, token: string, given: unknown) {
       summary: result.summary ?? "",
       cancel_at: null,
     });
-    closeStopped(draft, id, "已停止");
+    closeStopped(draft, id, words(draft, "kernel.decide.stopped"));
   } else if (result.outcome === "failed") rejected = retryLater(draft, run, result);
   else rejected = applyReceipt(draft, run, result);
   put(draft, "runs", id, { last_answer: JSON.stringify(rejected) });
@@ -440,31 +458,39 @@ function finish(draft: Draft, id: number, token: string, given: unknown) {
 
 function answer(draft: Draft, id: number, given: Row) {
   const card = draft.view.get("cards", id);
-  if (!card) throw new NotFound("没有这张卡片");
+  if (!card) throw new NotFound(words(draft, "kernel.decide.noSuchCard"));
   if (given.channel !== undefined) {
     const allowed = draft.rules.channels[given.channel]?.answerers;
-    if (allowed && !allowed.includes(given.by ?? "")) throw new AuthError("这个人不能回答这张卡片");
+    if (allowed && !allowed.includes(given.by ?? "")) throw new AuthError(words(draft, "kernel.decide.notYourCard"));
     const delivery = draft.view.get("deliveries", `${id}:${given.channel}`);
-    if (!delivery?.ref || delivery.ref !== given.ref) throw new AuthError("不是发出去的那条消息");
+    if (!delivery?.ref || delivery.ref !== given.ref) {
+      throw new AuthError(words(draft, "kernel.decide.notThatMessage"));
+    }
   }
   if (card.state !== "open") return { changed: false, state: card.state };
   if (given.by !== undefined && (typeof given.by !== "string" || [...given.by].length > ANSWER_BY)) {
-    throw new InputError(`回答人最多 ${ANSWER_BY} 字`);
+    throw new InputError(words(draft, "kernel.decide.byTooLong", { most: ANSWER_BY }));
   }
   if (given.ref !== undefined && (typeof given.ref !== "string" || [...given.ref].length > ANSWER_REF)) {
-    throw new InputError(`消息编号最多 ${ANSWER_REF} 字`);
+    throw new InputError(words(draft, "kernel.decide.refTooLong", { most: ANSWER_REF }));
   }
-  const words = card.kind === "notice" ? "处理说明" : "回答";
-  if (given.text !== undefined && typeof given.text !== "string") throw new InputError(`${words}要是文字`);
+  const what = words(draft, card.kind === "notice" ? "kernel.decide.handlingNote" : "kernel.decide.answer");
+  if (given.text !== undefined && typeof given.text !== "string") {
+    throw new InputError(words(draft, "kernel.decide.mustBeText", { what }));
+  }
   const text = given.text?.trim() || null;
-  if (text !== null && [...text].length > ANSWER_TEXT) throw new InputError(`${words}最多 ${ANSWER_TEXT} 字`);
+  if (text !== null && [...text].length > ANSWER_TEXT) {
+    throw new InputError(words(draft, "kernel.decide.textTooLong", { what, most: ANSWER_TEXT }));
+  }
   if (card.kind === "notice") {
-    closeCard(draft, card, "已处理", given.by ?? null, text);
+    closeCard(draft, card, words(draft, "kernel.decide.handled"), given.by ?? null, text);
     return { changed: true, state: "closed" };
   }
   const optionCount = JSON.parse(card.options).length;
   const inRange = Number.isInteger(given.choice) && given.choice >= 0 && given.choice < optionCount;
-  if (given.choice === undefined ? !text : !inRange) throw new InputError("没有这个选项");
+  if (given.choice === undefined ? !text : !inRange) {
+    throw new InputError(words(draft, "kernel.decide.noSuchOption"));
+  }
   const rule = card.rule ? ruleNamed(draft, card.rule) : undefined;
   const { lane: subject, title: summary, hops = 0 } = card;
   const event = { id: `card:${id}`, type: "card.answered", subject, summary, hops };
@@ -536,11 +562,12 @@ const HANDLERS: Record<string, (draft: Draft, ...args: any[]) => unknown> = {
     put(draft, "config", "rules", { value: rules, version: draft.seq });
     for (const run of rows(draft.view, "runs", { state: "queued" })) {
       if (ruleOf(rules, run.rule)) assignQueued(draft, run);
-      else stopRun(draft, run, "rule-gone", ...ruleGone(run));
+      else stopRun(draft, run, "rule-gone", ...ruleGone(draft, run));
     }
-    closeOpen(draft, (key) => key.startsWith("rules:"), "改好了");
+    closeOpen(draft, (key) => key.startsWith("rules:"), words(draft, "kernel.decide.rulesFixed"));
   },
-  rulesError: (draft, problem) => notify(draft, `rules:${digest(problem)}`, "rules.json 写错了，还在用旧规则", problem),
+  rulesError: (draft, problem) =>
+    notify(draft, `rules:${digest(problem)}`, words(draft, "kernel.decide.rulesBroken"), problem),
   key: (draft, kind, name, hash) =>
     void put(draft, "keys", `${kind}:${name}`, { kind, name, hash, created_at: draft.at }),
   removeKey: (draft, kind, name) => {
@@ -553,7 +580,7 @@ const HANDLERS: Record<string, (draft: Draft, ...args: any[]) => unknown> = {
   /** A task elsewhere asks you; your answer goes on like a round of a rule, where its cwd says. */
   ask(draft, name, given) {
     const task = draft.rules.elsewhere.find((task) => task.name === name)!;
-    if (!task.cwd) throw new InputError(`定时任务「${name}」没写 cwd，回答了没人接着做：只能 tell`);
+    if (!task.cwd) throw new InputError(words(draft, "kernel.decide.elsewhereNoCwd", { name }));
     const { key, ...question } = given;
     const matter = key ?? digest(`${question.title}\n${question.text}`).slice(0, 32);
     const thread = { rule: name, lane: "", grp: name, source: task.source, agent: task.to };
@@ -590,7 +617,7 @@ const HANDLERS: Record<string, (draft: Draft, ...args: any[]) => unknown> = {
     const { session, link } = given ?? {};
     for (const [field, value] of Object.entries({ session, link })) {
       if (value !== undefined && (typeof value !== "string" || value.length > 500)) {
-        throw new InputError(`${field} 要是 500 字以内的文字`);
+        throw new InputError(words(draft, "kernel.decide.fieldTooLong", { field }));
       }
     }
     const run = heldRun(draft, id, token, ["claimed"]);
@@ -599,16 +626,16 @@ const HANDLERS: Record<string, (draft: Draft, ...args: any[]) => unknown> = {
   finish,
   cancel(draft, id) {
     const run = draft.view.get("runs", id);
-    if (!run) throw new NotFound("没有这一轮");
+    if (!run) throw new NotFound(words(draft, "kernel.decide.noSuchRun"));
     if (run.state === "queued") {
       put(draft, "runs", id, { state: "cancelled", finished_at: draft.at });
-      closeStopped(draft, id, "已停止");
+      closeStopped(draft, id, words(draft, "kernel.decide.stopped"));
     } else if (run.state === "claimed") put(draft, "runs", id, { cancel_at: draft.at });
-    else throw new InputError("这一轮已经结束了");
+    else throw new InputError(words(draft, "kernel.decide.runOver"));
   },
   resolve(draft, id, reason, by) {
     const card = draft.view.get("cards", id);
-    if (!card) throw new NotFound("没有这张卡片");
+    if (!card) throw new NotFound(words(draft, "kernel.decide.noSuchCard"));
     if (card.state !== "open") return false;
     closeCard(draft, card, reason, by);
     return true;
@@ -616,9 +643,9 @@ const HANDLERS: Record<string, (draft: Draft, ...args: any[]) => unknown> = {
   answer,
   nextCard,
   delivered(draft, channel, id, version, ref) {
-    if (!draft.view.get("cards", id)) throw new NotFound("没有这张卡片");
+    if (!draft.view.get("cards", id)) throw new NotFound(words(draft, "kernel.decide.noSuchCard"));
     if (ref !== null && (typeof ref !== "string" || [...ref].length > DELIVERY_REF)) {
-      throw new InputError(`消息编号最多 ${DELIVERY_REF} 字`);
+      throw new InputError(words(draft, "kernel.decide.refTooLong", { most: DELIVERY_REF }));
     }
     const delivery = draft.view.get("deliveries", `${id}:${channel}`) ?? NOT_DELIVERED;
     const sent = { version: Math.max(delivery.version, version), ref: delivery.ref ?? ref };
@@ -627,7 +654,7 @@ const HANDLERS: Record<string, (draft: Draft, ...args: any[]) => unknown> = {
   failed(draft, channel, id, version, error) {
     const card = draft.view.get("cards", id);
     const delivery = draft.view.get("deliveries", `${id}:${channel}`);
-    if (!card || !delivery) throw new NotFound("这张卡片没有交给这个通道");
+    if (!card || !delivery) throw new NotFound(words(draft, "kernel.decide.notToThisChannel"));
     const firstTry = delivery.first_try_at ? Date.parse(delivery.first_try_at) : draft.now;
     const next =
       version < card.version
