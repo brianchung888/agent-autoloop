@@ -83,9 +83,9 @@ Claude 主任務要委託 Codex 操作網頁時，從 `examples/recipes/browser-
 
 ```json
 // rules.json
-"channels": { "feishu": { "name": "飞书", "answerers": ["ou_用户的 open_id"] } }
+"channels": { "feishu": { "name": "飛書", "answerers": ["ou_使用者的 open_id"] } }
 // config.json
-"channels": { "feishu": { "key": "…", "user": "ou_用户的 open_id" } }
+"channels": { "feishu": { "key": "…", "user": "ou_使用者的 open_id" } }
 ```
 
 同一個飛書應用的卡片點擊只能有一個監聽，只在一台電腦上跑。
@@ -114,7 +114,7 @@ Claude 主任務要委託 Codex 操作網頁時，從 `examples/recipes/browser-
 }
 ```
 
-`AGENTS.md` 要有 `## 审查要点`（這個標題是程式去找的原文，不隨語言改寫）。`review.command` 可用命令陣列替換審查程式：提示詞從標準輸入讀，`{input}` 替換成文字差異檔案，標準輸出必須是 `{"findings":[{"title":"文件:行号和问题","text":"触发条件和后果"}]}`；沒問題交空列表。預設 Codex 忽略使用者設定、停用記憶，只讀單獨的審查快照。`admin_merge` 預設為空；只有 main 明確列出的 PR 作者才能使用管理員合併。沒有線上服務的專案可以省略 `health`，回執會明確寫只完成合併。
+`AGENTS.md` 要有 `## 审查要点`（這個標題是程式去找的原文，不隨語言改寫）。`review.command` 可用命令陣列替換審查程式：提示詞從標準輸入讀，`{input}` 替換成文字差異檔案，標準輸出必須是 `{"findings":[{"title":"檔案:行號和問題","text":"觸發條件和後果"}]}`；沒問題交空列表。預設 Codex 忽略使用者設定、停用記憶，只讀單獨的審查快照。`admin_merge` 預設為空；只有 main 明確列出的 PR 作者才能使用管理員合併。沒有線上服務的專案可以省略 `health`，回執會明確寫只完成合併。
 
 `check.job` 寫 job 的名字；矩陣 job（名字像 `check (ubuntu-latest)`）算同一個 job，每一項都要成功。檢查工作流程的觸發類型要帶 `ready_for_review`：草稿轉 ready 後，只接受這之後新跑的一次檢查，而 `pull_request` 預設不在轉 ready 時觸發。寫成 `on: { pull_request: { types: [opened, synchronize, reopened, ready_for_review] } }`。
 
@@ -125,10 +125,10 @@ Claude 主任務要委託 Codex 操作網頁時，從 `examples/recipes/browser-
   "sources": { "github": { "name": "GitHub" } },
   "agents": {
     "poll": {
-      "name": "查看交付标签",
+      "name": "查看交付標籤",
       "worker": "mac-mini",
       "use": "command",
-      "command": ["node", "/绝对路径/agent-autoloop/plugins/delivery/poll.ts", "owner/app"]
+      "command": ["node", "/絕對路徑/agent-autoloop/plugins/delivery/poll.ts", "owner/app"]
     },
     "delivery": { "name": "交付", "worker": "mac-mini", "use": "delivery", "command": ["owner/app"], "timeout": 35 }
   },
@@ -138,23 +138,23 @@ Claude 主任務要委託 Codex 操作網頁時，從 `examples/recipes/browser-
       "name": "查看待交付",
       "when": { "cron": "*/2 * * * *" },
       "to": "poll",
-      "cwd": "/已有的工作目录",
-      "prompt": "查看项目交付标签",
+      "cwd": "/已有的工作目錄",
+      "prompt": "查看專案交付標籤",
       "emits": { "source": "github", "types": ["pull_request.labeled", "issues.labeled"] }
     },
     {
       "name": "交付",
       "when": { "source": "github", "types": ["pull_request.*", "issues.labeled"] },
       "to": "delivery",
-      "cwd": "/已有的工作目录",
+      "cwd": "/已有的工作目錄",
       "parallel": 2,
-      "prompt": "按 main 的项目设置完成交付"
+      "prompt": "按 main 的專案設定完成交付"
     }
   ]
 }
 ```
 
-輪詢無需設定新的 Webhook 或金鑰，事件編號由標籤記錄與 PR 提交組成，重複讀取不會重新派發；也可以直接接現有 GitHub 來源。事項按 `owner/repo#编号` 分開，`parallel` 控制並行。打 `deliver` 進入流程；同時打 `deliver-review` 只審查，在等待檢查期間加上也會阻止合併；`deliver-attended` 表示有人盯著，發現問題只寫回執、不另發通知。審查發現問題後，同一個提交不再審第二次，修復後推新提交才重新審查。普通 issue 打 `ask-owner` 會變成一張問題卡片，回答後去掉標籤；不替你在 GitHub 發評論。
+輪詢無需設定新的 Webhook 或金鑰，事件編號由標籤記錄與 PR 提交組成，重複讀取不會重新派發；也可以直接接現有 GitHub 來源。事項按 `owner/repo#編號` 分開，`parallel` 控制並行。打 `deliver` 進入流程；同時打 `deliver-review` 只審查，在等待檢查期間加上也會阻止合併；`deliver-attended` 表示有人盯著，發現問題只寫回執、不另發通知。審查發現問題後，同一個提交不再審第二次，修復後推新提交才重新審查。普通 issue 打 `ask-owner` 會變成一張問題卡片，回答後去掉標籤；不替你在 GitHub 發評論。
 
 專案 Ship 只在 main 的 push 上執行，簽出完整歷史（checkout 的 `fetch-depth: 0`），然後呼叫這個倉庫的 Action。把下面的佔位提交換成發布後核實的完整 SHA：
 
@@ -180,7 +180,7 @@ MCP 服務不區分呼叫方，都按本人記錄（`answer` 記成本人，`emi
 手機要批卡片、別人的 Webhook 要進來時，把中台放到一台有公網的機器上：
 
 1. 伺服器上 `sh install.sh --no-service --command true`（這台不跑 Agent，`--command true` 只是佔位，第 2 步把 `rules.json` 裡的 Agent 換成真的），`config.json` 裡 `hub.listen` 用 `127.0.0.1:3350`（要寫成 `主机:端口`，IPv6 用 `[地址]:端口`；只寫連接埠或 `:端口` 會被拒絕，避免意外監聽所有網卡），`hub.publicUrl` 寫公網位址，去掉 `worker`，再 `agent-autoloop service install`。前面放一個做 HTTPS 的反向代理（Caddy、nginx）。
-2. 每台幹活的電腦：伺服器上 `agent-autoloop key new worker <名字>`，電腦上 `curl -fsSL https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.sh | sh -s -- join https://中台地址 --worker <名字> --key <密钥>`。`rules.json` 的 Agent 寫上對應的 `worker`。
+2. 每台幹活的電腦：伺服器上 `agent-autoloop key new worker <名字>`，電腦上 `curl -fsSL https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.sh | sh -s -- join https://中台地址 --worker <名字> --key <金鑰>`。`rules.json` 的 Agent 寫上對應的 `worker`。
 
 電腦不用開放任何連接埠，它們自己連過去。
 

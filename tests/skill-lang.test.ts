@@ -130,9 +130,17 @@ test("两份手册逐段对应：章节标题一样多，围栏代码块一字�
     headings(manualText("zh-CN")).length,
     "两份手册的章节数不一样：有一边多说或少说了一节",
   );
-  // 命令、路径和 JSON 不翻，所以围栏代码块两边必须一个字节都不差——除了 yaml 里那两个占位（它们是让人替换的话）。
+  // 命令和路径不翻，所以非 JSON 的围栏代码块两边必须一个字节都不差——除了 yaml 里那两个占位（它们是让人替换的话）。
   const fenced = (text: string) => [...text.matchAll(/```(\w*)\n([\s\S]*?)```/g)].map((found) => found[1]);
   assert.deepEqual(fenced(manualText("zh-TW")), fenced(manualText("zh-CN")), "两份手册的代码块对不上");
-  const json = (text: string) => [...text.matchAll(/```json\n([\s\S]*?)```/g)].map((found) => found[1]);
-  assert.deepEqual(json(manualText("zh-TW")), json(manualText("zh-CN")), "JSON 例子不该被翻：照着改的人要能复制粘贴");
+  // JSON 例子里，键、结构和不带中文的值（真的要照着打的命令、路径）不该不一样；但说给人看的字（name、prompt 这类标签、
+  // 连占位路径里的说明文字）两份手册各讲各的中文，翻了才对——所以比较前把汉字都抹掉再比，不解析 JSON（有几块本来就不是
+  // 单一合法 JSON：一行一个物件、或裸的 `"key": {…}` 片段，混着 `// 文件名` 这样的注释行）。
+  const jsonShape = (body: string): string => body.replace(/[一-鿿]+/g, "…");
+  const json = (text: string) => [...text.matchAll(/```json\n([\s\S]*?)```/g)].map((found) => jsonShape(found[1]));
+  assert.deepEqual(
+    json(manualText("zh-TW")),
+    json(manualText("zh-CN")),
+    "JSON 例子的结构（键、非中文的值）对不上：照着改的人要能对上位置",
+  );
 });
