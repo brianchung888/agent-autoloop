@@ -150,6 +150,13 @@ test("两张表的 key 一模一样，一个不多一个不少", () => {
   assert.ok(cn.length > 200, `只有 ${cn.length} 条，像是漏搬了`);
 });
 
+test("两张表 key 的宣告顺序也一样：不排序比，漂移了就该抓到", () => {
+  const cn = Object.keys(zhCN);
+  const tw = Object.keys(zhTW);
+  const at = cn.findIndex((key, i) => key !== tw[i]);
+  assert.equal(at, -1, `顺序从 ${at} 开始不一样：zh-CN 是 ${cn[at]}，zh-TW 是 ${tw[at]}`);
+});
+
 test("每一条都有字，而且 `{名字}` 两边一样：填不进去的占位就是说漏了一个值", () => {
   const holes = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((found) => found[1]).sort();
   for (const key of Object.keys(zhCN) as (keyof typeof zhCN)[]) {
