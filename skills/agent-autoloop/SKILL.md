@@ -197,3 +197,5 @@ MCP 服务不区分调用方，都按本人记录（`answer` 记成本人，`emi
 ## 版本与卸载
 
 `agent-autoloop --version` 显示版本和提交。`agent-autoloop uninstall` 确认后删除自身程序、链接和服务，规则、密钥和记录保留；`--yes` 只跳过确认。
+
+这份手册有正体和简体两份（`SKILL.zh-TW.md` 和 `SKILL.md`），`agent-autoloop lang` 换了语言之后，下一次 `up` 或 `init` 会把新语言那一份释出到 Agent 读的 `SKILL.md`。

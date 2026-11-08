@@ -205,7 +205,9 @@ try {
   if ($checked -match "连不上中台") { Fail "doctor can't reach the hub that is running" }
   # The Skill an Agent is told to read has to be a file that is there. A packaged build carries it and writes it out
   # under this install's own HOME (计划 plan-c 3.5); PoC had it naming the executable's parent folder, where nothing was.
-  $manual = [regex]::Match($checked, '接法见 (.+SKILL\.md)').Groups[1].Value
+  # 两种中文都认：这一句（cli.doctor.onlyDesktopTail）正體写「接法見」、简体写「接法见」，而手册本身也是按语言放
+  # 出去的（host/skill.ts）。断言只认一种，就等于这一关只在一种语言下有效——换一种就静悄悄地什么都没查。
+  $manual = [regex]::Match($checked, '接法[见見] (.+SKILL\.md)').Groups[1].Value
   if (-not $manual) { Fail "doctor doesn't say where the Skill is" }
   if (-not (Test-Path -LiteralPath $manual)) { Fail "doctor points at a Skill that isn't there: $manual" }
   if ($packaged -and -not $manual.StartsWith($env:AGENT_AUTOLOOP_HOME)) {

@@ -209,7 +209,45 @@ test("打包版把 SKILL.md 放到这个安装自己的 HOME 下，而不是指�
   assert.equal(statSync(join(folder, "SKILL.md")).mtimeMs, was, "又写了一遍");
 });
 
+test("打包版按这个安装说哪种中文放出对应那一份手册：两种都问一遍", () => {
+  // 打包版带着两份手册（host/assets.ts），放到 `SKILL.md` 这个名字上的只有一份。装好之后 Agent 读的就是它，
+  // 所以放错一份等于把整本操作手册换成另一种中文——而默认那一种正是正體，也就是最容易被漏掉的那一边。
+  for (const [which, carried] of [
+    ["zh-CN", "skills/agent-autoloop/SKILL.md"],
+    ["zh-TW", "skills/agent-autoloop/SKILL.zh-TW.md"],
+  ] as const) {
+    const home = join(dir, `skill-home-${which}`);
+    mkdirSync(home, { recursive: true });
+    const done = spawnSync(
+      process.execPath,
+      [
+        "--disable-warning=ExperimentalWarning",
+        "--input-type=module",
+        "-e",
+        `const { placeSkill } = await import(${JSON.stringify(pathToFileURL(join(copy, "host", "skill.ts")).href)});
+         console.log(placeSkill());`,
+      ],
+      {
+        encoding: "utf8",
+        timeout: 60_000,
+        env: { ...process.env, AGENT_AUTOLOOP_HOME: home, AGENT_AUTOLOOP_LANG: which },
+      },
+    );
+    assert.equal(done.status, 0, done.stderr);
+    const folder = done.stdout.trim();
+    assert.equal(folder, join(home, "skills", "agent-autoloop"), which);
+    // 逐字节相同，而且是这个语言那一份：卸载认自己的那一份也是按这个比的（cli/uninstall.ts）。
+    assert.equal(
+      readFileSync(join(folder, "SKILL.md"), "utf8"),
+      readFileSync(join(repo, carried), "utf8"),
+      `${which} 放出来的不是 ${carried}`,
+    );
+  }
+});
+
 test("源码模式下 skill 还是树里那个目录，一个字节都不写", () => {
+  // 这一条问的是简体那一种：树里的 `SKILL.md` 就是简体那一份，所以它是唯一不用写出来的局面（tests/lang.env 给的
+  // AGENT_AUTOLOOP_LANG=zh-CN 就是这里依赖的那个前提）。正體怎么放，由 tests/skill-lang.test.ts 问。
   assert.equal(skillFolder(), join(repo, "skills", "agent-autoloop"));
   assert.equal(placeSkill(), skillFolder());
   assert.equal(assetText("skills/agent-autoloop/SKILL.md"), readFileSync(join(skillFolder(), "SKILL.md"), "utf8"));

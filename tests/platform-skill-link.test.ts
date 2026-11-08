@@ -72,6 +72,33 @@ const ways = (person: string) =>
   JSON.parse(readFileSync(join(person, ".agent-autoloop", "skill-link.json"), "utf8")) as Record<string, string>;
 const skillIn = (person: string, agent: string) => join(person, agent, "skills", "agent-autoloop");
 
+test("正體装的时候，Agent 接到的是写出来的那一份正體手册", async () => {
+  // 树里的 `SKILL.md` 是简体的，所以正體装好之后 Agent 读的不能是它：host/skill.ts 把正體那一份写到这个安装
+  // 自己的 HOME 下，链接也就指到那里。失败的情形是最容易漏的那一种——默认语言装好，手册整本是另一种中文。
+  const me = person([".claude"]);
+  const started = run(
+    me,
+    ["init", "--no-service", "--command", "node nothing {prompt}", "--port", String(await freePort())],
+    { AGENT_AUTOLOOP_LANG: "zh-TW" },
+  );
+  assert.equal(started.status, 0, started.stderr);
+
+  const link = skillIn(me, ".claude");
+  const written = join(me, ".agent-autoloop", "skills", "agent-autoloop");
+  assert.equal(realpathSync(link), realpathSync(written), "链接没指到写出来的那一份");
+  assert.equal(
+    readFileSync(join(link, "SKILL.md"), "utf8"),
+    readFileSync(join(root, "skills", "agent-autoloop", "SKILL.zh-TW.md"), "utf8"),
+    "Agent 读到的不是正體那一份",
+  );
+
+  // 卸载按同一个答案拿掉链接。写出来的那一份留在数据目录里：源码安装的卸载不碰 HOME（cli/uninstall.ts），
+  // 而这个目录整个是保留的那一类东西。
+  const gone = run(me, ["uninstall", "--yes"], { AGENT_AUTOLOOP_LANG: "zh-TW" });
+  assert.equal(gone.status, 0, gone.stderr);
+  assert.equal(lstatSync(link, { throwIfNoEntry: false }), undefined, "链接拿掉了");
+});
+
 test("装好之后 Agent 的文件夹里是一个链接，卸载时按记录拿掉", async () => {
   const me = person([".claude"]);
   const started = run(me, ["init", "--no-service", "--command", "node nothing {prompt}", "--port", String(await freePort())]); // prettier-ignore
@@ -91,36 +118,49 @@ test("装好之后 Agent 的文件夹里是一个链接，卸载时按记录拿�
   assert.ok(existsSync(join(skill, "SKILL.md")), "链接指向的 skill 本身没动");
 });
 
-test("做不出链接就复制，而且 init 不会因此失败", ONLY_WINDOWS, async () => {
-  // Nothing on a test machine refuses a junction, so the refusal is put there: the same error a locked-down or
-  // non-NTFS place gives, raised from the one call that would have made the link.
-  const refuse = join(dir, "refuse-links.cjs");
-  writeFileSync(
-    refuse,
-    'require("node:fs").symlinkSync = () => {\n  throw new Error("这台机器不让做链接（测试装的）");\n};\n',
-  );
-  const me = person([".claude", ".codex"]);
-  const started = run(
-    me,
-    ["init", "--no-service", "--command", "node nothing {prompt}", "--port", String(await freePort())],
-    { NODE_OPTIONS: `--require ${refuse}` },
-  );
-  assert.equal(started.status, 0, started.stderr);
+/**
+ * 卸载认不认自己放的那份复制，靠的是逐字节比对 `SKILL.md`（cli/uninstall.ts: removeCopiedSkill）。手册有两份，
+ * 一份正體一份简体，所以「当时放出去的那一份」是跟着语言的——比错了一份，卸载就把它当成人家自己改过的，于是那个
+ * 目录永远留在那里。两种语言各走一遍。
+ */
+for (const which of ["zh-CN", "zh-TW"] as const) {
+  test(`做不出链接就复制，而且 init 不会因此失败（${which}）`, ONLY_WINDOWS, async () => {
+    // Nothing on a test machine refuses a junction, so the refusal is put there: the same error a locked-down or
+    // non-NTFS place gives, raised from the one call that would have made the link.
+    const refuse = join(dir, `refuse-links-${which}.cjs`);
+    writeFileSync(
+      refuse,
+      'require("node:fs").symlinkSync = () => {\n  throw new Error("这台机器不让做链接（测试装的）");\n};\n',
+    );
+    const me = person([".claude", ".codex"]);
+    const started = run(
+      me,
+      ["init", "--no-service", "--command", "node nothing {prompt}", "--port", String(await freePort())],
+      { NODE_OPTIONS: `--require ${refuse}`, AGENT_AUTOLOOP_LANG: which },
+    );
+    assert.equal(started.status, 0, started.stderr);
 
-  for (const agent of [".claude", ".codex"]) {
-    const copied = skillIn(me, agent);
-    assert.equal(lstatSync(copied).isSymbolicLink(), false, "这回是复制");
-    assert.equal(lstatSync(copied).isDirectory(), true);
-    assert.equal(readFileSync(join(copied, "SKILL.md"), "utf8"), readFileSync(join(skill, "SKILL.md"), "utf8"));
-  }
-  assert.deepEqual(ways(me), { ".claude": "copy", ".codex": "copy" }, "复制也要写下来，否则卸载不掉");
+    // 这一次该放出去的是哪一份：简体的源码安装就是树里那一个目录，正體的是写到 HOME 下的那一份。
+    const placed =
+      which === "zh-CN" ? join(skill, "SKILL.md") : join(me, ".agent-autoloop", "skills", "agent-autoloop", "SKILL.md");
+    const manual = join(root, "skills", "agent-autoloop", which === "zh-CN" ? "SKILL.md" : "SKILL.zh-TW.md");
+    assert.equal(readFileSync(placed, "utf8"), readFileSync(manual, "utf8"), "放出去的不是这个语言那一份");
 
-  // Somebody who has made the copy their own keeps it: a copy leads nowhere, so the only thing that can say whose it
-  // is, is what is in it.
-  writeFileSync(join(skillIn(me, ".codex"), "SKILL.md"), "这份我自己改过了\n");
-  const gone = run(me, ["uninstall", "--yes"]);
-  assert.equal(gone.status, 0, gone.stderr);
-  assert.equal(existsSync(skillIn(me, ".claude")), false, "我们放的复制拿掉了");
-  assert.equal(readFileSync(join(skillIn(me, ".codex"), "SKILL.md"), "utf8"), "这份我自己改过了\n", "人家改过的留下");
-  assert.equal(existsSync(join(me, ".agent-autoloop", "skill-link.json")), false);
-});
+    for (const agent of [".claude", ".codex"]) {
+      const copied = skillIn(me, agent);
+      assert.equal(lstatSync(copied).isSymbolicLink(), false, "这回是复制");
+      assert.equal(lstatSync(copied).isDirectory(), true);
+      assert.equal(readFileSync(join(copied, "SKILL.md"), "utf8"), readFileSync(placed, "utf8"));
+    }
+    assert.deepEqual(ways(me), { ".claude": "copy", ".codex": "copy" }, "复制也要写下来，否则卸载不掉");
+
+    // Somebody who has made the copy their own keeps it: a copy leads nowhere, so the only thing that can say whose it
+    // is, is what is in it.
+    writeFileSync(join(skillIn(me, ".codex"), "SKILL.md"), "这份我自己改过了\n");
+    const gone = run(me, ["uninstall", "--yes"], { AGENT_AUTOLOOP_LANG: which });
+    assert.equal(gone.status, 0, gone.stderr);
+    assert.equal(existsSync(skillIn(me, ".claude")), false, "我们放的复制拿掉了");
+    assert.equal(readFileSync(join(skillIn(me, ".codex"), "SKILL.md"), "utf8"), "这份我自己改过了\n", "人家改过的留下");
+    assert.equal(existsSync(join(me, ".agent-autoloop", "skill-link.json")), false);
+  });
+}
