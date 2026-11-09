@@ -2,7 +2,7 @@
 
 **Let your command-line agents pick up work and follow it through in the background — staying quiet when they can handle it, and sending you a card only when a decision is yours to make.**
 
-[中文](README.md) | **English**
+[正體中文](README.md) | [简体中文](README.zh-CN.md) | **English**
 
 [Get started](#get-started) · [Recipes](#ready-to-use-recipes) · [Plugins](#plugin-ecosystem-swap-any-of-the-four-sides) · [Kernel](#four-kernel-mechanisms) · [Docs](#documentation)
 

@@ -1,93 +1,93 @@
 # Agent Autoloop
 
-**让你的命令行 Agent 在后台自己接活、自己跟进到底；平时不烦你，遇到拿不准的事才发卡片找你拍板。**
+**讓你的命令列 Agent 在背景自己接手工作、自己追蹤到底；平時不煩你，遇到無法確定的事才發卡片找你決定。**
 
-**中文** | [English](README.en.md)
+**正體中文** | [简体中文](README.zh-CN.md) | [English](README.en.md)
 
-[上手](#上手) · [场景模板](#拿来即用的场景模板) · [插件](#插件体系四个方向都能自由替换) · [内核](#内核的四个机制) · [文档](#更多文档)
+[上手](#上手) · [情境範本](#拿來即用的情境範本) · [外掛](#外掛體系四個方向都能自由替換) · [核心](#核心的四個機制) · [文件](#更多文件)
 
-![架构图](docs/architecture.svg)
+![架構圖](docs/architecture.svg)
 
-## 它解决什么问题？
+## 它解決什麼問題？
 
-平时我们用 Claude Code、Codex 这类命令行 Agent，大多是“人守着终端用”：你输一句话，盯着它跑，等它问你下一步；一旦关掉窗口或者人走开，事情就断了。
+平時我們用 Claude Code、Codex 這類命令列 Agent，大多是「人守著終端機操作」：你輸入一句話，盯著它跑，等它問你下一步；一旦關掉視窗或者人走開，事情就斷了。
 
-**Agent Autoloop** 是一个极轻量的自动化中台。它把任务调度做成一个零外部依赖的**内核**，把事件来源、Agent、通知通道，甚至代码上线流水线全部拆成可随时插拔的**插件**。
+**Agent Autoloop** 是一個極輕量的自動化中台。它把任務排程做成一個零外部相依套件的**核心**，把事件來源、Agent、通知通道，甚至程式碼上線流程全部拆成可隨時插拔的**外掛**。
 
-- **一台电脑、一条命令就能跑。** 装在你的 Mac 或 Linux 上，不用买云服务器，也不用开放公网端口。
-- **一行配置接新 Agent。** 不需要 SDK，也不需要改 Agent 源码，能接收提示词并打印最后一条回复的命令行工具都能接。
-- **没有后台界面。** 需要你拍板时把卡片推到飞书、钉钉、企微、Slack、Discord 或桌面通知；想看全局进展，敲一行命令。
+- **一台電腦、一條命令就能跑。** 裝在你的 Mac 或 Linux 上，不用買雲端伺服器，也不用開放對外連接埠。
+- **一行設定接新 Agent。** 不需要 SDK，也不需要改 Agent 原始碼，能接收提示詞並輸出最後一則回覆的命令列工具都能接。
+- **沒有後台管理介面。** 需要你決定時把卡片推到飛書、釘釘、企微、Slack、Discord 或桌面通知；想看整體進度，敲一行命令。
 
 ## 上手
 
-支持 macOS、Linux 和 Windows 11。运行前需要装好 Node 24、Git（macOS / Linux 还要 curl，Windows 用 PowerShell 自带的 irm），以及任意一个你已经登录好的命令行 Agent，不需要 GitHub 账号。也可以直接把[安装说明](INSTALL.md)丢给你的 Agent，让它替你装好。界面默认正体中文，可用 `agent-autoloop lang zh-CN` 或 `AGENT_AUTOLOOP_LANG` 切换简体。
+支援 macOS、Linux 和 Windows 11。執行前需要裝好 Node 24、Git（macOS / Linux 還要 curl，Windows 用 PowerShell 自帶的 irm），以及任意一個你已經登入好的命令列 Agent，不需要 GitHub 帳號。也可以直接把[安裝說明](INSTALL.md)丟給你的 Agent，讓它替你裝好。介面預設正體中文，可用 `agent-autoloop lang zh-CN` 或 `AGENT_AUTOLOOP_LANG` 切換簡體。
 
-> **Windows：原生支持，不需要 WSL2。** 用 PowerShell 装，不要管理员权限：`irm https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.ps1 | iex`。有四处降级：桌面通知一律跳过（卡片还在 `agent-autoloop status` 和别的通道里）；常驻用的是计划任务，停了之后最多等 5 分钟才自己回来；文件权限用 `icacls` 锁到当前用户，锁不上（网络盘、FAT32、域策略）不拦着启动，`agent-autoloop doctor` 会报一条降级；Agent 得是真正的可执行文件，npm 装的 `.cmd` 包装脚本起不了。细节见 [INSTALL](INSTALL.md)。
+> **Windows：原生支援，不需要 WSL2。** 用 PowerShell 裝，不要管理員權限：`irm https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.ps1 | iex`。有四處降級：桌面通知一律跳過（卡片還在 `agent-autoloop status` 和別的通道裡）；常駐用的是排程工作，停了之後最多等 5 分鐘才自己回來；檔案權限用 `icacls` 鎖到目前使用者，鎖不上（網路磁碟、FAT32、網域原則）不攔著啟動，`agent-autoloop doctor` 會報一條降級；Agent 得是真正的執行檔，npm 裝的 `.cmd` 包裝指令碼起不了。細節見 [INSTALL](INSTALL.md)。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.sh | sh
 ```
 
-安装和 `agent-autoloop update` 都装最新的 [Release](https://github.com/brianchung888/agent-autoloop/releases)，那是通过了全部检查的版本。
+安裝和 `agent-autoloop update` 都裝最新的 [Release](https://github.com/brianchung888/agent-autoloop/releases)，那是通過全部檢查的版本。
 
-> **不想装 Node？** 每个 Release 还附一个单文件可执行程序，三个平台各一个，旁边各有一份 `.sha256`：下载、对校验和、`agent-autoloop init`，没有别的前置。代价是下载约 96 MB（里面就是一整个 Node）、Windows 上没有签章所以 SmartScreen 会先拦一下，而且第三方 `.ts` 插件要带 `runtime: "process"`。源码安装仍然是默认方式；两种装法共用同一个数据目录，可以来回换。细节见 [INSTALL 的单一二进位一节](INSTALL.md#单一二进位这台电脑上没有-node)。
+> **不想裝 Node？** 每個 Release 還附一個單一執行檔，三個平台各一個，旁邊各有一份 `.sha256`：下載、核對雜湊值、`agent-autoloop init`，沒有別的前置。代價是下載約 96 MB（裡面就是一整個 Node）、Windows 上沒有簽章所以 SmartScreen 會先攔一下，而且第三方 `.ts` 外掛要帶 `runtime: "process"`。原始碼安裝仍然是預設方式；兩種裝法共用同一個資料目錄，可以來回換。細節見 [INSTALL 的單一執行檔一節](INSTALL.md#单一二进位这台电脑上没有-node)。
 
-装好后用你本机的 Agent 真实走一遍“提问 → 退出等回复 → 拍板 → 接着干完”：
+裝好後用你本機的 Agent 真實走一遍「提問 → 退出等回覆 → 決定 → 接著完成」：
 
 ```bash
 agent-autoloop try
 ```
 
-下面是在终端里的真实输出：
+以下為終端機輸出範例（文字已轉為正體中文）：
 
 ```text
-事件发出去了，Agent 开始干活……
+事件發出去了，Agent 開始工作……
 
-Agent 结束了这一轮，问了你一个问题。它现在不占进程、不花 Token。
+Agent 結束了這一輪，問了你一個問題。它現在不佔用行程、不花 Token。
 
-【等你决定】#1 试跑：选一个颜色
-这是一次试跑，选哪个都行。
-  1. 蓝色
-  2. 绿色
-回答：agent-autoloop answer 1 <序号>
-答完运行 agent-autoloop status，能看到它接着把活干完。
+【等你決定】#1 試跑：選一個顏色
+這是一次試跑，選哪個都行。
+  1. 藍色
+  2. 綠色
+回答：agent-autoloop answer 1 <序號>
+答完執行 agent-autoloop status，能看到它接著把工作完成。
 ```
 
-交互终端里直接输入数字回车；非交互终端运行 `agent-autoloop answer 1 2` 选择“绿色”。再跑 `agent-autoloop status`，就能看到它接上刚才的会话并显示“你选了绿色，试跑通过”，还有今天和最近 7 天的轮数、Token 和费用（[统计口径](skills/agent-autoloop/SKILL.md#看情况回答)）。
+互動終端機裡直接輸入數字按 Enter；非互動終端機執行 `agent-autoloop answer 1 2` 選擇「綠色」。再跑 `agent-autoloop status`，就能看到它接上剛才的工作階段並顯示「你選了綠色，試跑通過」，還有今天和最近 7 天的輪數、Token 和費用（[統計方式](skills/agent-autoloop/SKILL.md#看情况回答)）。
 
-## 一件事怎么转起来
+## 一件事怎麼轉起來
 
-编号和上面的架构图一一对应：
+編號和上面的架構圖一一對應：
 
-1. **新事件进来。** 早上 9 点的定时任务、GitHub 上新提的 Issue、业务系统报的错，都变成一条标准事件送进内核。
-2. **按规则派活。** 内核照你写的规则，决定交给哪个 Agent、去哪个目录干。同一件事排队时又来的消息，会合并成一轮处理。
-3. **干完一轮就退出。** Agent 把结果写在最后一条回复里，进程直接退出。
-4. **拿不准才问你。** 碰到删数据、重启服务、花钱、对外发消息这类事，内核通过飞书或桌面通知发一张卡片给你。等你回复期间，它不占后台进程，也不消耗 Token。
-5. **点一下，接着干。** 你选完，它接上原来的对话，把剩下的活干完。
+1. **新事件進來。** 早上 9 點的排程工作、GitHub 上新提的 Issue、業務系統報的錯，都變成一條標準事件送進核心。
+2. **按規則派工。** 核心照你寫的規則，決定交給哪個 Agent、在哪個目錄工作。同一件事排隊時又來的訊息，會合併成一輪處理。
+3. **完成一輪就退出。** Agent 把結果寫在最後一條回覆裡，行程直接結束。
+4. **無法確定才問你。** 碰到刪資料、重新啟動服務、花錢、對外發訊息這類事，核心透過飛書或桌面通知發一張卡片給你。等你回覆期間，它不佔用背景行程，也不消耗 Token。
+5. **點一下，繼續工作。** 你選完，它接上原來的對話，把剩下的工作完成。
 
-能自己搞定的事走图上方的自动闭环：直接办完，或者约个时间（比如半小时后）再醒来复查，全程不打扰你。
+能自己搞定的事走圖上方的自動閉環：直接辦完，或者約個時間（比如半小時後）再醒來複查，全程不打擾你。
 
-## 日常怎么配？
+## 日常怎麼配？
 
-### 写一份规则（`rules.json`）
+### 寫一份規則（`rules.json`）
 
-不需要写胶水代码。打开 `~/.agent-autoloop/rules.json`，在 `rules` 里写清楚**什么事、交给谁、在哪个目录干**。`to` 填 `agents` 里已有的名字。比如每天早上 9 点写早报：
+不需要寫銜接程式碼。開啟 `~/.agent-autoloop/rules.json`，在 `rules` 裡寫清楚**什麼事、交給誰、在哪個目錄工作**。`to` 填 `agents` 裡已有的名字。比如每天早上 9 點寫早報：
 
 ```json
 {
-  "name": "早报",
+  "name": "早報",
   "when": { "cron": "0 9 * * *" },
   "to": "codex",
   "cwd": "~/notes",
-  "prompt": "整理昨天的笔记和提交，写今天的早报。"
+  "prompt": "整理昨天的筆記和提交，寫今天的早報。"
 }
 ```
 
-外部事件写法一样，只是要先接好来源。比如有人提新 Issue 时交给 Codex，先按[说明](skills/agent-autoloop/SKILL.md#接一个事件插件)在 `sources` 里登记 `github`：
+外部事件寫法一樣，只是要先接好來源。比如有人提新 Issue 時交給 Codex，先按[說明](skills/agent-autoloop/SKILL.md#接一个事件插件)在 `sources` 裡登記 `github`：
 
 ```json
 {
-  "name": "处理 issue",
+  "name": "處理 issue",
   "when": { "source": "github", "types": ["issues.opened"] },
   "to": "codex",
   "cwd": "~/code/app",
@@ -96,160 +96,160 @@ Agent 结束了这一轮，问了你一个问题。它现在不占进程、不�
 }
 ```
 
-保存后几秒内自动生效，可以运行 `agent-autoloop check` 检查；`agent-autoloop rules explain` 看生效的规则和下次定时，`agent-autoloop emit <类型> --dry-run` 预演一条事件会派给谁（不连接中台、不写日志）。就算改错了，或者文件被删、读不到，系统也会继续按旧规则跑，并发卡片提醒你。
+儲存後幾秒內自動生效，可以執行 `agent-autoloop check` 檢查；`agent-autoloop rules explain` 看生效的規則和下次排程時間，`agent-autoloop emit <類型> --dry-run` 預演一條事件會派給誰（不連線中台、不寫日誌）。就算改錯了，或者檔案被刪、讀不到，系統也會繼續按舊規則跑，並發送卡片提醒你。
 
-### Agent 怎么跟中台配合？
+### Agent 怎麼跟中台配合？
 
-中台对 Agent 只有一个约定：**在最后一条回复里交代结果**。事情办完了，正常输出一句结论就行。需要向你请示时，在回复末尾附一段 `agent-autoloop` 代码块：
+中台對 Agent 只有一個約定：**在最後一條回覆裡交代結果**。事情辦完了，正常輸出一句結論就行。需要向你請示時，在回覆末尾附一段 `agent-autoloop` 程式碼區塊：
 
 ````text
-订单已经核对完毕，库存充足。
+訂單已經核對完畢，庫存充足。
 
 ```agent-autoloop
 {
   "ask": [{
-    "title": "怎么发货？",
-    "text": "两种方式今天都能发出。",
-    "options": ["快递", "自提"],
+    "title": "要怎麼出貨？",
+    "text": "兩種方式今天都能發出。",
+    "options": ["宅配", "自取"],
     "key": "shipping"
   }]
 }
 ```
 ````
 
-除了提问（`ask`），还能发通知（`notice`）、关闭已解决的卡片（`resolve`）、预约复查（`later`）和触发新事件（`events`）。通告不需要回答，但结案时可以顺手写一句处理说明，这句话会留在卡片上；只是告诉一声的通告标成 `fyi`，不带按钮。万一 JSON 写错了，中台只让它在原会话里重写最后这段回复，不会把已经干完的业务重做一遍；重写也失败时，保留原结论并通知你回执没有生效（通用命令没有会话，直接走这一步）。接着旧会话跑也一样：会话接不上才开新的；接上了、干到一半断了，就算没跑成，过几分钟回到原会话重试，不开新会话重做。同一事项的新事件默认开新会话；规则写 `"resume": true` 就接着上一轮的会话。
+除了提問（`ask`），還能發通知（`notice`）、關閉已解決的卡片（`resolve`）、預約複查（`later`）和觸發新事件（`events`）。通告不需要回答，但結案時可以順手寫一句處理說明，這句話會留在卡片上；只是告訴一聲的通告標成 `fyi`，不帶按鈕。萬一 JSON 寫錯了，中台只讓它在原工作階段裡重寫最後這段回覆，不會把已經完成的業務重做一遍；重寫也失敗時，保留原結論並通知你回條沒有生效（通用命令沒有工作階段，直接走這一步）。接著舊工作階段跑也一樣：工作階段接不上才開新的；接上了、工作到一半斷了，就算沒跑成，過幾分鐘回到原工作階段重試，不開新工作階段重做。同一事項的新事件預設開新工作階段；規則寫 `"resume": true` 就接著上一輪的工作階段。
 
-## 拿来即用的场景模板
+## 拿來即用的情境範本
 
-每套模板都带规则、任务 Skill 和启用说明。
+每套範本都帶規則、任務 Skill 和啟用說明。
 
-| 想做什么 | 已经封装好的流程 |
+| 想做什麼 | 已經封裝好的流程 |
 |---|---|
-| [每日早报](examples/recipes/morning-brief/README.md) | 默认每天 8 点整理本地笔记和 Git 提交，写入 `briefs/YYYY-MM-DD.md` |
-| [跟进 GitHub Issue](examples/recipes/github-issues/README.md) | 每 5 分钟查新 Issue，在本地改代码并通知你查看；不提交、不推送、不回复 Issue |
-| [线上告警排查](examples/recipes/ops-alerts/README.md) | 接收报错、对照代码查原因，需要重启时发卡片询问，回答后继续 |
-| [用户反馈处理](examples/recipes/feedback/README.md) | 重读反馈当前状态、修复、交付核实、准备回复；需要决定时飞书问你，回答后继续 |
-| [网站巡检](examples/recipes/website-watch/README.md) | 每 5 分钟检查状态和关键内容，首次异常交给 Agent，持续异常不重复通知，恢复后更新原卡片 |
-| [飞书周报与业务摘要](examples/recipes/feishu-brief/README.md) | 周日 18 点按你的权限读汇报和指定表格，生成本地摘要；飞书只发简短摘要，完整稿留在本机 |
-| [PR 自动交付](skills/agent-autoloop/SKILL.md#交付流水线) | 打上 `deliver` 标签后，审查、等 CI、合并、等发布并核对线上版本 |
+| [每日早報](examples/recipes/morning-brief/README.md) | 預設每天 8 點整理本機筆記和 Git 提交，寫入 `briefs/YYYY-MM-DD.md` |
+| [跟進 GitHub Issue](examples/recipes/github-issues/README.md) | 每 5 分鐘查新 Issue，在本機改程式碼並通知你檢視；不提交、不推送、不回覆 Issue |
+| [線上告警排查](examples/recipes/ops-alerts/README.md) | 接收報錯、對照程式碼查原因，需要重新啟動時發卡片詢問，回答後繼續 |
+| [使用者回饋處理](examples/recipes/feedback/README.md) | 重新讀取回饋目前狀態、修復、交付核實、準備回覆；需要決定時飛書問你，回答後繼續 |
+| [網站巡檢](examples/recipes/website-watch/README.md) | 每 5 分鐘檢查狀態和關鍵內容，首次異常交給 Agent，持續異常不重複通知，恢復後更新原卡片 |
+| [飛書週報與業務摘要](examples/recipes/feishu-brief/README.md) | 週日 18 點按你的權限讀彙報和指定表格，產生本機摘要；飛書只發簡短摘要，完整稿留在本機 |
+| [PR 自動交付](skills/agent-autoloop/SKILL.md#交付流水线) | 打上 `deliver` 標籤後，審查、等 CI、合併、等發布並核對線上版本 |
 
-**启用：** 打开对应说明，把任务 Skill 放进所用 Agent 的 skills 目录，把示例规则合入 `~/.agent-autoloop/rules.json`，替换电脑名和路径，再运行 `agent-autoloop check`。
+**啟用：** 開啟對應說明，把任務 Skill 放進所用 Agent 的 skills 目錄，把範例規則合入 `~/.agent-autoloop/rules.json`，替換電腦名和路徑，再執行 `agent-autoloop check`。
 
-反馈处理、网站巡检和飞书摘要默认使用北京时间，只发给本人的飞书私聊。样例数据都是虚构的；脚本和回执只用本地 HTTP 与假飞书 CLI 验证过，没有在真实账号上跑过完整业务。
+回饋處理、網站巡檢和飛書摘要預設使用北京時間，只發給本人的飛書私人對話。範例資料都是虛構的；指令碼和回條只用本機 HTTP 與假飛書 CLI 驗證過，沒有在真實帳號上跑過完整業務。
 
-更多模板：[Claude 委托 Codex 处理网页](examples/recipes/browser-handoff/README.md)、[每周代码清理](examples/skills/weekly-sweep/SKILL.md)、[交付 PR](examples/skills/ship-pr/SKILL.md)。
+更多範本：[Claude 委託 Codex 處理網頁](examples/recipes/browser-handoff/README.md)、[每週程式碼清理](examples/skills/weekly-sweep/SKILL.md)、[交付 PR](examples/skills/ship-pr/SKILL.md)。
 
-## 插件体系：四个方向都能自由替换
+## 外掛體系：四個方向都能自由替換
 
-内置插件随程序安装，填好配置即可启用；第三方插件用 `agent-autoloop add <git 地址>` 安装。
+內建外掛隨程式安裝，填好設定即可啟用；第三方外掛用 `agent-autoloop add <Git 位址>` 安裝。
 
-| 方向 | 内置 | 配置 |
+| 方向 | 內建 | 設定 |
 |---|---|---|
-| **事件**：怎么发现新活 | [GitHub Webhook](plugins/github/source.ts)、[GitLab Webhook](plugins/gitlab/source.ts)、[HTTP 接口](docs/protocol.md#来源把世界变成事件)、[定时规则](skills/agent-autoloop/SKILL.md#改规则)、[Issue 轮询脚本](examples/watch-github-issues.sh) | [说明](skills/agent-autoloop/SKILL.md#接一个事件插件) |
-| **Agent**：谁来干活 | [Claude Code](plugins/claude/agent.ts)、[Codex](plugins/codex/agent.ts)、[ACP](plugins/acp/agent.ts)、[DeepSeek Harness](plugins/dsh/agent.ts)、[通用命令](plugins/command/agent.ts) | [说明](skills/agent-autoloop/SKILL.md#接一个-agent) |
-| **通道**：去哪找你拍板 | [桌面通知](plugins/desktop/channel.ts)（默认开启）、[飞书](plugins/feishu/channel.ts)、[钉钉 / 企微 / Slack / Discord](plugins/webhook/templates.ts) | [说明](skills/agent-autoloop/SKILL.md#接一个通道) |
-| **交付**：把 CI/CD 也做成插件 | [`delivery`](plugins/delivery/delivery.ts) | [说明](skills/agent-autoloop/SKILL.md#交付流水线) |
+| **事件**：怎麼發現新工作 | [GitHub Webhook](plugins/github/source.ts)、[GitLab Webhook](plugins/gitlab/source.ts)、[HTTP 介面](docs/protocol.md#来源把世界变成事件)、[排程規則](skills/agent-autoloop/SKILL.md#改规则)、[Issue 輪詢指令碼](examples/watch-github-issues.sh) | [說明](skills/agent-autoloop/SKILL.md#接一个事件插件) |
+| **Agent**：誰來工作 | [Claude Code](plugins/claude/agent.ts)、[Codex](plugins/codex/agent.ts)、[ACP](plugins/acp/agent.ts)、[DeepSeek Harness](plugins/dsh/agent.ts)、[通用命令](plugins/command/agent.ts) | [說明](skills/agent-autoloop/SKILL.md#接一个-agent) |
+| **通道**：去哪找你決定 | [桌面通知](plugins/desktop/channel.ts)（預設開啟）、[飛書](plugins/feishu/channel.ts)、[釘釘 / 企微 / Slack / Discord](plugins/webhook/templates.ts) | [說明](skills/agent-autoloop/SKILL.md#接一个通道) |
+| **交付**：把 CI/CD 也做成外掛 | [`delivery`](plugins/delivery/delivery.ts) | [說明](skills/agent-autoloop/SKILL.md#交付流水线) |
 
-**实测情况：** Claude Code、Codex 和 ACP（官方 Codex ACP 适配器）跑通了多轮问答和跨进程会话续接；飞书跑通了发送、按钮回调和卡片更新；四种 Webhook 模板只在本地模拟服务上验证过，GitLab Webhook 按官方文档的格式测试，没连过真实 GitLab。这些文字通道靠回答链接拍板，要把 `hub.publicUrl` 配成手机或电脑能打开的地址。
+**實測情況：** Claude Code、Codex 和 ACP（官方 Codex ACP 轉接器）跑通了多輪問答和跨行程工作階段延續；飛書跑通了傳送、按鈕回呼和卡片更新；四種 Webhook 範本只在本機模擬服務上驗證過，GitLab Webhook 按官方文件的格式測試，沒連過真實 GitLab。這些文字通道靠回答連結決定，要把 `hub.publicUrl` 配成手機或電腦能開啟的地址。
 
-**其他命令行 Agent 一行接入。** 设置 `use: "command"` 并传入命令数组，`{prompt}` 作为独立参数传递，不会被当成 shell 代码执行。下面的命令整理自各家官方文档，我们还没有逐个跑过：
+**其他命令列 Agent 一行接入。** 設定 `use: "command"` 並傳入命令陣列，`{prompt}` 作為獨立參數傳遞，不會被當成 shell 程式碼執行。下面的命令整理自各家官方文件，我們還沒有逐個跑過：
 
 | Agent | 接入命令 |
 |---|---|
-| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cli-help.md#dsh-headless) 旧版（内置插件要 0.2.2 或更新） | `dsh --profile headless {prompt}` |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cli-help.md#dsh-headless) 舊版（內建外掛要 0.2.2 或更新） | `dsh --profile headless {prompt}` |
 | [pi](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/cli.md) | `pi --print {prompt}` |
 | [OpenClaw](https://docs.openclaw.ai/cli/agent) | `openclaw agent exec {prompt}` |
 | [Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/cli) | `hermes chat -Q -q {prompt}` |
 | [Cursor](https://cursor.com/docs/cli/reference/parameters) | `agent -p --trust {prompt}` |
 | [WorkBuddy / CodeBuddy](https://www.codebuddy.ai/docs/cli/headless) | `codebuddy -p {prompt}` |
 
-**交付流水线。** 给 GitHub PR 打上 `deliver` 标签后，它会自己跟进到上线：**审代码 → 等 CI → 合并 PR → 等部署 → 核对线上版本**。审查和交付配置只从 `main` 读取，绝不在接单电脑上检出或运行 PR 里的代码；排队、并发和重试直接复用内核。
+**交付流程。** 給 GitHub PR 打上 `deliver` 標籤後，它會自己跟進到上線：**審程式碼 → 等 CI → 合併 PR → 等部署 → 核對線上版本**。審查和交付設定只從 `main` 讀取，絕不在執行工作的電腦上簽出或執行 PR 裡的程式碼；排隊、併發和重試直接重用核心。
 
-**写自己的插件。** 从 [Agent](examples/plugins/hello-agent/agent.ts)、[通道](examples/plugins/hello-channel/channel.ts)、[事件](examples/plugins/hello-source/source.ts) 三个可运行的最小模板开始，见[插件开发说明](docs/plugins.md)。要让 Agent 操作网页，先看[浏览器接入](docs/plugins.md#浏览器接入)。命令行和 [MCP](skills/agent-autoloop/SKILL.md#mcp-与密钥撤销) 也能查看和回答卡片。
+**寫自己的外掛。** 從 [Agent](examples/plugins/hello-agent/agent.ts)、[通道](examples/plugins/hello-channel/channel.ts)、[事件](examples/plugins/hello-source/source.ts) 三個可執行的最小範本開始，見[外掛開發說明](docs/plugins.md)。要讓 Agent 操作網頁，先看[瀏覽器接入](docs/plugins.md#浏览器接入)。命令列和 [MCP](skills/agent-autoloop/SKILL.md#mcp-与密钥撤销) 也能檢視和回答卡片。
 
-## 内核的四个机制
+## 核心的四個機制
 
-内核约 1650 行代码、零运行时依赖。它不读系统时钟、不用随机数、不向外发请求，插件主动连进来，账号凭据留在各自的插件里；同样的输入永远得出同样的结果。它把四个计算机领域的成熟做法用到了命令行 Agent 上：
+核心約 1650 行程式碼、零執行階段相依套件。它不讀系統時鐘、不用隨機數、不向外發請求，外掛主動連進來，帳號憑據留在各自的外掛裡；同樣的輸入永遠得出同樣的結果。它把四個電腦領域的成熟做法用到了命令列 Agent 上：
 
-- **挂起零消耗**：等你拍板时进程直接退出，等待状态存在数据库里，Agent 不用一直挂着。你三天没回，这三天就没有 Agent 进程在跑、不花 Token，只有很轻的中台在后台等着；你一回答，它接着原来的对话继续干。
-- **事件溯源**：所有状态都从一条只追加的日志算出来，日志和索引在同一个事务里写进磁盘，写完才应答。进程被强杀，已经确认的事不丢（整机断电没有单独测过）；任何一轮为什么跑、结果是什么，一条命令就能查清；数据格式变了就从日志重建，不用写迁移脚本。
-- **指令数据分离**：思路和 SQL 参数化一样。Issue 的标题和正文等外部文字只作为资料放进文件，不拼进提示词，提示词里只有校验过字符的类型、编号和链接；用哪个 Agent、在哪个目录、什么权限，只由你本机的规则决定，事件里带 `cwd`、`agent`、`access` 字段会被直接拒收。
-- **跳数熔断**：思路和网络包的 TTL 一样。Agent 交回的事件会再派给 Agent，层数一路累加，经过人工提问和定时复查也不清零，Agent 自己改不了；超过 8 层就只记录、不再派活，并发一张卡片告诉你。
+- **等待零消耗**：等你決定時行程直接結束，等待狀態存在資料庫裡，Agent 不用一直掛著。你三天沒回，這三天就沒有 Agent 行程在執行、不花 Token，只有很輕的中台在背景等著；你一回答，它接著原來的對話繼續工作。
+- **事件溯源**：所有狀態都從一條只追加的日誌算出來，日誌和索引在同一筆交易裡寫入磁碟，寫完才應答。行程被強制終止，已經確認的事不丟（整台電腦斷電沒有單獨測過）；任何一輪為什麼跑、結果是什麼，一條命令就能查清；資料格式變了就從日誌重建，不用寫遷移指令碼。
+- **指令與資料分離**：思路和 SQL 參數化一樣。Issue 的標題和正文等外部文字只作為資料放進檔案，不拼進提示詞，提示詞裡只有驗證過字元的類型、編號和連結；用哪個 Agent、在哪個目錄、什麼權限，只由你本機的規則決定，事件裡帶 `cwd`、`agent`、`access` 欄位會被直接拒收。
+- **跳數熔斷**：思路和網路封包的 TTL 一樣。Agent 交回的事件會再派給 Agent，層數一路累加，經過人工提問和排程複查也不清零，Agent 自己改不了；超過 8 層就只記錄、不再派工，並發送一張卡片告訴你。
 
 ### 自己跑一遍
 
-在程序目录 `~/.agent-autoloop/app` 下运行：
+在程式目錄 `~/.agent-autoloop/app` 下執行：
 
-| 验证什么 | 命令 |
+| 驗證什麼 | 命令 |
 |---|---|
-| 任何一轮的来龙去脉 | `agent-autoloop why 1` |
-| 20 万步模拟断网、丢包、崩溃和重复提交，一个种子就能复现 | `node sim/random.ts 24301 200000` |
-| 强杀进程 1000 次，已确认的记录一条不丢 | `node sim/crash.ts 1000 12648430` |
-| 下面的性能数字 | `npm run benchmark` |
+| 任何一輪的來龍去脈 | `agent-autoloop why 1` |
+| 20 萬步模擬斷網、封包遺失、崩潰和重複提交，一個種子就能重現 | `node sim/random.ts 24301 200000` |
+| 強制終止行程 1000 次，已確認的記錄一條不丟 | `node sim/crash.ts 1000 12648430` |
+| 下面的效能數字 | `npm run benchmark` |
 
 ```text
-第 1 轮 · 演示
-11-03 20:47:25  规则版本 #1
-11-03 20:47:25  触发事件：来源 local · 类型 demo.start · 对象 example
-11-03 20:47:25  local 领取（演示程序）
-11-03 20:47:25  结束：演示完成
+第 1 輪 · 示範
+11-03 20:47:25  規則版本 #1
+11-03 20:47:25  觸發事件：來源 local · 類型 demo.start · 對象 example
+11-03 20:47:25  local 領取（示範程式）
+11-03 20:47:25  結束：示範完成
 ```
 
-### 实测性能
+### 實測效能
 
-Apple M5 Pro、24 GB、Node 24.21.0。写入逐条提交，事务落盘后才应答。
+Apple M5 Pro、24 GB、Node 24.21.0。寫入逐條提交，交易寫入磁碟後才回應。
 
-| 指标 | 实测 |
+| 指標 | 實測 |
 |---|---:|
-| 冷启动 | 88.78 ms |
-| 空闲内存 | 59.94 MB RSS |
-| 1000 个同时等待的长轮询 | 170.49 MB RSS |
-| 持久化写入 | 2394 条/秒 |
-| 派活 p99 | 1.82 ms |
-| 排队 5000 时被挡下的心跳 p99 | 1.66 ms |
-| 110 万条事实时的启动 | 99.8 ms |
-| 内核行数（含空行和注释） | 约 1650 |
-| 运行时依赖 | 0 |
+| 冷啟動 | 88.78 ms |
+| 閒置記憶體 | 59.94 MB RSS |
+| 1000 個同時等待的長輪詢 | 170.49 MB RSS |
+| 持久化寫入 | 2394 條/秒 |
+| 派工 p99 | 1.82 ms |
+| 排隊 5000 時被擋下的心跳 p99 | 1.66 ms |
+| 110 萬條事實時的啟動 | 99.8 ms |
+| 核心行數（含空行和註解） | 約 1650 |
+| 執行階段相依套件 | 0 |
 
-历史变大后，状态汇总会变慢，日志和索引也继续占磁盘；格式变化后的首次启动要从日志全量重建，110 万条用时 43.1 秒。[完整数据和测法](docs/protocol.md#历史增长实测)。
+歷史變大後，狀態彙總會變慢，日誌和索引也繼續佔磁碟；格式變化後的首次啟動要從日誌全量重建，110 萬條用時 43.1 秒。[完整資料和測法](docs/protocol.md#历史增长实测)。
 
-## 用量与合规说明
+## 用量與合規說明
 
-中台直接调用你本机已经安装并登录好的命令行工具，不会读取或转存你的账号凭据。模型调用消耗算在你自己的账号名下，额度和使用范围遵循各家模型厂商的服务条款。
+中台直接呼叫你本機已經安裝並登入好的命令列工具，不會讀取或轉存你的帳號憑據。模型呼叫消耗算在你自己的帳號名下，額度和使用範圍遵循各家模型廠商的服務條款。
 
-在高频自动化场景下，各家厂商通常更建议使用 API Key（个人订阅额度主要是为日常人工交互设计的，详见 [Anthropic](https://code.claude.com/docs/en/legal-and-compliance) 与 [OpenAI](https://learn.chatgpt.com/docs/auth) 的官方说明）。如果你用它对外提供服务，请使用 API Key。本项目为独立开源项目，与上述厂商无隶属或背书关系。
+在高頻自動化情境下，各家廠商通常更建議使用 API Key（個人訂閱額度主要是為日常人工互動設計的，詳見 [Anthropic](https://code.claude.com/docs/en/legal-and-compliance) 與 [OpenAI](https://learn.chatgpt.com/docs/auth) 的官方說明）。如果你用它對外提供服務，請使用 API Key。本專案為獨立開源專案，與上述廠商無隸屬或背書關係。
 
-## 更多文档
+## 更多文件
 
-- [安装说明](INSTALL.md)
+- [安裝說明](INSTALL.md)
 - [繁體中文使用手冊](docs/使用手冊.md)
-- [规则与交付流水线配置手册](skills/agent-autoloop/SKILL.md)
-- [如何编写插件](docs/plugins.md)
-- [完整通信协议](docs/protocol.md)
-- [安全边界说明](SECURITY.md)
-- [参与贡献与交流](CONTRIBUTING.md)
-- [项目开发约定](AGENTS.md)
+- [規則與交付流程設定手冊](skills/agent-autoloop/SKILL.md)
+- [如何編寫外掛](docs/plugins.md)
+- [完整通訊協定](docs/protocol.md)
+- [安全邊界說明](SECURITY.md)
+- [參與貢獻與交流](CONTRIBUTING.md)
+- [專案開發約定](AGENTS.md)
 
 <details>
-<summary><strong>仓库目录</strong></summary>
+<summary><strong>儲存庫目錄</strong></summary>
 
-| 位置 | 放什么 |
+| 位置 | 放什麼 |
 |---|---|
-| `kernel/` | 内核：决策、事实日志、状态投影、到期任务、规则匹配、接口行为与卡片表单 |
-| `host/` | 运行外壳：Node HTTP、文件与 SQLite 连接、时钟、配置、状态汇总、后台服务和插件加载 |
-| `protocol/` | 通信格式、JSON Schema、输入校验、HTTP 客户端和一致性检查 |
-| `worker/` | 接单程序：领活、运行 Agent、心跳与停止、读取和提交回执 |
-| `cli/`、`bin/` | 用户命令及启动入口，包括状态、回答、`why`、MCP、更新与卸载 |
-| `plugins/` | 内置 Agent、事件、通道和交付插件 |
-| `examples/recipes/` | 完整场景：规则、任务 Skill 和启用说明 |
-| `examples/plugins/`、`examples/skills/`、`examples/*.sh` | 最小插件模板、独立任务手册和 Shell 示例 |
-| `skills/agent-autoloop/` | 中台的正式配置与操作手册，安装时也提供给 Agent 使用 |
-| `docs/` | 通信协议、插件开发说明与中英文架构图 |
-| `tests/`、`sim/` | 日常行为测试，以及模拟、穷举、强杀和变异检查 |
-| `scripts/`、`.github/workflows/` | 性能与真机验证、安装冒烟脚本（POSIX 与 Windows 各一份）、单一二进位的建置，以及 Linux / macOS / Windows CI 与 Release |
-| 根目录文档与 `install.sh` | 中英文 README、安装说明、安全边界、开发约定、许可证与安装脚本 |
+| `kernel/` | 核心：決策、事實日誌、狀態投影、到期任務、規則比對、介面行為與卡片表單 |
+| `host/` | 執行外殼：Node HTTP、檔案與 SQLite 連線、時鐘、設定、狀態彙總、背景服務和外掛載入 |
+| `protocol/` | 通訊格式、JSON Schema、輸入驗證、HTTP 用戶端和一致性檢查 |
+| `worker/` | 工作執行程式：領取工作、執行 Agent、心跳與停止、讀取和提交回條 |
+| `cli/`、`bin/` | 使用者命令及啟動入口，包括狀態、回答、`why`、MCP、更新與解除安裝 |
+| `plugins/` | 內建 Agent、事件、通道和交付外掛 |
+| `examples/recipes/` | 完整情境：規則、任務 Skill 和啟用說明 |
+| `examples/plugins/`、`examples/skills/`、`examples/*.sh` | 最小外掛範本、獨立任務手冊和 Shell 範例 |
+| `skills/agent-autoloop/` | 中台的正式設定與操作手冊，安裝時也提供給 Agent 使用 |
+| `docs/` | 通訊協定、外掛開發說明與中英文架構圖 |
+| `tests/`、`sim/` | 日常行為測試，以及模擬、窮舉、強殺和變異檢查 |
+| `scripts/`、`.github/workflows/` | 效能與真機驗證、安裝冒煙指令碼（POSIX 與 Windows 各一份）、單一執行檔的建置，以及 Linux / macOS / Windows CI 與 Release |
+| 根目錄文件與 `install.sh` | 中英文 README、安裝說明、安全邊界、開發約定、授權條款與安裝指令碼 |
 
-读代码可以从 `bin/agent-autoloop.ts` → `cli/main.ts` 开始，再按功能进入 `host/`、`worker/` 或 `plugins/`；内核设计先看[协议](docs/protocol.md)。同名文件分属不同层：`host/http.ts` 转换 Node 请求，`kernel/http.ts` 定义接口行为；`protocol/rules.ts` 校验输入，`kernel/rules.ts` 定义规则类型和匹配。
+讀程式碼可以從 `bin/agent-autoloop.ts` → `cli/main.ts` 開始，再按功能進入 `host/`、`worker/` 或 `plugins/`；核心設計先看[協定](docs/protocol.md)。同名檔案分屬不同層：`host/http.ts` 轉換 Node 請求，`kernel/http.ts` 定義介面行為；`protocol/rules.ts` 驗證輸入，`kernel/rules.ts` 定義規則類型和比對。
 
 </details>
 
