@@ -83,7 +83,7 @@ node --disable-warning=ExperimentalWarning --test --test-name-pattern='agent-aut
 | `link(session)`              | 可选，打开这个会话的链接。回执写错时，`read` 返回了 `session` 的插件都只重写回执，和有没有链接无关       |
 | `check()`                    | 可选，能用返回 `null`，否则返回下一步怎么做                                                              |
 
-`turn` 包含 `prompt`、`session`、`resume`、`cwd`、`access`、`model`、`effort`、`command`、`contextFile`、`folder`。`contextFile` 是资料文件，受限 CLI 需要允许读取 `folder`。`read` 要能处理未写完的输出；CLI 真正完成后才返回 `text`。`read` 抛错或什么也不返回时，还在跑的接着跑，结束后这一轮算没跑成，留在原会话重派。
+`turn` 包含 `prompt`、`session`、`resume`、`cwd`、`access`、`model`、`effort`、`command`、`contextFile`、`folder`。`contextFile` 是资料文件。可选 `workspaceContext: true` 请求 worker 建立随机的 context-only 副本：Git 仓库放在 `git rev-parse --absolute-git-dir` 的真实 metadata 目录内（含 worktree），非 Git 目录放在可信 `turn.cwd` 下，避免 git status 被副本污染；Windows 受限 Codex 用它读取本轮资料，不开放私人运行目录或把外部正文放进提示词。副本只包含当前 context，完成/失败后清理，worker 重启时为仍运行的回合保留；清理拒绝或失败只记日志并清空该指标，不阻止业务结果回报，也不跟随 reparse 链接删除；这是原有 cwd 信任域，不是同 cwd 不同回合的硬隔离。其他受限 CLI 仍须能读取其授权资料。`read` 要能处理未写完的输出；CLI 真正完成后才返回 `text`。`read` 抛错或什么也不返回时，还在跑的接着跑，结束后这一轮算没跑成，留在原会话重派。
 
 支持 `resume` 的插件，从 Agent 收下提示词起都要返回 `started: true`，包括运行中和出错之后。否则干到一半断了，也会被当成会话接不上，开新会话把业务重做一遍。返回了 `session` 就要按 `turn.resume` 接回原会话：没跑成的重派和写错回执的重写都靠它；接不回去的 CLI 不要返回 `session`。
 

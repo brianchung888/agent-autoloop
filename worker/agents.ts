@@ -41,6 +41,8 @@ export type Reading = {
 export type Adapter = {
   /** Its command line for this turn. */
   command(turn: Turn): string[];
+  /** Ask the worker for a context-only copy in this turn's existing workspace trust domain. */
+  workspaceContext?: boolean;
   /** What its output says so far. `code` is null while it's still running or when it died without saying. */
   read(stdout: string, code: number | null, stderr: string): Reading;
   /** Where a person can open this session. */

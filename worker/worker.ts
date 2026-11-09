@@ -31,6 +31,7 @@ import { selfExecutable } from "../host/self.ts";
 import { alive, bornAt, forgetProcesses, sampleTree, terminate, treeAlive } from "./process.ts";
 import { promptFor, readMessage, repairPrompt, resultFrom } from "./contract.ts";
 import { loadUsage, saveUsage, usageDelta } from "./usage.ts";
+import { copyContext, removeContext, type ContextCopy } from "./context.ts";
 
 const RUNS = path.join(HOME, "worker", "runs");
 const WINDOWS = process.platform === "win32";
@@ -79,6 +80,7 @@ type Entry = {
   stopping?: number;
   why?: "cancel" | "timeout" | "finished";
   result?: Result;
+  contextCopy?: ContextCopy;
 };
 export type WorkerHub = Pick<Hub, "work" | "started" | "result">;
 export type WorkerOptions = {
@@ -116,7 +118,7 @@ function agentEnvironment(entry: Entry) {
     ...env,
     AGENT_AUTOLOOP_HOME: HOME,
     AGENT_AUTOLOOP_RUN: String(entry.run),
-    AGENT_AUTOLOOP_CONTEXT: path.join(entry.dir, "context.json"),
+    AGENT_AUTOLOOP_CONTEXT: entry.contextCopy?.file ?? path.join(entry.dir, "context.json"),
     // Everything above is thrown away and put back on purpose, and the language has to be put back: a turn over ACP
     // runs in this program started again (plugins/acp/agent.ts), and what that process says about a failure is what
     // the person reads in their card. Without this it falls back to the default and answers in 正體 to an install
@@ -209,6 +211,13 @@ export function createWorker({
       folder: entry.dir,
     };
     if (!existsSync(cwd)) throw new Error(t("worker.cwdGone", { cwd }));
+    if (adapter.workspaceContext && agent.access !== "full") {
+      entry.contextCopy = copyContext(cwd, entry.job.context);
+      save(entry);
+      turn.prompt = prompt.replaceAll(turn.contextFile, entry.contextCopy.file);
+      turn.contextFile = entry.contextCopy.file;
+      turn.folder = entry.contextCopy.folder;
+    }
     const argv = adapter.command(turn);
     const { out, err, exit, command, launch: record } = files(entry);
     let child: ChildProcess;
@@ -273,6 +282,23 @@ export function createWorker({
   function endWith(entry: Entry, result: Result) {
     entry.result = result;
     save(entry);
+    try {
+      clearContext(entry);
+      save(entry);
+    } catch (error) {
+      sayOnce(`run ${entry.run}: context cleanup: ${error}`);
+    }
+  }
+
+  function clearContext(entry: Entry) {
+    if (!entry.contextCopy) return;
+    const copy = entry.contextCopy;
+    delete entry.contextCopy;
+    try {
+      removeContext(copy);
+    } catch (error) {
+      sayOnce(`run ${entry.run}: context cleanup refused at ${copy.folder}: ${error}`);
+    }
   }
 
   async function start(job: Job) {
@@ -334,6 +360,7 @@ export function createWorker({
 
   /** A turn has ended. What it said is a result, or a reason to ask it again without redoing anything. */
   function conclude(entry: Entry, adapter: Adapter, code: number | null) {
+    clearContext(entry);
     // One ended because its turn was over but it wouldn't exit said what it had to say first.
     const seen = read(entry, adapter, entry.finishedAt ? 0 : code);
     entry.usage = addUsage(addUsage(entry.usage, seen.usage), sessionRise(entry, seen));
@@ -483,10 +510,45 @@ export function createWorker({
   /** Hands in what has ended. One the hub can't take now waits for next time; one it refuses is dropped and said so. */
   async function settle(entry: Entry) {
     if (!entry.result) return;
+    clearContext(entry);
     try {
       const answer = await hub.result(entry.run, entry.token, entry.result);
       for (const item of answer?.rejected ?? []) log(`run ${entry.run}: not applied: ${JSON.stringify(item)}`);
-      log(`run ${entry.run}: ${entry.result.outcome}`);
+      const summary = entry.result.summary?.trim().split(/\r?\n/)[0];
+      const errorLines = entry.result.error ? entry.result.error.trimEnd().split(/\r?\n/) : [];
+      const detail = [summary, errorLines[0]?.trim()].filter(Boolean).join(" — ");
+      log(`run ${entry.run}: ${entry.result.outcome}${detail ? ` — ${detail}` : ""}`);
+      for (const line of errorLines.slice(1)) {
+        log(`run ${entry.run}:   ${line}`);
+      }
+      for (const item of entry.result.notice ?? []) {
+        const text = (item.text ?? "").trimEnd();
+        const lines = text ? text.split(/\r?\n/) : [];
+        if (lines.length <= 1) {
+          const first = lines[0] !== undefined ? `: ${lines[0]}` : "";
+          log(`run ${entry.run}: [notice] ${item.title}${first}`);
+        } else {
+          log(`run ${entry.run}: [notice] ${item.title}: ${lines[0]}`);
+          for (const line of lines.slice(1)) {
+            log(`run ${entry.run}: [notice]   ${line}`);
+          }
+        }
+      }
+      for (const item of entry.result.ask ?? []) {
+        const options = item.options?.length ? ` (options: ${item.options.join(" / ")})` : "";
+        const text = (item.text ?? "").trimEnd();
+        const lines = text ? text.split(/\r?\n/) : [];
+        if (lines.length <= 1) {
+          const first = lines[0] !== undefined ? `: ${lines[0]}` : "";
+          log(`run ${entry.run}: [ask] ${item.title}${first}${options}`);
+        } else {
+          log(`run ${entry.run}: [ask] ${item.title}: ${lines[0]}`);
+          for (let i = 1; i < lines.length; i++) {
+            const isLast = i === lines.length - 1;
+            log(`run ${entry.run}: [ask]   ${lines[i]}${isLast ? options : ""}`);
+          }
+        }
+      }
     } catch (error) {
       if (!(error instanceof HubError) || error.status >= 500) {
         return log(`run ${entry.run}: couldn't hand in the result: ${error}`);

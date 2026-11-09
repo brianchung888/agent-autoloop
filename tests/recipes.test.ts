@@ -25,6 +25,7 @@ const RECIPES = join(ROOT, "examples", "recipes");
 const NAMES = [
   "morning-brief",
   "github-issues",
+  "gitlab-issues",
   "ops-alerts",
   "feedback",
   "website-watch",
@@ -74,7 +75,7 @@ for (const name of NAMES) {
     const { agents } = readRules(name);
     const real = Object.values<{ use: string; access: string }>(agents).filter((agent) => agent.use !== "command");
     assert.equal(real.length, 1);
-    const stated = /权限：`(read|edit|full)`/.exec(readDoc(name));
+    const stated = /[权權]限：`(read|edit|full)`/.exec(readDoc(name));
     assert.ok(stated, "README 要写明权限");
     assert.equal(stated[1], real[0].access);
   });

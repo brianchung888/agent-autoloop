@@ -1,0 +1,8 @@
+{
+  "baseUrl": "https://gitscr1.moneydj.com",
+  "projects": ["brianchung/agent-autoloop", "your-group/your-second-repo"],
+  "userId": 12345,
+  "label": "請替換為你的追蹤標籤",
+  "closedUpdatedDays": 7,
+  "timezone": "Asia/Taipei"
+}

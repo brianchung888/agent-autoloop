@@ -24,6 +24,7 @@
     "kernel",
     "protocol",
     "sim",
-    "examples/recipes"
+    "examples/recipes",
+    "examples/watch-gitlab-issues.ts"
   ]
 }

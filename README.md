@@ -127,6 +127,7 @@ Agent 結束了這一輪，問了你一個問題。它現在不佔用行程、�
 |---|---|
 | [每日早報](examples/recipes/morning-brief/README.md) | 預設每天 8 點整理本機筆記和 Git 提交，寫入 `briefs/YYYY-MM-DD.md` |
 | [跟進 GitHub Issue](examples/recipes/github-issues/README.md) | 每 5 分鐘查新 Issue，在本機改程式碼並通知你檢視；不提交、不推送、不回覆 Issue |
+| [整理個人相關 GitLab Issue](examples/recipes/gitlab-issues/README.md) | 多 repo 的指派給我／我建立／指定標籤聯集；合併本機摘要並通知 |
 | [線上告警排查](examples/recipes/ops-alerts/README.md) | 接收報錯、對照程式碼查原因，需要重新啟動時發卡片詢問，回答後繼續 |
 | [使用者回饋處理](examples/recipes/feedback/README.md) | 重新讀取回饋目前狀態、修復、交付核實、準備回覆；需要決定時飛書問你，回答後繼續 |
 | [網站巡檢](examples/recipes/website-watch/README.md) | 每 5 分鐘檢查狀態和關鍵內容，首次異常交給 Agent，持續異常不重複通知，恢復後更新原卡片 |

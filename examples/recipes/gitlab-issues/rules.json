@@ -1,0 +1,48 @@
+{
+  "timezone": "Asia/Taipei",
+  "sources": {
+    "gitlab-brief": {
+      "name": "GitLab 個人 Issue 摘要資料"
+    }
+  },
+  "agents": {
+    "gitlab-collector": {
+      "name": "收集個人相關 GitLab Issue",
+      "worker": "my-pc",
+      "use": "command",
+      "command": ["node", "{cwd}/watch-gitlab-issues.ts", "{cwd}/sources.json"]
+    },
+    "gitlab-agent": {
+      "name": "GitLab 摘要 Agent",
+      "worker": "my-pc",
+      "use": "codex",
+      "access": "edit"
+    }
+  },
+  "rules": [
+    {
+      "name": "收集個人相關 GitLab Issue",
+      "when": {
+        "cron": "*/30 * * * *"
+      },
+      "to": "gitlab-collector",
+      "cwd": "~/.agent-autoloop/work/gitlab-issues",
+      "tell": "needed",
+      "emits": {
+        "source": "gitlab-brief",
+        "types": ["brief.ready"]
+      }
+    },
+    {
+      "name": "整理個人相關 GitLab Issue",
+      "when": {
+        "source": "gitlab-brief",
+        "types": ["brief.ready"]
+      },
+      "to": "gitlab-agent",
+      "cwd": "~/.agent-autoloop/work/gitlab-issues",
+      "skill": "gitlab-issue-brief",
+      "tell": "needed"
+    }
+  ]
+}

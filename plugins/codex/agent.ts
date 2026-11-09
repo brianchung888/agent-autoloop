@@ -31,6 +31,7 @@ function elsewhere() {
 export const IN_THE_APP = elsewhere();
 
 export default {
+  workspaceContext: process.platform === "win32",
   command: (turn) => [
     // A shim's `prefix` is the script its program has to be given first; for a program of its own there is none.
     ...((found) => [found.program, ...found.prefix])(findProgram("codex", () => IN_THE_APP)),

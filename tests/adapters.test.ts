@@ -202,7 +202,7 @@ test("Claude Code: what it said before a background task ended isn't its answer"
 test("Codex: access, new and going on", { skip: !stubbed(codex, {}) }, () => {
   const argv = stubbed(codex, {})!;
   assert.deepEqual(argv.slice(1, 4), ["exec", "--json", "--skip-git-repo-check"]);
-  assert.ok(argv.at(-1)!.endsWith("做这件事"));
+  assert.ok(argv.at(-1)!.endsWith(turn.prompt));
   assert.ok(argv.includes('sandbox_mode="workspace-write"'));
   assert.ok(argv.includes('approval_policy="never"'));
   assert.ok(stubbed(codex, { access: "read" })!.includes('sandbox_mode="read-only"'));
@@ -223,7 +223,7 @@ test("Codex: new and resumed runs use only browser access configured for the bac
     assert.match(prompt, /规则或 Skill.*浏览器入口/);
     assert.match(prompt, /桌面应用.*浏览器连接/);
     assert.match(prompt, /业务.*回执.*本轮/);
-    assert.ok(prompt.endsWith(turn.prompt));
+    assert.ok(prompt.includes(turn.prompt));
     assert.doesNotMatch(prompt, /~\/\.local\/bin\/|\/Users\//);
   }
 });
@@ -320,4 +320,14 @@ test("a line of output that's JSON but no message is noise to every plugin", () 
     assert.doesNotThrow(() => adapter.read(noise, null, ""));
     assert.doesNotThrow(() => adapter.read(noise, 0, ""));
   }
+});
+
+test("Codex keeps event bodies outside the prompt and requests a Windows workspace context file", () => {
+  const context = { events: [{ detail: "hostile-event-body-must-stay-out" }], token: "private-token-must-not-appear" };
+  for (const resume of [null, "thread-1"]) {
+    const argv = codex.command({ ...turn, resume, ...{ context } });
+    assert.ok(argv.at(-1)!.includes(turn.prompt));
+    assert.doesNotMatch(argv.join(" "), /hostile-event-body-must-stay-out|private-token-must-not-appear/);
+  }
+  assert.equal(codex.workspaceContext, process.platform === "win32");
 });
