@@ -116,7 +116,7 @@ export default {
     try {
       const { program, prefix } = findProgram("claude", inTheApp);
       const status = JSON.parse(
-        execFileSync(program, [...prefix, "auth", "status"], { encoding: "utf8", timeout: 20_000 }),
+        execFileSync(program, [...prefix, "auth", "status"], { encoding: "utf8", timeout: 20_000, windowsHide: true }),
       );
       return status.loggedIn ? null : t("claude.notLoggedIn");
     } catch (error) {

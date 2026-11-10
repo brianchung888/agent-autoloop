@@ -68,6 +68,7 @@ export function git(root: string, ...args: string[]) {
     timeout: 60000,
     maxBuffer: 32 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   }).trim();
 }
 
@@ -88,7 +89,11 @@ export const matches = (name: string, patterns: string[]) =>
   patterns.some((pattern) => globToRegExp(pattern).test(name));
 
 export function releaseRequired(root: string, base: string, head: string, patterns: string[]) {
-  const isAncestor = spawnSync("git", ["merge-base", "--is-ancestor", base, head], { cwd: root, stdio: "ignore" });
+  const isAncestor = spawnSync("git", ["merge-base", "--is-ancestor", base, head], {
+    cwd: root,
+    stdio: "ignore",
+    windowsHide: true,
+  });
   if (isAncestor.status !== 0) return true;
   const records = git(
     root,

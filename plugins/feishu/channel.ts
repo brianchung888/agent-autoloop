@@ -97,8 +97,11 @@ export default async function feishu({ hub, options, log, signal }: ChannelConte
   const program = (options.lark as string | undefined) ?? "lark-cli";
   const lark = async (args: string[], input: string) => {
     const printed = await new Promise<string>((resolve, reject) => {
-      const child = execFile(program, args, { encoding: "utf8", timeout: 60_000, signal }, (error, stdout) =>
-        error ? reject(error) : resolve(stdout),
+      const child = execFile(
+        program,
+        args,
+        { encoding: "utf8", timeout: 60_000, signal, windowsHide: true },
+        (error, stdout) => (error ? reject(error) : resolve(stdout)),
       );
       child.stdin!.on("error", reject);
       child.stdin!.end(input);
@@ -188,6 +191,7 @@ export default async function feishu({ hub, options, log, signal }: ChannelConte
       // stdin stays open: lark-cli ends an unbounded consume when its stdin closes.
       const consume = spawn(program, ["event", "consume", "card.action.trigger", "--as", "bot"], {
         stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
       });
       // Unheard, this would end the whole hub. A process that never started still closes, which starts it again below.
       consume.on("error", (error) => log(`the click listener couldn't run: ${error}`));

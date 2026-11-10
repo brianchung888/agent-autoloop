@@ -97,7 +97,12 @@ export async function reviewSnapshot(bare: string, snapshot: string, main: strin
   const reviewer = command ? null : findProgram("codex", () => IN_THE_APP);
   const argv = command ?? [reviewer!.program, ...reviewer!.prefix, ...codexCommand(output, level)];
   const args = argv.slice(1).map((arg) => arg.replaceAll("{input}", changesFile));
-  const child = execFile(argv[0], args, { cwd: snapshot, timeout: 600000, maxBuffer: 8 * 1024 * 1024 });
+  const child = execFile(argv[0], args, {
+    cwd: snapshot,
+    timeout: 600000,
+    maxBuffer: 8 * 1024 * 1024,
+    windowsHide: true,
+  });
   child.stdin!.end(prompt);
   const text = await new Promise<string>((resolve, reject) => {
     let stdout = "";

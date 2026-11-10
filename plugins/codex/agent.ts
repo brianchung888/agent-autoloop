@@ -98,6 +98,7 @@ export default {
         encoding: "utf8",
         timeout: 20_000,
         stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
       });
       return null;
     } catch (error) {

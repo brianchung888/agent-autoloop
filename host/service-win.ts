@@ -168,11 +168,17 @@ export function installTask(options: TaskOptions) {
   // whoever registers it, and asking for a person on the command line makes schtasks ask for their password.
   const register = ["/Create", "/TN", options.label, "/XML", file, "/F"];
   writeTaskFile(file, taskXml({ ...options, atLogon: true }));
-  if (spawnSync(systemTool("schtasks"), register, { stdio: "ignore", timeout: 60_000 }).status !== 0) {
+  if (
+    spawnSync(systemTool("schtasks"), register, { stdio: "ignore", timeout: 60_000, windowsHide: true }).status !== 0
+  ) {
     writeTaskFile(file, taskXml({ ...options, atLogon: false }));
-    execFileSync(systemTool("schtasks"), register, { stdio: "ignore", timeout: 60_000 });
+    execFileSync(systemTool("schtasks"), register, { stdio: "ignore", timeout: 60_000, windowsHide: true });
   }
-  spawnSync(systemTool("schtasks"), ["/Run", "/TN", options.label], { stdio: "ignore", timeout: 60_000 });
+  spawnSync(systemTool("schtasks"), ["/Run", "/TN", options.label], {
+    stdio: "ignore",
+    timeout: 60_000,
+    windowsHide: true,
+  });
 }
 
 /** Whether the registered task also starts at logon, or only waits for the repeat. For saying so in `doctor`. */
@@ -193,6 +199,7 @@ export function registeredXml(label: string) {
     encoding: "latin1",
     timeout: 60_000,
     stdio: ["ignore", "pipe", "ignore"],
+    windowsHide: true,
   });
   return asked.status === 0 && asked.stdout.includes("<Task") ? asked.stdout : null;
 }
@@ -211,8 +218,12 @@ export function taskOwned(label: string, home: string, program: string) {
 
 export function removeTask(label: string, home: string, program: string) {
   if (!taskOwned(label, home, program)) return;
-  spawnSync(systemTool("schtasks"), ["/End", "/TN", label], { stdio: "ignore", timeout: 60_000 });
-  spawnSync(systemTool("schtasks"), ["/Delete", "/TN", label, "/F"], { stdio: "ignore", timeout: 60_000 });
+  spawnSync(systemTool("schtasks"), ["/End", "/TN", label], { stdio: "ignore", timeout: 60_000, windowsHide: true });
+  spawnSync(systemTool("schtasks"), ["/Delete", "/TN", label, "/F"], {
+    stdio: "ignore",
+    timeout: 60_000,
+    windowsHide: true,
+  });
   for (const file of [taskFile(home), envFile(home)]) rmSync(file, { force: true });
 }
 

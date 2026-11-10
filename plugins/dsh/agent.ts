@@ -86,6 +86,7 @@ export default {
         encoding: "utf8",
         timeout: 20_000,
         stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
       });
       // The options this needs came in 0.2.2, and npm's `latest` is behind that for now.
       if (!help.includes("--approval-policy")) return t("dsh.tooOld");

@@ -54,7 +54,11 @@ export async function bridge(turn: Turn) {
   // The last go may have done its work in this session, so whatever breaks now says nothing about whether a new session
   // would do it again. Only the agent's own no takes this back; see goOn.
   if (turn.resume) console.log(JSON.stringify({ session: turn.resume, started: true }));
-  const child = spawn(turn.command[0], turn.command.slice(1), { cwd: turn.cwd, stdio: ["pipe", "pipe", "inherit"] });
+  const child = spawn(turn.command[0], turn.command.slice(1), {
+    cwd: turn.cwd,
+    stdio: ["pipe", "pipe", "inherit"],
+    windowsHide: true,
+  });
   const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
   let next = 0;
   let session = "";

@@ -44,6 +44,7 @@ function tasklistRows(filters: string[]): string[][] | null {
         encoding: "utf8",
         timeout: 15_000,
         stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
       },
     );
     return printed
@@ -90,7 +91,7 @@ function readProcessTable(): Table | null {
     const printed = execFileSync(
       systemTool("powershell"),
       ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", PROCESS_TABLE_QUERY],
-      { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "ignore"] },
+      { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
     );
     const live = new Set<number>();
     const children = new Map<number, number[]>();
@@ -154,6 +155,7 @@ export function bornAt(pid: number | undefined): string | null {
         encoding: "utf8",
         timeout: 30_000,
         stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
         // The number goes in as a value, never into the text of the query: what runs is the constant above, and what
         // it reads is cast to an integer by the query itself.
         env: { ...process.env, AGENT_AUTOLOOP_PID: String(pid) },
@@ -530,6 +532,7 @@ function kill(pid: number, hard: boolean) {
       execFileSync(systemTool("taskkill"), ["/PID", String(pid), "/T", ...(hard ? ["/F"] : [])], {
         timeout: 15_000,
         stdio: "ignore",
+        windowsHide: true,
       });
     } else process.kill(-pid, hard ? "SIGKILL" : "SIGTERM");
   } catch {}

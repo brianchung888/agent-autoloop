@@ -89,6 +89,7 @@ function executablesOnPath(name: string) {
       encoding: "utf8",
       timeout: 15_000,
       stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
     });
     // where.exe prints every match, nearest on PATH first, which is the one that would run.
     return printed

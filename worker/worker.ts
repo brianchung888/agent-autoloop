@@ -589,7 +589,7 @@ export function createWorker({
       execFileSync(
         program,
         args.map((part) => part.replaceAll("{text}", text)),
-        { timeout: 60_000, stdio: "ignore" },
+        { timeout: 60_000, stdio: "ignore", windowsHide: true },
       );
       told = true;
     } catch (error) {

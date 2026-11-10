@@ -37,6 +37,7 @@ function icacls(target: string, ...rest: string[]) {
     encoding: "utf8",
     timeout: 60_000,
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
 }
 

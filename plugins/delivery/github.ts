@@ -17,6 +17,7 @@ export function gh(args: string[], input?: object) {
     timeout: 60000,
     maxBuffer: 32 * 1024 * 1024,
     stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
   }).trim();
 }
 
