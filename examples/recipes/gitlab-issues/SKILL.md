@@ -11,7 +11,7 @@ description: 整理本人被指派、建立或符合追蹤標籤的 GitLab Issue
 
 1. 核對 `period`、`timezone`、`collectedAt`、`updatedAfter` 與三類篩選條件。內容是收集時現況，不是整段期間的完整歷史；沒有前次基線，不稱「新增」「本期變更」或據此推論進度。
 
-時間顯示與排序：所有人看的報告時間（收集時間、範圍下界、Issue 更新時間、待確認區）一律依該報告快照的 `timezone` 轉為 `YYYY-MM-DD HH:mm:ss.SSS`，報告標明該 IANA 時區，不再並列或顯示 UTC/Z 原值。舊快照若缺時區，依序使用可信 `sources.json.timezone`、中台規則頂層 `timezone`；仍缺或無效就報錯，不猜測或硬編時區。保留輸入 JSON 時間；HTML `datetime`/`data-updated-at` 可保留原始機器值。「待我確認」全區跨專案按對應 Issue 的 `updated_at` 實際時刻由新到舊排序，不混用 `created_at`；每筆顯示當地更新時間。同時刻以 project path、project_id、iid 穩定排序；缺時間者列末並明示未知。套用至當次產出的 Markdown、HTML、latest 與日期版。
+時間顯示與排序：所有人看的報告時間（收集時間、範圍下界、Issue 更新時間、待確認區）一律依該報告快照的 `timezone` 轉為 `YYYY-MM-DD HH:mm:ss.SSS`，報告標明該 IANA 時區，不再並列或顯示 UTC/Z 原值。舊快照若缺時區，依序使用可信 `sources.json.timezone`、中台規則頂層 `timezone`；仍缺或無效就報錯，不猜測或硬編時區。保留輸入 JSON 時間；HTML `datetime`/`data-updated-at` 可保留原始機器值。「最後回應時間」定義：取 Issue 的 `updated_at`（留言、狀態、標籤變動都會更新此欄）；若快照另附 notes，取 `max(updated_at, 最新 note 的 created_at)`，不混用純 `created_at`。所有現有區塊——「待我確認」全區跨專案、各專案內「未結案」清單、各專案內「近期已結案」清單等——各自依此「最後回應時間」由新到舊排序，不是只排「待我確認」；每筆顯示當地更新時間。同一區塊內同時刻以 project path、project_id、iid 穩定排序；缺時間者列於該區塊末並明示未知。套用至當次產出的 Markdown、HTML、latest 與日期版。
 
 2. 寫 `briefs/<id>.md`，`<id>` 使用剛核對的安全 ID。完成的同 ID 稿件不重寫。這是唯一可寫的成品位置；必要時只建立 `briefs` 目錄。不修改輸入快照或任何目標程式碼。
 3. 稿件包含摘要日期/時區、實際收集時間、GitLab/完整 `projects` 清單（含專案數字 ID 與 path）、userId、完整 label、近期已關閉的 `updatedAfter` 下界與天數，說明聯集：assignee=userId OR author=userId OR label=文字。先依專案 path 與 project_id 分組，每個專案再分「未結案」「近期更新且已結案」；`projects` 裡沒有符合 Issue 的專案也明列「本次可見範圍沒有符合項目」。每筆列專案與編號、原始標題、狀態、更新時間、原始連結與符合原因（assignee=指派給我；author=我建立；label=符合追蹤標籤），同筆只列一次。
