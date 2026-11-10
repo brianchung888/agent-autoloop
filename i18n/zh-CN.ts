@@ -261,6 +261,8 @@ export const zhCN = {
   "acp.noResume": "这个 ACP Agent 不支持恢复会话",
   "acp.badVersion": "不支持 ACP 版本 {version}",
   "acp.noSession": "ACP 没有返回会话编号",
+  "acp.modelUnavailable": "ACP 会话没有提供可选模型：{model}",
+  "acp.modelUnconfirmed": "ACP 没有确认切换到模型：{model}",
 
   // ---- plugins/claude, plugins/codex, plugins/dsh, plugins/command ----
   "agent.noResult": "没留下结果",

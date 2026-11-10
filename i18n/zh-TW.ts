@@ -262,6 +262,8 @@ export const zhTW: Strings = {
   "acp.noResume": "這個 ACP Agent 不支援恢復工作階段",
   "acp.badVersion": "不支援 ACP 版本 {version}",
   "acp.noSession": "ACP 沒有回傳工作階段編號",
+  "acp.modelUnavailable": "ACP 工作階段沒有提供可選模型：{model}",
+  "acp.modelUnconfirmed": "ACP 沒有確認切換到模型：{model}",
 
   // ---- plugins/claude, plugins/codex, plugins/dsh, plugins/command ----
   "agent.noResult": "沒留下結果",

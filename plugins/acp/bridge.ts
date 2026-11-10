@@ -140,7 +140,7 @@ export async function bridge(turn: Turn) {
     const method = can?.loadSession ? "session/load" : can?.sessionCapabilities?.resume ? "session/resume" : null;
     try {
       if (!method) throw new Refused(t("acp.noResume"));
-      await rpc(method, { sessionId: session, cwd: turn.cwd, mcpServers: [] });
+      return await rpc(method, { sessionId: session, cwd: turn.cwd, mcpServers: [] });
     } catch (error) {
       if (error instanceof Refused) console.log(JSON.stringify({ started: false }));
       throw error;
@@ -152,13 +152,39 @@ export async function bridge(turn: Turn) {
     const clientInfo = { name: "agent-autoloop", version: versionName() };
     const init = await rpc("initialize", { protocolVersion: 1, clientCapabilities: {}, clientInfo });
     if (init.protocolVersion !== 1) throw new Error(t("acp.badVersion", { version: String(init.protocolVersion) }));
+    let opened;
     if (turn.resume) {
       session = turn.resume;
-      await goOn(init.agentCapabilities);
+      opened = await goOn(init.agentCapabilities);
     } else {
-      const { sessionId } = await rpc("session/new", { cwd: turn.cwd, mcpServers: [] });
+      opened = await rpc("session/new", { cwd: turn.cwd, mcpServers: [] });
+      const { sessionId } = opened;
       if (typeof sessionId !== "string" || !sessionId) throw new Error(t("acp.noSession"));
       session = sessionId;
+    }
+    if (turn.model) {
+      const options = Array.isArray(opened?.configOptions) ? opened.configOptions : [];
+      const option =
+        options.find((option: any) => option.category === "model") ??
+        options.find((option: any) => option.id === "model");
+      const choices = Array.isArray(option?.options) ? option.options : [];
+      const values = choices.flatMap((choice: any) => (Array.isArray(choice.options) ? choice.options : [choice]));
+      if (
+        option?.type !== "select" ||
+        typeof option.id !== "string" ||
+        !values.some((choice: any) => choice.value === turn.model)
+      )
+        throw new Error(t("acp.modelUnavailable", { model: turn.model }));
+      const configured = await rpc("session/set_config_option", {
+        sessionId: session,
+        configId: option.id,
+        value: turn.model,
+      });
+      if (
+        !Array.isArray(configured?.configOptions) ||
+        !configured.configOptions.some((value: any) => value.id === option.id && value.currentValue === turn.model)
+      )
+        throw new Error(t("acp.modelUnconfirmed", { model: turn.model }));
     }
     // Before the prompt goes: the agent can start on it at once, and this has to be there if the bridge is killed then.
     console.log(JSON.stringify({ session, started: true }));
