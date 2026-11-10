@@ -832,7 +832,7 @@ test("a plugin that can't read what it printed fails that run alone, once it has
   assert.match(result.error, /读不懂/);
   assert.equal(result.session, "the-old-one");
   assert.equal(readFileSync(launches, "utf8"), "x\n", "its prompt isn't run again");
-  assert.equal(lines.filter((line) => line.includes("no idea what this says")).length, 1, "and it's said once");
+  assert.equal(lines.filter((line) => line.includes("couldn't read its output")).length, 1, "and it's said once");
 });
 
 test("a plugin that can't read what it printed doesn't start a vanished run again either", async () => {
