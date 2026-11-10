@@ -14,6 +14,7 @@
 // so a "没跑成" after it reads as work done; a line that can't be read, which an agent must not write, is passed over, so one
 // with no newline takes the answer with it and the run hangs until its time limit. A failed turn doesn't say so until the agent and its stdout are gone, which may be never; its half-written answer counts; or what the
 // agent itself said on stderr is lost from the reason. An agent with no command line doesn't say what's missing.
+// A configured model is ignored on new or restored sessions, or a refused switch still sends the prompt to the wrong model.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync, symlinkSync } from "node:fs";
@@ -48,14 +49,14 @@ if(m.method==='session/load'){if(m.params.sessionId!=='agent-session')return sen
 if(m.method==='session/prompt'){if(m.params.prompt[0].text==='中途断了'){update('tool_call','');process.exit(9);}update('agent_thought_chunk','思考');update('agent_message_chunk','中间消息');update('tool_call','');update('agent_message_chunk',m.params.prompt[0].text);send({id:m.id,result:{stopReason:'end_turn'}});}
 });`,
 );
-const bridged = (command: string[], resume: string | null, prompt = "完成了", access = "read") =>
+const bridged = (command: string[], resume: string | null, prompt = "完成了", access = "read", model?: string) =>
   new Promise<{ code: number | null; out: string; err: string }>((resolve) => {
     const child = spawn(
       process.execPath,
       [
         "--disable-warning=ExperimentalWarning",
         join(import.meta.dirname, "../plugins/acp/bridge.ts"),
-        JSON.stringify({ command, cwd: home, prompt, access, resume }),
+        JSON.stringify({ command, cwd: home, prompt, access, resume, model }),
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
@@ -73,6 +74,71 @@ const refusing = (message: string) =>
   `(m) => send({ id: m.id, error: { code: -32000, message: ${JSON.stringify(message)} } })`;
 const declaring = (capabilities: object) =>
   `on.initialize = (m) => send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: ${JSON.stringify(capabilities)} } });`;
+
+test("ACP selects the configured model before prompting new, loaded and resumed sessions", async () => {
+  for (const method of ["session/new", "session/load", "session/resume"]) {
+    const called = join(home, `model-${method.split("/")[1]}`);
+    const config = {
+      id: method === "session/new" ? "model" : "provider-model",
+      ...(method === "session/new" ? {} : { category: "model" }),
+      type: "select",
+      currentValue: "old",
+      options: [{ group: "provider", name: "Provider", options: [{ value: "flash", name: "Flash" }] }],
+    };
+    const script = `
+      ${declaring(method === "session/resume" ? { sessionCapabilities: { resume: {} } } : { loadSession: true })}
+      const config = ${JSON.stringify(config)};
+      on[${JSON.stringify(method)}] = m => send({id:m.id,result:{sessionId:'agent-session',configOptions:[config]}});
+      on['session/set_config_option'] = m => {
+        appendFileSync(${JSON.stringify(called)}, JSON.stringify(m.params));
+        config.currentValue = m.params.value;
+        send({id:m.id,result:{configOptions:[config]}});
+      };
+      on['session/prompt'] = m => {
+        if(config.currentValue !== 'flash') return send({id:m.id,error:{code:-1,message:'wrong model'}});
+        say('selected'); send({id:m.id,result:{stopReason:'end_turn'}});
+      };`;
+    const result = await bridged(
+      [process.execPath, acpAgent(home, `model-${method.split("/")[1]}`, script)],
+      method === "session/new" ? null : "agent-session",
+      "test",
+      "read",
+      "flash",
+    );
+    assert.equal(result.code, 0, result.err);
+    assert.equal(acp.read(result.out, result.code, result.err).text, "selected");
+    assert.deepEqual(JSON.parse(readFileSync(called, "utf8")), {
+      sessionId: "agent-session",
+      configId: config.id,
+      value: "flash",
+    });
+  }
+});
+
+test("ACP never prompts with a missing, unavailable, refused or unconfirmed configured model", async () => {
+  for (const why of ["missing", "unavailable", "refused", "unconfirmed"]) {
+    const called = join(home, `wrong-model-${why}`);
+    const script = `
+      const config = {id:'model',type:'select',currentValue:'old',options:[{value:${JSON.stringify(why === "unavailable" ? "other" : "flash")},name:'Model'}]};
+      on['session/load'] = m => send({id:m.id,result:{configOptions:${why === "missing" ? "[]" : "[config]"}}});
+      on['session/set_config_option'] = m => send(${why === "refused" ? "{id:m.id,error:{code:-1,message:'model refused'}}" : "{id:m.id,result:{configOptions:[config]}}"});
+      on['session/prompt'] = m => {appendFileSync(${JSON.stringify(called)},'prompt');say('wrong model');send({id:m.id,result:{stopReason:'end_turn'}});};`;
+    const result = await bridged(
+      [process.execPath, acpAgent(home, `wrong-model-${why}`, script)],
+      "agent-session",
+      "test",
+      "read",
+      "flash",
+    );
+    assert.notEqual(result.code, 0, why);
+    assert.equal(acp.read(result.out, result.code, result.err).text, undefined);
+    assert.deepEqual(
+      [acp.read(result.out, result.code, result.err).started, acp.read(result.out, result.code, result.err).session],
+      [true, "agent-session"],
+    );
+    assert.equal(readFileSync(called, { encoding: "utf8", flag: "a+" }), "", "no prompt was sent");
+  }
+});
 test("ACP speaks v1, resumes across processes, discards history and returns only the final answer", async () => {
   for (const resume of [null, "agent-session"]) {
     const r = await run(resume);
