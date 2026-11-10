@@ -151,6 +151,8 @@ Agent 結束了這一輪，問了你一個問題。它現在不佔用行程、�
 | **通道**：去哪找你決定 | [桌面通知](plugins/desktop/channel.ts)（預設開啟）、[飛書](plugins/feishu/channel.ts)、[釘釘 / 企微 / Slack / Discord](plugins/webhook/templates.ts) | [說明](skills/agent-autoloop/SKILL.md#接一个通道) |
 | **交付**：把 CI/CD 也做成外掛 | [`delivery`](plugins/delivery/delivery.ts) | [說明](skills/agent-autoloop/SKILL.md#交付流水线) |
 
+ACP 可透過規則的 `model` 選取工作階段回傳的模型選項；每次新建或恢復後核對，無法切換就停止，不送提示詞。`effort` 仍不生效。詳見[協議](docs/protocol.md#ACP-和-MCP)。
+
 **實測情況：** Claude Code、Codex 和 ACP（官方 Codex ACP 轉接器）跑通了多輪問答和跨行程工作階段延續；飛書跑通了傳送、按鈕回呼和卡片更新；四種 Webhook 範本只在本機模擬服務上驗證過，GitLab Webhook 按官方文件的格式測試，沒連過真實 GitLab。這些文字通道靠回答連結決定，要把 `hub.publicUrl` 配成手機或電腦能開啟的地址。
 
 **其他命令列 Agent 一行接入。** 設定 `use: "command"` 並傳入命令陣列，`{prompt}` 作為獨立參數傳遞，不會被當成 shell 程式碼執行。下面的命令整理自各家官方文件，我們還沒有逐個跑過：

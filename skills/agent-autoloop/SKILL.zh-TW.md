@@ -65,7 +65,7 @@ description: 設定 Agent 自動化中台：加規則、接新的事件外掛、
 
 一輪最長跑多久寫 `timeout`，單位是分鐘，預設 180。
 
-ACP 用 `use: "acp"` 和 `command: ["ACP 服務程式"]`，支援 v1 的會話新建、恢復、文字與一次性權限請求；先在該 Agent 自己的 CLI 登入。`access` 只管 Agent 主動來問的操作，規範允許它不詢問就執行，要限制得用它自己的模式（比如 `command` 裡寫 `env INITIAL_AGENT_MODE=read-only …`）；`model`、`effort` 不生效。普通命令接法與實測支援範圍見 README。
+ACP 用 `use: "acp"` 和 `command: ["ACP 服務程式"]`，支援 v1 的會話新建、恢復、文字與一次性權限請求；先在該 Agent 自己的 CLI 登入。`access` 只管 Agent 主動來問的操作，規範允許它不詢問就執行，要限制得用它自己的模式（比如 `command` 裡寫 `env INITIAL_AGENT_MODE=read-only …`）；`model` 使用工作階段回傳的 `configOptions` 模型選項值（支援分組），每次新建或恢復後、送出提示詞前透過 `session/set_config_option` 設定並核對；不支援、值不存在或未確認切換就停止，不送提示詞。未設定時沿用 Agent 原行為；`effort` 仍不生效。普通命令接法與實測支援範圍見 README。
 
 DeepSeek Harness 用 `use: "dsh"`，要 0.2.2 或更新（`npm install -g @deepseek-ai/dsh@next --allow-scripts=koffi,node-pty,@deepseek-ai/dsh-subprocess-local`，不放行這三個套件的安裝腳本，裝完一跑就出錯），能續接原會話、上報 Token（不報費用），報 `MISSING_CREDENTIAL` 時把金鑰放進環境變數，`access` 對應它的權限檔位；舊版用 README 裡的普通命令接法。沒有可打開的桌面連結。
 
