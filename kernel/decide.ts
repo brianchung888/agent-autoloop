@@ -1,7 +1,7 @@
 // Everything that can change the hub is decided here: given the view and one input, the facts to record and the answer
 // to give. Time and secrets come in as arguments, so the same input on the same view always decides the same.
 import { credential, digest, type Environment } from "./credentials.ts";
-import { latestBefore, nextRun, parseCron } from "./cron.ts";
+import { inWindow, latestBefore, nextRun, parseCron } from "./cron.ts";
 import { deadlines, MINUTE, offlineCard, OFFLINE_AFTER, RUN_LEASE, SEEN_EVERY, WORKER_FRESH } from "./due.ts";
 import { AuthError, Conflict, InputError, NotFound } from "./errors.ts";
 import { iso, rows, type Change, type Fact, type Row, type Table, type View } from "./evolve.ts";
@@ -314,11 +314,12 @@ function claimNext(draft: Draft, worker: string, claim: string) {
   return jobOf(draft.view, draft.view.get("runs", run.id)!, draft.env);
 }
 
-/** Ends a run nothing will pick up again, and says so. */
-function stopRun(draft: Draft, run: Row, why: string, summary: string, words: string) {
+/** Ends a run nothing will pick up again, and says so — unless there is nothing to say: a schedule that will come round
+ * again on its own has told the owner everything by waiting for it. */
+function stopRun(draft: Draft, run: Row, why: string, summary: string, words: string | null) {
   put(draft, "runs", run.id, { state: "cancelled", finished_at: draft.at, summary });
   closeStopped(draft, run.id, summary);
-  notify(draft, `run:${run.id}:${why}`, run.rule, words, threadOf(run));
+  if (words !== null) notify(draft, `run:${run.id}:${why}`, run.rule, words, threadOf(run));
 }
 
 const ruleGone = (draft: Draft, run: Row): [string, string] => [
@@ -341,9 +342,19 @@ function retryLater(draft: Draft, run: Row, result: Result) {
   }
   for (const notice of result.notice ?? []) cardFromReceipt(draft, run, "notice", notice);
   const failure = { attempts, error, ...unclaimed };
-  if (!ruleNamed(draft, run.rule)) {
+  const rule = ruleNamed(draft, run.rule);
+  if (!rule) {
     put(draft, "runs", id, failure);
     stopRun(draft, run, "rule-gone", ...ruleGone(draft, run));
+    return rejected;
+  }
+  // A scheduled rule's own hours are when it is meant to run: a next try past them would start the work at a time the
+  // owner never asked for, so this round ends here and the schedule brings the next one round itself.
+  const cron = eventRule(rule) ? null : parseCron(cronOf(rule));
+  if (cron && !inWindow(cron, notBefore, draft.rules.timezone)) {
+    const summary = words(draft, "kernel.decide.outsideWindow");
+    put(draft, "runs", id, failure);
+    stopRun(draft, run, "stopped", summary, null);
     return rejected;
   }
   if (attempts >= MAX_ATTEMPTS) {

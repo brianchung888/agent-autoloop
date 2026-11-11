@@ -25,6 +25,7 @@ export const zhTW: Strings = {
     "規則「{rule}」不在了（刪掉或改名了），排著的這一輪不再派發。還要做的話重新觸發這件事。",
   "kernel.decide.noReason": "沒說原因",
   "kernel.decide.onlyNoticeWhenFailed": "沒跑成的一輪只能發通知",
+  "kernel.decide.outsideWindow": "失敗了，而下一次重試已在排程時段外：等下一次排程",
   "kernel.decide.gaveUp": "連續 {tries} 次沒跑成，不再自動重試",
   "kernel.decide.gaveUpWords":
     "連續 {tries} 次自動處理沒跑完（卡在：{error}），不再自動重試。解決後重新觸發這件事，它會從頭開始。",

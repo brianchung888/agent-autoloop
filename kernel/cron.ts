@@ -93,6 +93,20 @@ export function nextRun(cron: Cron, after: number, zone: string): number | null 
   return null;
 }
 
+/**
+ * Whether a moment falls inside the stretch of time a schedule describes: its month, day-of-month, day-of-week and hour
+ * fields, with the minute field taken as any minute of that hour. A minute field is a sampling rate rather than a
+ * window — a step of two names half the minutes there are — so asking it would put nearly every moment outside.
+ */
+export function inWindow(cron: Cron, at: number, zone: string) {
+  const clock = wallClock(at, zone);
+  if (!cron.months.has(clock.month)) return false;
+  const onDay = cron.days.has(clock.day);
+  const onWeekday = cron.weekdays.has(new Date(Date.UTC(clock.year, clock.month - 1, clock.day)).getUTCDay());
+  if (!(cron.anyDay || cron.anyWeekday ? onDay && onWeekday : onDay || onWeekday)) return false;
+  return cron.hours.includes(clock.hour);
+}
+
 /** The last time due at or before `now`, given that `due` was due: what a hub asleep for a while still owes, once. */
 export function latestBefore(cron: Cron, due: number, now: number, zone: string) {
   // Looks back over ever wider windows, so a minutely schedule after a year asleep doesn't walk the year.

@@ -25,6 +25,7 @@ export const zhCN = {
     "规则「{rule}」不在了（删掉或改名了），排着的这一轮不再派发。还要做的话重新触发这件事。",
   "kernel.decide.noReason": "没说原因",
   "kernel.decide.onlyNoticeWhenFailed": "没跑成的一轮只能发通知",
+  "kernel.decide.outsideWindow": "失败了，而下一次重试已在排程时段外：等下一次排程",
   "kernel.decide.gaveUp": "连续 {tries} 次没跑成，不再自动重试",
   "kernel.decide.gaveUpWords":
     "连续 {tries} 次自动处理没跑完（卡在：{error}），不再自动重试。解决后重新触发这件事，它会从头开始。",

@@ -535,3 +535,59 @@ test("a stale writer receives a conflict and cannot change the committed view", 
     db.close();
   }
 });
+
+// A scheduled rule that fails and would next try outside its own hours must not wait around for that try: the schedule
+// itself brings the next round, and a round queued for a time the owner never asked for would run unattended.
+const windowRules = () => {
+  const text = JSON.parse(readFileSync(new URL("./rules.fixture.json", import.meta.url), "utf8"));
+  text.timezone = "Asia/Taipei";
+  text.rules.find((rule: { name: string }) => rule.name === "早报").when = { cron: "*/2 8-18 * * *" };
+  return parseRules(JSON.stringify(text), 0, "UTC");
+};
+const taipei = (clock: string) => Date.parse(`2026-01-05T${clock}:00+08:00`);
+
+/** A failed round of the scheduled rule, handed in at this moment: what the run became and how many cards there are. */
+function failScheduled(failedAt: number) {
+  let v = evolve(empty(), decide(empty(), { type: "rules", args: [windowRules()] }, 1, environment).facts);
+  const act = (type: string, args: unknown[], now: number) => {
+    const d = decide(v, { type, args }, now, environment);
+    v = evolve(v, d.facts);
+    return d.value;
+  };
+  act("tick", [], taipei("08:00"));
+  act("tick", [], taipei("08:04"));
+  const job = act("claimNext", ["w1", "c"], taipei("08:04"));
+  assert.equal(v.get("runs", job.run)!.rule, "早报");
+  const before = rows(v, "cards").length;
+  act("finish", [job.run, job.token, { outcome: "failed", error: "没跑成" }], failedAt);
+  return { run: v.get("runs", job.run)!, cards: rows(v, "cards").length - before };
+}
+
+test("a scheduled round failing inside its hours waits to try again", () => {
+  const { run, cards } = failScheduled(taipei("17:58"));
+  assert.deepEqual([run.state, run.attempts], ["queued", 1]);
+  assert.equal(run.not_before, new Date(taipei("18:03")).toISOString());
+  assert.equal(cards, 0);
+});
+
+test("a scheduled round whose next try falls outside its hours stops instead, quietly", () => {
+  const { run, cards } = failScheduled(taipei("18:59"));
+  assert.deepEqual([run.state, run.attempts], ["cancelled", 1]);
+  assert.equal(run.summary, "失败了，而下一次重试已在排程时段外：等下一次排程");
+  assert.equal(cards, 0);
+});
+
+test("an event-driven round failing outside any schedule's hours waits to try again as before", () => {
+  let v = evolve(empty(), decide(empty(), { type: "rules", args: [windowRules()] }, 1, environment).facts);
+  const act = (type: string, args: unknown[], now: number) => {
+    const d = decide(v, { type, args }, now, environment);
+    v = evolve(v, d.facts);
+    return d.value;
+  };
+  act("ingest", ["app", { id: "1", type: "feedback.new" }], taipei("23:40"));
+  const job = act("claimNext", ["w1", "c"], taipei("23:40"));
+  act("finish", [job.run, job.token, { outcome: "failed", error: "没跑成" }], taipei("23:40"));
+  const run = v.get("runs", job.run)!;
+  assert.deepEqual([run.state, run.attempts], ["queued", 1]);
+  assert.equal(run.not_before, new Date(taipei("23:45")).toISOString());
+});
