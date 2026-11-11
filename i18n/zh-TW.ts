@@ -256,6 +256,7 @@ export const zhTW: Strings = {
   // ---- plugins/acp ----
   "acp.unfinished": "ACP 沒有完成這一輪",
   "acp.unfinishedWhy": "ACP 沒有完成這一輪：{why}",
+  "acp.retryingEmpty": "ACP 回了空的 end_turn，同一個工作階段再問一次",
   "acp.noCommand": "ACP 要在 command 寫啟動命令",
   "acp.exited": "ACP 在交回結果前結束：{code}",
   "acp.noMethod": "不支援這個方法",

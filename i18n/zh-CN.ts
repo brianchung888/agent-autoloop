@@ -255,6 +255,7 @@ export const zhCN = {
   // ---- plugins/acp ----
   "acp.unfinished": "ACP 没有完成这一轮",
   "acp.unfinishedWhy": "ACP 没有完成这一轮：{why}",
+  "acp.retryingEmpty": "ACP 回了空的 end_turn，同一会话再问一次",
   "acp.noCommand": "ACP 要在 command 写启动命令",
   "acp.exited": "ACP 在交回结果前退出：{code}",
   "acp.noMethod": "不支持这个方法",

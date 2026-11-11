@@ -194,7 +194,21 @@ export async function bridge(turn: Turn) {
     console.log(JSON.stringify({ session, started: true }));
     collecting = true;
     const prompt = [{ type: "text", text: turn.prompt }];
-    const result = await rpc("session/prompt", { sessionId: session, prompt });
+    // An agent that ends its turn having said nothing has lost the answer, not the session: asking again in the same
+    // session gets it, and it's cheaper than a new session. Twice and no more, and only for end_turn: every other
+    // stopReason (cancelled, max_tokens) means the turn really didn't finish, and asking again would make it worse.
+    let result;
+    for (let tries = 1; ; tries++) {
+      result = await rpc("session/prompt", { sessionId: session, prompt });
+      if (result.stopReason !== "end_turn" || text.trim()) break;
+      if (tries >= 2) break;
+      console.error(t("acp.retryingEmpty"));
+      // Nothing of the empty round may carry into the next one: the collected answer and what tells one message from
+      // the next (see onUpdate) all start over.
+      text = "";
+      message = undefined;
+      boundary = false;
+    }
     if (result.stopReason !== "end_turn" || !text.trim())
       throw new Error(t("acp.unfinishedWhy", { why: String(result.stopReason) }));
     console.log(JSON.stringify({ session, text, finished: true }));

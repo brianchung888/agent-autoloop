@@ -630,3 +630,40 @@ test("over ACP, an agent with no command line says what's missing", async () => 
   } as const;
   await assert.rejects(bridge(turn), /ACP 要在 command 写启动命令/);
 });
+
+test("ACP asks again in the same session when an end_turn came back empty", async () => {
+  const called = join(home, "empty-then-text");
+  const result = await launch(
+    "empty-then-text",
+    `let asked = 0;
+    on['session/prompt'] = (m) => {
+      appendFileSync(${JSON.stringify(called)}, 'prompt ');
+      if (++asked === 1) return send({ id: m.id, result: { stopReason: 'end_turn' } });
+      say('第二次说了');
+      send({ id: m.id, result: { stopReason: 'end_turn' } });
+    };`,
+  );
+  assert.equal(result.code, 0, result.err);
+  const reading = acp.read(result.out, result.code, result.err);
+  assert.deepEqual([reading.finished, reading.text, reading.error], [true, "第二次说了", undefined]);
+  assert.equal(readFileSync(called, "utf8").trim().split(" ").length, 2);
+  // Asking again may not look like a second turn to the worker: one `started`, and the model is set once.
+  assert.equal(result.out.split("\n").filter((line) => line.includes('"started":true')).length, 1);
+  assert.match(result.err, /同一会话再问一次/);
+});
+
+test("ACP gives up after a second empty end_turn, without asking a third time", async () => {
+  const called = join(home, "empty-twice");
+  const result = await launch(
+    "empty-twice",
+    `on['session/prompt'] = (m) => {
+      appendFileSync(${JSON.stringify(called)}, 'prompt ');
+      send({ id: m.id, result: { stopReason: 'end_turn' } });
+    };`,
+  );
+  assert.notEqual(result.code, 0);
+  const reading = acp.read(result.out, result.code, result.err);
+  assert.equal(reading.text, undefined);
+  assert.match(reading.error!, /ACP 没有完成这一轮：end_turn$/);
+  assert.equal(readFileSync(called, "utf8").trim().split(" ").length, 2);
+});
