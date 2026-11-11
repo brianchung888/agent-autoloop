@@ -25,7 +25,12 @@ description: 整理本人被指派、建立或符合追蹤標籤的 GitLab Issue
 ```
 只加在「更新時間」這段文字上，不得移除或覆蓋原有 hover、badge 樣式，也不得影響列容器、標題或徽章。Markdown：在該筆編號之後、標題粗體文字之前加上 `🆕` 標記，例如現有 `1. **[pm_feedback#989] ...**` 變成 `1. 🆕 **[pm_feedback#989] ...**`；同一份文件固定用 `🆕`，不與 `[24h]` 混用。缺「最後回應時間」者不判定為近期有回應。
 
-2. 寫 `briefs/<id>.md`，`<id>` 使用剛核對的安全 ID。以同 ID 的 `briefs/<id>.md` 是否已存在作為防重依據，已存在則不重寫、不重發。每次寫入新的 `briefs/<id>.md` 時，同步將相同內容覆寫至 `briefs/latest.md` 以及 `briefs/<period>.md`（例如 `briefs/2026-11-09.md`）；同時**必須同步產生/覆寫一份排版美觀、人類極易閱讀（獨立自包含、內嵌現代化 CSS 樣式、頂部統計卡片、即時關鍵字篩選、Badge 標籤與可點擊外部連結）的 `briefs/latest.html` 以及 `briefs/<period>.html`**，其中 `<head>` 必須綁定內嵌的 GitLab 官方彩色 Tanuki SVG Favicon（`<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,...">`），並在頁面標題旁顯示 GitLab 彩色狐狸 SVG 圖示，方便使用者直接用瀏覽器開箱即讀。必要時只建立 `briefs` 目錄，不修改輸入快照或任何目標程式碼。
+2. `<id>` 使用剛核對的安全 ID。防重依據改為「`briefs/<id>.md` 與 `briefs/<id>.html` 兩個檔案都存在」才算已處理；只有 `.md` 沒有 `.html`（或反過來）都視為未完成，要重做，不得略過。寫檔與覆寫 latest／`<period>` 必須依下列原子順序執行，不可拆開、不可中途做其他事：
+   - (a) 先在記憶中把本筆 Issue 摘要的 Markdown 全文與排版美觀、人類極易讀（獨立自包含、內嵌現代化 CSS 樣式、頂部統計卡片、即時關鍵字篩選、Badge 標籤與可點擊外部連結，`<head>` 綁定內嵌的 GitLab 官方彩色 Tanuki SVG Favicon）的 HTML 全文都產生完整，不要邊產生邊寫檔、不要先寫一半就落地。
+   - (b) 兩份內容都備妥後，才寫入 `briefs/<id>.md` 與 `briefs/<id>.html` 兩個檔案。
+   - (c) 只有這兩個檔案都寫成功，才接著用「先寫 `.tmp` 再 rename」的方式，依序覆寫 `briefs/latest.md`、`briefs/latest.html`、`briefs/<period>.md`（例如 `briefs/2026-11-09.md`）、`briefs/<period>.html` 四個檔案；這四次 rename 要連續做完，中間不要插入其他操作（例如發通知、讀其他檔案、處理下一筆事件）。
+   - (d) 結束前自我檢查：`briefs/latest.md` 與 `briefs/latest.html` 的檔案 mtime 相差不得超過 60 秒，且 HTML 內「收集時間」字串要與對應 Markdown 內的「收集時間」字串完全相同；只要有一項不符，這一輪在結論裡要寫成「沒跑成：latest 兩檔不同步」，讓中台重試，不能當作成功回報。
+   - (e) 任何一步失敗（例如寫 `.md` 成功但寫 `.html` 失敗、或四次覆寫被中斷），都視為該 ID 未完成；不得發出成功 notice，也不得留下只有 `.md` 沒有 `.html` 的半成品當作「已處理」。必要時只建立 `briefs` 目錄，不修改輸入快照或任何目標程式碼。
 3. 報告標題／頁首（HTML `header`、Markdown 摘要資訊區）只列三行，順序固定、格式如下（時區標示沿用 `(Taipei)` 寫法，天數依 `sources.json` 的 `closedUpdatedDays` 實際值）：
 ```
 收集時間：2026-11-10 17:32:01 (Taipei)
