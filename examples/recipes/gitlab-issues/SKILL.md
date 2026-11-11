@@ -13,20 +13,10 @@ description: 整理本人被指派、建立或符合追蹤標籤的 GitLab Issue
 
 時間顯示與排序：所有人看的報告時間（收集時間、範圍下界、Issue 更新時間、待確認區）一律依該報告快照的 `timezone` 轉為 `YYYY-MM-DD HH:mm:ss.SSS`，報告標明該 IANA 時區，不再並列或顯示 UTC/Z 原值。舊快照若缺時區，依序使用可信 `sources.json.timezone`、中台規則頂層 `timezone`；仍缺或無效就報錯，不猜測或硬編時區。保留輸入 JSON 時間；HTML `datetime`/`data-updated-at` 可保留原始機器值。「最後回應時間」定義：取 Issue 的 `updated_at`（留言、狀態、標籤變動都會更新此欄）；若快照另附 notes，取 `max(updated_at, 最新 note 的 created_at)`，不混用純 `created_at`。所有現有區塊——「待我確認」全區跨專案、各專案內「未結案」清單、各專案內「近期已結案」清單等——各自依此「最後回應時間」由新到舊排序，不是只排「待我確認」；每筆顯示當地更新時間。同一區塊內同時刻以 project path、project_id、iid 穩定排序；缺時間者列於該區塊末並明示未知。套用至當次產出的 Markdown、HTML、latest 與日期版。
 
-24 小時內高亮：以本輪快照的收集時間（`collectedAt`，依上述 `timezone` 解析，不用 agent 當下時間）為基準，減去該筆 Issue 的「最後回應時間」（定義同上）；差距在 24 小時以內（含剛好 24 小時）就視為「近期有回應」，並標示出來。此規則套用到全部既有區塊——「待我確認」、各專案「未結案」清單、各專案「近期已結案」清單，不限其中一個。HTML：**只在該筆「更新時間」那個元素上**加一個 class `recent`，**不要**加在列／卡片容器上（沿用既有結構，例如現有 `<div class="issue-meta">更新：2026-11-11 08:59:08.745</div>` 變成 `<div class="issue-meta recent">更新：2026-11-11 08:59:08.745</div>`；列容器、標題、徽章、連結等其餘內容完全不動），並在既有內嵌 `<style>` 區塊補上對應規則——頁面本身是淺色主題、沒有深色版，不要加 `prefers-color-scheme: dark` 規則，只套用在這段「更新時間」文字上，用淡黃底深棕字（對比度達 WCAG AA 以上）：
-```css
-.issue-meta.recent {
-  background: #fff3bf;
-  color: #5c4400;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-weight: 600;
-}
-```
-只加在「更新時間」這段文字上，不得移除或覆蓋原有 hover、badge 樣式，也不得影響列容器、標題或徽章。Markdown：在該筆編號之後、標題粗體文字之前加上 `🆕` 標記，例如現有 `1. **[pm_feedback#989] ...**` 變成 `1. 🆕 **[pm_feedback#989] ...**`；同一份文件固定用 `🆕`，不與 `[24h]` 混用。缺「最後回應時間」者不判定為近期有回應。
+24 小時內高亮：以本輪快照的收集時間（`collectedAt`，依上述 `timezone` 解析，不用 agent 當下時間）為基準，減去該筆 Issue 的「最後回應時間」（定義同上）；差距在 24 小時以內（含剛好 24 小時）就視為「近期有回應」，並標示出來。此規則套用到全部既有區塊——「待我確認」、各專案「未結案」清單、各專案「近期已結案」清單，不限其中一個。HTML：不自己寫任何樣式；在 `#data` 的該筆 Issue 陣列 `flags` 字串裡加上 `R`（見下方「HTML 產出規則」），模板會自動把該列的更新時間兩行改為深紅色（`--color-accent-700`）並掛上「24h 內回應」紅底白字標籤；「待我確認」項目則把 `new` 設為 `true`，模板顯示紅底白字的 `NEW` 標記與紅色編號。不再要求 `.recent` class、不再自行補 `<style>` 規則。Markdown：在該筆編號之後、標題粗體文字之前加上 `🆕` 標記，例如現有 `1. **[pm_feedback#989] ...**` 變成 `1. 🆕 **[pm_feedback#989] ...**`；同一份文件固定用 `🆕`，不與 `[24h]` 混用。缺「最後回應時間」者不判定為近期有回應。
 
 2. `<id>` 使用剛核對的安全 ID。防重依據改為「`briefs/<id>.md` 與 `briefs/<id>.html` 兩個檔案都存在」才算已處理；只有 `.md` 沒有 `.html`（或反過來）都視為未完成，要重做，不得略過。寫檔與覆寫 latest／`<period>` 必須依下列原子順序執行，不可拆開、不可中途做其他事：
-   - (a) 先在記憶中把本筆 Issue 摘要的 Markdown 全文與排版美觀、人類極易讀（獨立自包含、內嵌現代化 CSS 樣式、頂部統計卡片、即時關鍵字篩選、Badge 標籤與可點擊外部連結，`<head>` 綁定內嵌的 GitLab 官方彩色 Tanuki SVG Favicon）的 HTML 全文都產生完整，不要邊產生邊寫檔、不要先寫一半就落地。
+   - (a) 先在記憶中把本筆 Issue 摘要的 Markdown 全文與依下方「HTML 產出規則」用固定模板填好的 HTML 全文都產生完整，不要邊產生邊寫檔、不要先寫一半就落地。
    - (b) 兩份內容都備妥後，才寫入 `briefs/<id>.md` 與 `briefs/<id>.html` 兩個檔案。
    - (c) 只有這兩個檔案都寫成功，才接著用「先寫 `.tmp` 再 rename」的方式，依序覆寫 `briefs/latest.md`、`briefs/latest.html`、`briefs/<period>.md`（例如 `briefs/2026-11-09.md`）、`briefs/<period>.html` 四個檔案；這四次 rename 要連續做完，中間不要插入其他操作（例如發通知、讀其他檔案、處理下一筆事件）。
    - (d) 結束前自我檢查：`briefs/latest.md` 與 `briefs/latest.html` 的檔案 mtime 相差不得超過 60 秒，且 HTML 內「收集時間」字串要與對應 Markdown 內的「收集時間」字串完全相同；只要有一項不符，這一輪在結論裡要寫成「沒跑成：latest 兩檔不同步」，讓中台重試，不能當作成功回報。
@@ -37,7 +27,17 @@ description: 整理本人被指派、建立或符合追蹤標籤的 GitLab Issue
 已結案下界：2026-11-03（近 7 天）
 篩選規則：assignee=139 或 author=139 或 label=Brian
 ```
-頁首不再顯示快照日期、GitLab 主機、使用者 ID 或追蹤標籤（這些資訊已包含在篩選規則或收集時間裡）。GitLab 主機、`projects` 清單（含專案數字 ID 與 path）、userId、完整 label 仍用於聯集篩選邏輯與正文分組，只是不重複列在頁首；稿件正文仍需包含這些資訊、近期已關閉的 `updatedAfter` 下界與天數，並說明聯集：assignee=userId OR author=userId OR label=文字。先依專案 path 與 project_id 分組，每個專案再分「未結案」「近期更新且已結案」；`projects` 裡沒有符合 Issue 的專案也明列「本次可見範圍沒有符合項目」。每筆列專案與編號、原始標題、狀態、更新時間、原始連結與符合原因（assignee=指派給我；author=我建立；label=符合追蹤標籤），同筆只列一次。
+頁首不再顯示快照日期、GitLab 主機、使用者 ID 或追蹤標籤（這些資訊已包含在篩選規則或收集時間裡）。HTML 的這三行就是模板的 Meta 三欄，對應 `#data` 的 `collectedAt`、`closedBoundText`、`filterRule`；GitLab 主機、時區、使用者 ID、追蹤標籤、聯集邏輯放模板下方的設定列（`host`、`timezone`、`userId`、`trackLabel`、`unionLogic`），不算頁首。GitLab 主機、`projects` 清單（含專案數字 ID 與 path）、userId、完整 label 仍用於聯集篩選邏輯與正文分組，只是不重複列在頁首；稿件正文仍需包含這些資訊、近期已關閉的 `updatedAfter` 下界與天數，並說明聯集：assignee=userId OR author=userId OR label=文字。先依專案 path 與 project_id 分組，每個專案再分「未結案」「近期更新且已結案」；`projects` 裡沒有符合 Issue 的專案也明列「本次可見範圍沒有符合項目」。每筆列專案與編號、原始標題、狀態、更新時間、原始連結與符合原因（assignee=指派給我；author=我建立；label=符合追蹤標籤），同筆只列一次。
+
+HTML 產出規則（固定版面，不自創樣式）：HTML 一律用固定模板產生，不自己寫 CSS、不自己排版、不加 emoji、不改版面、不加 favicon 或統計卡片等自創元素。
+   - 讀 `{cwd}/template.html`（可信工作目錄下的模板；`C:\Users\brianchung\.agent-autoloop\work\gitlab-issues\template.html`）。
+   - 只改模板裡 `<script id="data" type="application/json">` 與 `</script>` 之間那一段 JSON，其餘**一個位元組都不改**（不動 `<style>`、不動下方渲染 JS、不動 `<title>`、不動字型連結）。模板缺失或找不到 `#data` 區塊就當這一輪沒跑成，照實回報，不得改用自己寫的 HTML。
+   - JSON 欄位：`date`（快照日期）、`collectedAt`（`YYYY-MM-DD HH:mm:ss.SSS (Taipei)`）、`timezone`、`host`、`userId`、`trackLabel`、`filterRule`、`unionLogic`、`closedSince`、`closedDays`、`closedBoundText`、`hideEmptyProjects`（預設 `false`）、`footer`、`confirm`、`projects`。
+   - `projects` 依 `sources.json` 的專案順序，每個專案 `{ "key", "path", "id", "open": [[iid, title, updated, flags], …], "closed": [[…]] }`；`updated` 用當地時間字串 `YYYY-MM-DD HH:mm:ss.SSS`（不帶時區後綴），`flags` 是字串，`R`=24 小時內有回應、`A`=我建立、`S`=指派給我、`L`=符合追蹤標籤、`W`=連結用 `/-/work_items/`（預設 `/-/issues/`）。同一區塊內依更新時間由新到舊排序，規則與 Markdown 相同。
+   - `confirm` 每筆 `{ "ref": "專案#編號", "url", "title", "updated", "new": true/false, "kind": "待決議|待確認|待討論", "text" }`；`text` 用原文，要保留 code 樣式的片段用反引號包起來（例如 `` `/` ``）。
+   - 所有筆數與總數都由模板從陣列算出，不要在 JSON 裡另外寫死統計數字；統計值必須和同一輪 Markdown 完全一致。
+   - 空專案照樣列進 `projects`（`open`、`closed` 都是空陣列），模板會顯示「本次可見範圍沒有符合項目」。
+
 4. 「待我確認」僅依原文列出明確問題、缺少的資訊或需本人決定事項，附來源；沒有依據就省略，不自行給業務優先序、完成承諾或認定誰未處理。需正文支持的結論才引用正文，不照抄整份敏感內容。空清單也產出明示「本次可見範圍沒有符合 Issue」的稿件，不宣稱全公司沒有問題。
 5. 用既有通道發一張 `notice`，key 為 `gitlab-brief-<id>`，標題「GitLab 個人 Issue 整理好了」，加 `fyi: true`。`text` 欄位（上限 4000 字）嚴禁只寫一句話叫使用者翻目錄，而須直接附上結構化重點摘要，讓使用者在卡片中即可掌握核心資訊：
    1. 總覽：未結案總數、近期已結案總數，以及各專案筆數統計。

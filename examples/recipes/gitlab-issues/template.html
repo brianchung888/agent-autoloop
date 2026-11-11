@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitLab 個人 Issue 摘要報告</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap">
+<style>
+  :root {
+    --color-bg: #f3f2f2;
+    --color-surface: #eae9e9;
+    --color-text: #201e1d;
+    --color-accent: #ec3013;
+    --color-divider: rgba(32, 30, 29, 0.4);
+    --color-neutral-100: #f8f4f4;
+    --color-neutral-200: #eae7e7;
+    --color-neutral-300: #d7d3d3;
+    --color-neutral-700: #605d5d;
+    --color-neutral-800: #444141;
+    --color-neutral-900: #2d2b2b;
+    --color-accent-100: #fff2ef;
+    --color-accent-700: #ae1800;
+    --font-body: "Archivo", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-body), "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  }
+  h1, h2, h3 { font-family: var(--font-body), "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; font-weight: 800; }
+  a { color: var(--color-text); text-decoration: none; }
+  a:hover { color: var(--color-accent-700); text-decoration: underline; text-underline-offset: 3px; }
+
+  .page { max-width: 1200px; margin: 0 auto; padding: 40px 24px 64px; }
+
+  .head { display: grid; gap: 24px; padding-bottom: 24px; border-bottom: 2px solid var(--color-text); }
+  .kicker { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+  .kicker i { width: 12px; height: 12px; background: var(--color-accent); display: block; }
+  .title { margin: 0; font-size: clamp(30px, 5vw, 52px); line-height: 1.05; font-weight: 800; letter-spacing: -0.01em; text-wrap: balance; }
+
+  .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); border-bottom: 1px solid var(--color-divider); }
+  .meta > div { padding: 16px; display: grid; gap: 4px; border-left: 1px solid var(--color-divider); }
+  .meta > div:first-child { padding-left: 0; border-left: 0; }
+  .meta .k { font-size: 12px; color: var(--color-neutral-700); }
+  .meta .v { font-size: 14px; font-weight: 600; }
+
+  .config { display: flex; flex-wrap: wrap; gap: 8px 28px; padding: 12px 0; font-size: 13px; color: var(--color-neutral-800); border-bottom: 2px solid var(--color-text); }
+  .config .k { color: var(--color-neutral-700); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); border-bottom: 2px solid var(--color-text); }
+  .stats > div { padding: 24px; display: grid; gap: 6px; border-left: 1px solid var(--color-divider); }
+  .stats > div:first-child { padding-left: 0; border-left: 0; }
+  .stats .k { font-size: 13px; font-weight: 600; }
+  .stats .n { font-size: 64px; line-height: 1; font-weight: 800; }
+  .stats .n.accent { color: var(--color-accent); }
+  .stats .sub { font-size: 13px; color: var(--color-neutral-700); }
+
+  .sect { margin-top: 48px; }
+  .sect-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-bottom: 12px; }
+  .sect-head.ruled { border-bottom: 2px solid var(--color-text); }
+  .sect-head h2 { margin: 0; font-size: 24px; font-weight: 800; }
+  .sect-head .count { font-size: 13px; font-weight: 600; }
+
+  ol.confirm { list-style: none; margin: 0; padding: 0; }
+  ol.confirm > li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 0 16px; padding: 20px 0; border-bottom: 1px solid var(--color-divider); }
+  ol.confirm > li:last-child { border-bottom: 2px solid var(--color-text); }
+  ol.confirm .idx { font-size: 28px; font-weight: 800; line-height: 1; }
+  ol.confirm .idx.accent { color: var(--color-accent); }
+  ol.confirm .body { display: grid; gap: 8px; }
+  ol.confirm .line1 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--color-neutral-700); }
+  ol.confirm .ref { font-weight: 600; color: var(--color-text); }
+  ol.confirm .ttl { font-size: 17px; font-weight: 700; line-height: 1.4; }
+  ol.confirm p { margin: 0; font-size: 14px; line-height: 1.7; color: var(--color-neutral-900); text-wrap: pretty; }
+  ol.confirm p strong { color: var(--color-accent-700); }
+  .new { background: var(--color-accent); color: #fff; font-weight: 800; padding: 2px 8px; letter-spacing: 0.06em; }
+  code { background: var(--color-neutral-200); padding: 0 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  .filters { position: sticky; top: 0; z-index: 20; background: var(--color-bg); border-top: 2px solid var(--color-text); border-bottom: 1px solid var(--color-divider); padding: 12px 0; display: grid; gap: 10px; }
+  .filters input[type="text"] { font: inherit; min-height: 44px; font-size: 15px; padding: 8px 14px; background: #fff; border: 1px solid var(--color-divider); color: var(--color-text); width: 100%; }
+  .filters input[type="text"]:focus-visible { border-color: var(--color-accent); outline: none; }
+  .frow { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; }
+  .fgroup { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .fgroup > .k { font-size: 12px; color: var(--color-neutral-700); margin-right: 4px; }
+  .fgroup button { font: inherit; font-size: 13px; padding: 5px 12px; border: 1px solid var(--color-divider); background: transparent; color: var(--color-text); cursor: pointer; display: flex; gap: 8px; }
+  .fgroup button:hover { background: var(--color-accent-100); border-color: var(--color-accent); }
+  .fgroup button[aria-pressed="true"] { font-weight: 600; border-color: var(--color-text); background: var(--color-text); color: var(--color-bg); }
+  .fgroup button .c { color: var(--color-neutral-700); }
+  .fgroup button[aria-pressed="true"] .c { color: var(--color-bg); }
+
+  .empty-all { padding: 48px 0; font-size: 15px; color: var(--color-neutral-700); border-bottom: 1px solid var(--color-divider); }
+
+  article.proj { margin-top: 32px; border-top: 2px solid var(--color-text); }
+  .proj-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; padding: 14px 0; }
+  .proj-head .id { font-size: 12px; color: var(--color-neutral-700); }
+  .proj-head h3 { margin: 0; font-size: 22px; font-weight: 800; overflow-wrap: anywhere; }
+  .proj-head .nums { display: flex; gap: 24px; font-size: 12px; color: var(--color-neutral-700); }
+  .proj-head .nums div { display: grid; }
+  .proj-head .nums b { font-size: 22px; font-weight: 800; color: var(--color-text); }
+  .note { padding: 14px 12px; border-top: 1px solid var(--color-divider); font-size: 14px; color: var(--color-neutral-700); }
+  .gh { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--color-divider); background: var(--color-surface); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
+  .gh span:first-child { padding-left: 12px; }
+  .gh span:last-child { padding-right: 12px; }
+
+  .row { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(120px, auto); gap: 4px 16px; padding: 12px; border-top: 1px solid var(--color-neutral-300); align-items: start; }
+  .row:hover { background: var(--color-neutral-100); }
+  .row .iid { font-size: 13px; font-weight: 600; color: var(--color-neutral-700); padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .row .mid { display: grid; gap: 6px; min-width: 0; }
+  .row .mid a { font-size: 15px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+  .row .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { font-size: 11px; padding: 2px 8px; letter-spacing: 0.02em; white-space: nowrap; }
+  .tag.r { background: var(--color-accent); color: #fff; font-weight: 600; }
+  .tag.c { background: var(--color-neutral-300); color: var(--color-neutral-900); }
+  .tag.a { border: 1px solid var(--color-text); color: var(--color-text); }
+  .tag.s { background: var(--color-text); color: var(--color-bg); }
+  .tag.l { background: var(--color-neutral-200); color: var(--color-neutral-800); }
+  .row .when { display: grid; justify-items: end; text-align: right; font-variant-numeric: tabular-nums; padding-top: 2px; }
+  .row .when .d { font-size: 13px; font-weight: 600; }
+  .row .when .t { font-size: 12px; color: var(--color-neutral-700); }
+  .row.recent .when .d { font-weight: 700; color: var(--color-accent-700); }
+  .row.recent .when .t { color: var(--color-accent-700); }
+
+  footer { margin-top: 56px; padding-top: 16px; border-top: 2px solid var(--color-text); font-size: 13px; color: var(--color-neutral-700); }
+
+  @media (max-width: 600px) {
+    .page { padding: 24px 16px 48px; }
+    .stats .n { font-size: 48px; }
+    .row { grid-template-columns: 56px minmax(0, 1fr); }
+    .row .when { justify-items: start; text-align: left; grid-column: 2; }
+  }
+</style>
+</head>
+<body>
+<div class="page" id="app"></div>
+
+<script id="data" type="application/json">
+{
+  "date": "",
+  "collectedAt": "",
+  "timezone": "",
+  "tzLabel": "",
+  "host": "",
+  "userId": "",
+  "trackLabel": "",
+  "filterRule": "",
+  "unionLogic": "",
+  "closedSince": "",
+  "closedDays": 7,
+  "closedBoundText": "",
+  "hideEmptyProjects": false,
+  "footer": "",
+  "confirm": [],
+  "projects": []
+}
+</script>
+
+<script>
+(function () {
+  'use strict';
+  var D = JSON.parse(document.getElementById('data').textContent);
+  var HOST = String(D.host || '').replace(/\/+$/, '') + '/';
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  // 把原文的 `x` 轉成 <code>x</code>，其餘一律逃脫
+  function rich(s) {
+    return String(s == null ? '' : s).split('`').map(function (part, i) {
+      return i % 2 ? '<code>' + esc(part) + '</code>' : esc(part);
+    }).join('');
+  }
+  function issueUrl(path, iid, flags) {
+    return HOST + path + (flags.indexOf('W') >= 0 ? '/-/work_items/' : '/-/issues/') + iid;
+  }
+
+  function toRow(p, a, closed) {
+    var iid = a[0], title = a[1], upd = String(a[2] || ''), f = String(a[3] || '');
+    var parts = upd.split(' ');
+    var r = {
+      iid: iid, title: title, date: parts[0] || '', time: parts[1] || '', isClosed: closed,
+      url: issueUrl(p.path, iid, f),
+      recent: f.indexOf('R') >= 0, author: f.indexOf('A') >= 0,
+      assignee: f.indexOf('S') >= 0, label: f.indexOf('L') >= 0
+    };
+    r.hay = ['#' + iid, title, p.path, upd, closed ? 'closed' : 'opened',
+      r.recent ? '24h 內回應' : '', r.author ? '我建立' : '',
+      r.assignee ? '指派給我' : '', r.label ? '符合標籤' : ''].join(' ').toLowerCase();
+    return r;
+  }
+
+  var DATA = (D.projects || []).map(function (p) {
+    var seg = String(p.path || '').split('/');
+    return {
+      key: p.key, path: p.path, id: p.id, group: seg[0] || '', name: seg[1] || p.key,
+      openRows: (p.open || []).map(function (a) { return toRow(p, a, false); }),
+      closedRows: (p.closed || []).map(function (a) { return toRow(p, a, true); })
+    };
+  });
+  var TOTAL = DATA.reduce(function (n, p) { return n + p.openRows.length + p.closedRows.length; }, 0);
+  var TOTAL_OPEN = DATA.reduce(function (n, p) { return n + p.openRows.length; }, 0);
+  var TOTAL_CLOSED = DATA.reduce(function (n, p) { return n + p.closedRows.length; }, 0);
+  var PROJ_WITH_ITEMS = DATA.filter(function (p) { return p.openRows.length + p.closedRows.length > 0; }).length;
+  var HIDE_EMPTY = D.hideEmptyProjects === true;
+
+  var state = { q: '', status: 'all', reason: 'all', project: 'all' };
+
+  function match(r) {
+    if (state.reason !== 'all' && !r[state.reason]) return false;
+    var qq = state.q.toLowerCase().trim();
+    return !qq || r.hay.indexOf(qq) >= 0;
+  }
+
+  function compute() {
+    var filtering = !!(state.q.trim() || state.status !== 'all' || state.reason !== 'all' || state.project !== 'all');
+    var shown = 0;
+    var projects = [];
+    DATA.forEach(function (p) {
+      if (state.project !== 'all' && p.key !== state.project) return;
+      var groups = [];
+      function add(label, rows, st) {
+        if (state.status !== 'all' && state.status !== st) return;
+        var vis = rows.filter(match);
+        shown += vis.length;
+        if (filtering && !vis.length) return;
+        if (!rows.length && !filtering) { groups.push({ label: label, count: 0, rows: [], empty: true }); return; }
+        if (!rows.length) return;
+        groups.push({ label: label, count: vis.length, rows: vis, empty: false });
+      }
+      add('未結案', p.openRows, 'open');
+      add('近期已結案', p.closedRows, 'closed');
+      var isEmptyProj = !p.openRows.length && !p.closedRows.length;
+      if (isEmptyProj) {
+        if (filtering || HIDE_EMPTY) return;
+        projects.push({ p: p, open: 0, closed: 0, empty: true, groups: [] });
+        return;
+      }
+      if (filtering && !groups.length) return;
+      projects.push({ p: p, open: p.openRows.length, closed: p.closedRows.length, empty: false, groups: groups });
+    });
+    return { filtering: filtering, shown: shown, projects: projects };
+  }
+
+  function btn(key, val, label, count) {
+    var active = state[key] === val;
+    return '<button type="button" data-key="' + key + '" data-val="' + esc(val) + '" aria-pressed="' +
+      (active ? 'true' : 'false') + '"><span>' + esc(label) + '</span>' +
+      (count == null ? '' : '<span class="c">' + count + '</span>') + '</button>';
+  }
+
+  function rowHtml(r) {
+    var tags = '';
+    if (r.recent) tags += '<span class="tag r">24h 內回應</span>';
+    if (r.isClosed) tags += '<span class="tag c">closed</span>';
+    if (r.author) tags += '<span class="tag a">我建立</span>';
+    if (r.assignee) tags += '<span class="tag s">指派給我</span>';
+    if (r.label) tags += '<span class="tag l">符合標籤</span>';
+    return '<div class="row' + (r.recent ? ' recent' : '') + '">' +
+      '<span class="iid">#' + esc(r.iid) + '</span>' +
+      '<div class="mid"><a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.title) + '</a>' +
+      '<div class="tags">' + tags + '</div></div>' +
+      '<div class="when"><span class="d">' + esc(r.date) + '</span><span class="t">' + esc(r.time) + '</span></div>' +
+      '</div>';
+  }
+
+  function render() {
+    var c = compute();
+    var h = '';
+
+    h += '<header class="head"><div class="kicker"><i></i><span>GitLab Issue Digest · ' + esc(D.date) + '</span></div>' +
+      '<h1 class="title">GitLab 個人相關 Issue 摘要報告</h1></header>';
+
+    h += '<section class="meta">' +
+      '<div><span class="k">收集時間</span><span class="v">' + esc(D.collectedAt) + '</span></div>' +
+      '<div><span class="k">已結案下界</span><span class="v">' + esc(D.closedBoundText || (D.closedSince + '（近 ' + D.closedDays + ' 天）')) + '</span></div>' +
+      '<div><span class="k">篩選規則</span><span class="v">' + esc(D.filterRule) + '</span></div>' +
+      '</section>';
+
+    h += '<section class="config">' +
+      '<span><span class="k">GitLab 主機</span>　' + esc(D.host) + '</span>' +
+      '<span><span class="k">時區</span>　' + esc(D.timezone) + '</span>' +
+      '<span><span class="k">使用者 ID</span>　' + esc(D.userId) + '</span>' +
+      '<span><span class="k">追蹤標籤</span>　' + esc(D.trackLabel) + '</span>' +
+      '<span><span class="k">聯集邏輯</span>　' + esc(D.unionLogic) + '</span>' +
+      '</section>';
+
+    var confirm = D.confirm || [];
+    h += '<section class="stats">' +
+      '<div><span class="k">未結案 Issues</span><span class="n accent">' + TOTAL_OPEN + '</span>' +
+      '<span class="sub">涵蓋 ' + PROJ_WITH_ITEMS + ' 個專案</span></div>' +
+      '<div><span class="k">近期已結案 (' + esc(D.closedDays) + '天內)</span><span class="n">' + TOTAL_CLOSED + '</span>' +
+      '<span class="sub">更新於 ' + esc(String(D.closedSince || '').slice(5)) + ' 之後</span></div>' +
+      '<div><span class="k">待確認事項</span><span class="n">' + confirm.length + '</span>' +
+      '<span class="sub">需本人回覆或決策</span></div>' +
+      '</section>';
+
+    if (confirm.length) {
+      h += '<section class="sect"><div class="sect-head ruled"><h2>待我確認重點</h2>' +
+        '<span class="count">' + confirm.length + ' 筆</span></div><ol class="confirm">';
+      confirm.forEach(function (it, i) {
+        var isNew = it['new'] === true;
+        var kind = it.kind || '';
+        var text = it.text || '';
+        if (!kind) {
+          var m = /^([^：]{1,12})：([\s\S]*)$/.exec(text);
+          if (m) { kind = m[1]; text = m[2]; }
+        }
+        h += '<li><span class="idx' + (isNew ? ' accent' : '') + '">' + (i < 9 ? '0' : '') + (i + 1) + '</span>' +
+          '<div class="body"><div class="line1">' +
+          (isNew ? '<span class="new">NEW</span>' : '') +
+          '<span class="ref">' + esc(it.ref) + '</span>' +
+          '<span>更新時間：' + esc(it.updated) + '</span></div>' +
+          '<a class="ttl" href="' + esc(it.url) + '" target="_blank" rel="noopener">' + esc(it.title) + '</a>' +
+          '<p>' + (kind ? '<strong>' + esc(kind) + '：</strong>' : '') + rich(text) + '</p>' +
+          '</div></li>';
+      });
+      h += '</ol></section>';
+    }
+
+    h += '<section class="sect"><div class="sect-head"><h2>全部 Issues</h2>' +
+      '<span class="count">顯示 ' + c.shown + ' / ' + TOTAL + ' 筆</span></div>';
+
+    h += '<div class="filters">' +
+      '<input type="text" id="q" placeholder="搜尋 Issue 標題、編號、專案、符合原因…" value="' + esc(state.q) + '">' +
+      '<div class="frow">' +
+      '<div class="fgroup"><span class="k">狀態</span>' +
+      btn('status', 'all', '全部') + btn('status', 'open', '未結案') + btn('status', 'closed', '近期已結案') +
+      '</div>' +
+      '<div class="fgroup"><span class="k">符合原因</span>' +
+      btn('reason', 'all', '全部') + btn('reason', 'recent', '24h 內回應') + btn('reason', 'author', '我建立') +
+      btn('reason', 'assignee', '指派給我') + btn('reason', 'label', '符合標籤') +
+      '</div></div>' +
+      '<div class="fgroup"><span class="k">專案</span>' +
+      btn('project', 'all', '全部專案', TOTAL) +
+      DATA.filter(function (p) { return !HIDE_EMPTY || p.openRows.length + p.closedRows.length; })
+        .map(function (p) { return btn('project', p.key, p.name, p.openRows.length + p.closedRows.length); }).join('') +
+      '</div></div>';
+
+    if (c.shown === 0 && c.filtering) {
+      h += '<div class="empty-all">沒有符合目前篩選條件的 Issue。</div>';
+    }
+
+    c.projects.forEach(function (x) {
+      h += '<article class="proj"><div class="proj-head">' +
+        '<div><span class="id">' + esc(x.p.group) + ' · ID: ' + esc(x.p.id) + '</span>' +
+        '<h3>' + esc(x.p.name) + '</h3></div>' +
+        '<div class="nums"><div><span>未結案</span><b>' + x.open + '</b></div>' +
+        '<div><span>近期已結案</span><b>' + x.closed + '</b></div></div></div>';
+      if (x.empty) h += '<div class="note">本次可見範圍沒有符合項目</div>';
+      x.groups.forEach(function (g) {
+        h += '<div class="gh"><span>' + esc(g.label) + '</span><span>' + g.count + ' 筆</span></div>';
+        if (g.empty) h += '<div class="note">本次可見範圍沒有符合項目</div>';
+        g.rows.forEach(function (r) { h += rowHtml(r); });
+      });
+      h += '</article>';
+    });
+
+    h += '</section><footer>' + esc(D.footer) + '</footer>';
+
+    var app = document.getElementById('app');
+    app.innerHTML = h;
+
+    var input = document.getElementById('q');
+    input.addEventListener('input', function (e) {
+      state.q = e.target.value;
+      var pos = e.target.selectionStart;
+      render();
+      var ni = document.getElementById('q');
+      ni.focus();
+      try { ni.setSelectionRange(pos, pos); } catch (err) {}
+    });
+    app.querySelectorAll('.fgroup button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var k = b.getAttribute('data-key'), v = b.getAttribute('data-val');
+        state[k] = (state[k] === v && v !== 'all') ? 'all' : v;
+        render();
+      });
+    });
+  }
+
+  document.title = 'GitLab 個人 Issue 摘要報告' + (D.date ? ' (' + D.date + ')' : '');
+  render();
+})();
+</script>
+</body>
+</html>
