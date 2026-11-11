@@ -13,14 +13,17 @@ description: 整理本人被指派、建立或符合追蹤標籤的 GitLab Issue
 
 時間顯示與排序：所有人看的報告時間（收集時間、範圍下界、Issue 更新時間、待確認區）一律依該報告快照的 `timezone` 轉為 `YYYY-MM-DD HH:mm:ss.SSS`，報告標明該 IANA 時區，不再並列或顯示 UTC/Z 原值。舊快照若缺時區，依序使用可信 `sources.json.timezone`、中台規則頂層 `timezone`；仍缺或無效就報錯，不猜測或硬編時區。保留輸入 JSON 時間；HTML `datetime`/`data-updated-at` 可保留原始機器值。「最後回應時間」定義：取 Issue 的 `updated_at`（留言、狀態、標籤變動都會更新此欄）；若快照另附 notes，取 `max(updated_at, 最新 note 的 created_at)`，不混用純 `created_at`。所有現有區塊——「待我確認」全區跨專案、各專案內「未結案」清單、各專案內「近期已結案」清單等——各自依此「最後回應時間」由新到舊排序，不是只排「待我確認」；每筆顯示當地更新時間。同一區塊內同時刻以 project path、project_id、iid 穩定排序；缺時間者列於該區塊末並明示未知。套用至當次產出的 Markdown、HTML、latest 與日期版。
 
-24 小時內高亮：以本輪快照的收集時間（`collectedAt`，依上述 `timezone` 解析，不用 agent 當下時間）為基準，減去該筆 Issue 的「最後回應時間」（定義同上）；差距在 24 小時以內（含剛好 24 小時）就視為「近期有回應」，並標示出來。此規則套用到全部既有區塊——「待我確認」、各專案「未結案」清單、各專案「近期已結案」清單，不限其中一個。HTML：該筆的列／卡片容器額外加一個 class `recent`（沿用既有結構，例如現有 `<div class="issue-row">` 變成 `<div class="issue-row recent">`，`<span class="issue-iid">#989</span>` 等其餘內容不變），並在既有內嵌 `<style>` 區塊補上對應規則，背景用淡黃色（例如 `#fff8e1`），深色模式下另給可讀的淡黃，不改任何文字、徽章或連結：
+24 小時內高亮：以本輪快照的收集時間（`collectedAt`，依上述 `timezone` 解析，不用 agent 當下時間）為基準，減去該筆 Issue 的「最後回應時間」（定義同上）；差距在 24 小時以內（含剛好 24 小時）就視為「近期有回應」，並標示出來。此規則套用到全部既有區塊——「待我確認」、各專案「未結案」清單、各專案「近期已結案」清單，不限其中一個。HTML：**只在該筆「更新時間」那個元素上**加一個 class `recent`，**不要**加在列／卡片容器上（沿用既有結構，例如現有 `<div class="issue-meta">更新：2026-11-11 08:59:08.745</div>` 變成 `<div class="issue-meta recent">更新：2026-11-11 08:59:08.745</div>`；列容器、標題、徽章、連結等其餘內容完全不動），並在既有內嵌 `<style>` 區塊補上對應規則——頁面本身是淺色主題、沒有深色版，不要加 `prefers-color-scheme: dark` 規則，只套用在這段「更新時間」文字上，用淡黃底深棕字（對比度達 WCAG AA 以上）：
 ```css
-.issue-row.recent { background: #fff8e1; }
-@media (prefers-color-scheme: dark) {
-  .issue-row.recent { background: #3a331a; }
+.issue-meta.recent {
+  background: #fff3bf;
+  color: #5c4400;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
 }
 ```
-只加底色，不得移除或覆蓋原有 hover、badge 樣式。Markdown：在該筆編號之後、標題粗體文字之前加上 `🆕` 標記，例如現有 `1. **[pm_feedback#989] ...**` 變成 `1. 🆕 **[pm_feedback#989] ...**`；同一份文件固定用 `🆕`，不與 `[24h]` 混用。缺「最後回應時間」者不判定為近期有回應。
+只加在「更新時間」這段文字上，不得移除或覆蓋原有 hover、badge 樣式，也不得影響列容器、標題或徽章。Markdown：在該筆編號之後、標題粗體文字之前加上 `🆕` 標記，例如現有 `1. **[pm_feedback#989] ...**` 變成 `1. 🆕 **[pm_feedback#989] ...**`；同一份文件固定用 `🆕`，不與 `[24h]` 混用。缺「最後回應時間」者不判定為近期有回應。
 
 2. 寫 `briefs/<id>.md`，`<id>` 使用剛核對的安全 ID。以同 ID 的 `briefs/<id>.md` 是否已存在作為防重依據，已存在則不重寫、不重發。每次寫入新的 `briefs/<id>.md` 時，同步將相同內容覆寫至 `briefs/latest.md` 以及 `briefs/<period>.md`（例如 `briefs/2026-11-09.md`）；同時**必須同步產生/覆寫一份排版美觀、人類極易閱讀（獨立自包含、內嵌現代化 CSS 樣式、頂部統計卡片、即時關鍵字篩選、Badge 標籤與可點擊外部連結）的 `briefs/latest.html` 以及 `briefs/<period>.html`**，其中 `<head>` 必須綁定內嵌的 GitLab 官方彩色 Tanuki SVG Favicon（`<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,...">`），並在頁面標題旁顯示 GitLab 彩色狐狸 SVG 圖示，方便使用者直接用瀏覽器開箱即讀。必要時只建立 `briefs` 目錄，不修改輸入快照或任何目標程式碼。
 3. 報告標題／頁首（HTML `header`、Markdown 摘要資訊區）只列三行，順序固定、格式如下（時區標示沿用 `(Taipei)` 寫法，天數依 `sources.json` 的 `closedUpdatedDays` 實際值）：
