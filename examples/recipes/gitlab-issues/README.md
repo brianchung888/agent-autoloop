@@ -67,7 +67,7 @@ cd ~/.agent-autoloop/work/gitlab-issues && node ./watch-gitlab-issues.ts ./sourc
 
 - 規則一「收集」：cron `*/10 8-18 * * *` 在 `cwd` 跑收集器，stdout 裡的 ```` ```agent-autoloop ```` 回執被 worker 解析成 `gitlab-brief` 來源的 `brief.ready` 事件（`emits` 授權）。
 - 規則二「整理」：收到 `brief.ready` 就在同一 `cwd` 以 `gitlab-issue-brief` Skill 派給摘要 Agent，讀 `gitlab-inputs/<id>.json`，寫 `briefs/<id>.md`、`<id>.html`，再原子覆寫 `latest.*` 與 `<日期>.*`，最後發一則通知。
-- 24 小時內回應標記（HTML `R` 紅標、Markdown `🆕`、待我確認 `NEW`）會排除「最後一則留言是本人」的 Issue：收集器對 `updated_at` 在 48 小時內的 Issue 多查一次 Notes API，把最後一則人寫留言的作者寫進快照 `last_note`，`last_note.author_id === userId` 的就不標，因為不需要再跟進；其餘 Issue 不帶此欄位，維持只看時間。
+- 24 小時內回應標記（HTML `R` 紅標、Markdown `🆕`、待我確認 `NEW`）只有真正留言才算回應，且最後留言者非本人：收集器對 `updated_at` 在 48 小時內的 Issue 多查一次 Notes API，把最後一則人寫留言的作者與時間寫進快照 `last_note`；`last_note.created_at` 在收集時間 24 小時內且 `last_note.author_id !== userId` 才標，`last_note` 為 `null` 或缺欄位（沒有留言、或超過 48 小時未查）一律不標。`updated_at` 只用於排序與顯示。
 - 去重靠中台 events 表：事件 `id` 是快照內容的 sha256，同內容再收一次會被中台忽略，所以 10 分鐘一次也不會一直吵；只要任何 Issue 有變動，id 就不同，自動進新一輪。
 - `template.html` 的版面是固定的；Agent 只替換 `<script id="data" type="application/json">` 那段 JSON，其餘一個位元組都不動，所以樣式一致、可自行調整模板。
 
