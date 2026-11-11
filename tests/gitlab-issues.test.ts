@@ -22,9 +22,12 @@ const issue = (iid: number, extra = {}) => ({
   labels: [],
   ...extra,
 });
+const note = (id: number, system = false) => ({ system, author: { id }, created_at: updatedAt, body: "x" });
+const defaultNotes = [note(1, true), note(8), note(7)];
 async function fixture(
   run: (watch: (extra?: object, token?: string) => Promise<any>, calls: URL[], folder: string) => Promise<void>,
   handler?: (url: URL, res: any) => void,
+  notes: (url: URL) => { status?: number; body: unknown } = () => ({ body: defaultNotes }),
 ) {
   const folder = mkdtempSync(join(tmpdir(), "gitlab-brief-"));
   const calls: URL[] = [];
@@ -32,6 +35,12 @@ async function fixture(
     assert.equal(req.headers["private-token"], "fixture-token");
     const url = new URL(req.url!, "http://localhost");
     calls.push(url);
+    if (url.pathname.endsWith("/notes")) {
+      const reply = notes(url);
+      res.statusCode = reply.status ?? 200;
+      res.end(typeof reply.body === "string" ? reply.body : JSON.stringify(reply.body));
+      return;
+    }
     if (!url.pathname.endsWith("/issues")) {
       const id = ["43", "group/other"].includes(decodeURIComponent(url.pathname.split("/").at(-1)!)) ? 43 : 42;
       res.end(JSON.stringify({ id, path_with_namespace: id === 43 ? "group/other" : "group/repo" }));
@@ -315,6 +324,80 @@ test("gitlab brief: merged issue cap applies across projects and mismatched proj
     );
 });
 
+test("gitlab brief: last_note comes from the newest human note only for issues updated within 48h and notes failures abort the round", async () => {
+  const old = new Date(Date.now() - 3 * 86400000).toISOString();
+  await fixture(
+    async (watch, calls, folder) => {
+      const done = await watch();
+      assert.equal(done.code, 0, done.err);
+      const data = JSON.parse(readFileSync(join(folder, "gitlab-inputs", `${event(done.out).id}.json`), "utf8"));
+      const byIid = Object.fromEntries(data.issues.map((x: any) => [x.iid, x]));
+      assert.deepEqual(byIid[1].last_note, { author_id: 8, created_at: updatedAt });
+      assert.deepEqual(byIid[2].last_note, { author_id: 7, created_at: updatedAt });
+      assert.equal(byIid[3].last_note, null);
+      assert.equal(Object.hasOwn(byIid[4], "last_note"), false);
+      assert.deepEqual(Object.keys(byIid[1]).at(-1), "last_note");
+      const noteCalls = calls.filter((x) => x.pathname.endsWith("/notes"));
+      assert.deepEqual(
+        noteCalls.map((x) => x.pathname).sort(),
+        [1, 2, 3].map((i) => `/api/v4/projects/42/issues/${i}/notes`),
+      );
+      assert.ok(
+        noteCalls.every(
+          (x) =>
+            x.searchParams.get("sort") === "desc" &&
+            x.searchParams.get("order_by") === "updated_at" &&
+            x.searchParams.get("per_page") === "20",
+        ),
+      );
+    },
+    (url, res) => {
+      res.setHeader("x-next-page", "");
+      res.end(
+        JSON.stringify(
+          url.searchParams.get("state") === "opened" && url.searchParams.has("author_id")
+            ? [
+                issue(1, { author: { id: 7 } }),
+                issue(2, { author: { id: 7 } }),
+                issue(3, { author: { id: 7 } }),
+                issue(4, { author: { id: 7 }, updated_at: old }),
+              ]
+            : [],
+        ),
+      );
+    },
+    (url) => {
+      const iid = Number(url.pathname.split("/").at(-2));
+      return iid === 1
+        ? { body: [note(1, true), note(8), note(7)] }
+        : iid === 2
+          ? { body: [note(7), note(8)] }
+          : iid === 3
+            ? { body: [note(1, true)] }
+            : { status: 500, body: "fixture-token secret-body" };
+    },
+  );
+  for (const mode of ["500", "malformed", "shape"])
+    await fixture(
+      async (watch, _calls, folder) => {
+        const done = await watch();
+        assert.notEqual(done.code, 0, mode);
+        assert.equal(done.out, "");
+        assert.doesNotMatch(done.err, /fixture-token|secret-body/);
+        assert.equal(readdirSync(folder).includes("gitlab-inputs"), false);
+      },
+      (_url, res) => {
+        res.setHeader("x-next-page", "");
+        res.end(JSON.stringify([issue(1, { author: { id: 7 } })]));
+      },
+      () =>
+        mode === "500"
+          ? { status: 500, body: "fixture-token secret-body" }
+          : mode === "malformed"
+            ? { body: '{"secret":"fixture-token"}' }
+            : { body: [{ system: "no", author: {}, created_at: "bad" }] },
+    );
+});
 test("gitlab brief Skill completion notice example passes the actual worker receipt parser", () => {
   const skill = readFileSync(join(import.meta.dirname, "../examples/recipes/gitlab-issues/SKILL.md"), "utf8");
   const block = /```agent-autoloop\n([\s\S]*?)```/.exec(skill);

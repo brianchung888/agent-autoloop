@@ -24,6 +24,10 @@ type Issue = {
   assignees: { id: number }[];
   labels: string[];
 };
+// Only issues updated within 48h of collectedAt carry last_note (the Skill judges 24h); others omit the field.
+type LastNote = { author_id: number; created_at: string } | null;
+type Note = { system: boolean; author: { id: number }; created_at: string };
+const noteWindowMs = 48 * 3600000;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const limit = "超過摘要上限（100 個唯一 Issue / 512 KiB），請縮小專案或標籤範圍；不產生部分摘要";
 async function main() {
@@ -132,7 +136,7 @@ async function main() {
   const updatedAfter = new Date(
     Date.parse(`${now.toISOString().slice(0, 10)}T00:00:00Z`) - config.closedUpdatedDays * 86400000,
   ).toISOString();
-  const issues = new Map<string, Issue & { project: string; reasons: string[] }>();
+  const issues = new Map<string, Issue & { project: string; reasons: string[]; last_note?: LastNote }>();
   const filters = [
     { assignee_id: String(config.userId) },
     { author_id: String(config.userId) },
@@ -219,6 +223,24 @@ async function main() {
           page = following;
         }
       }
+  for (const issue of issues.values()) {
+    if (now.getTime() - Date.parse(issue.updated_at) > noteWindowMs) continue;
+    const url = new URL(`${baseUrl}/api/v4/projects/${issue.project_id}/issues/${issue.iid}/notes`);
+    for (const [key, value] of Object.entries({ sort: "desc", order_by: "updated_at", per_page: "20" }))
+      url.searchParams.set(key, value);
+    const { value: notes } = (await get(url)) as { value: unknown };
+    if (!Array.isArray(notes)) throw new Error("GitLab API 回傳不是 Note 清單");
+    for (const note of notes as Note[])
+      if (
+        !note ||
+        typeof note.system !== "boolean" ||
+        !Number.isSafeInteger(note.author?.id) ||
+        !Number.isFinite(Date.parse(note.created_at))
+      )
+        throw new Error("GitLab API Note 欄位格式錯誤");
+    const human = (notes as Note[]).find((n) => !n.system);
+    issue.last_note = human ? { author_id: human.author.id, created_at: human.created_at } : null;
+  }
   const content = {
     period,
     timezone: config.timezone,
