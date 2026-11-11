@@ -15,7 +15,9 @@
     "gitlab-agent": {
       "name": "GitLab 摘要 Agent",
       "worker": "my-pc",
-      "use": "codex",
+      "use": "acp",
+      "command": ["agy", "acp"],
+      "model": "gemini-3.8-flash",
       "access": "edit"
     }
   },
@@ -23,7 +25,7 @@
     {
       "name": "收集個人相關 GitLab Issue",
       "when": {
-        "cron": "*/30 * * * *"
+        "cron": "*/10 8-18 * * *"
       },
       "to": "gitlab-collector",
       "cwd": "~/.agent-autoloop/work/gitlab-issues",
