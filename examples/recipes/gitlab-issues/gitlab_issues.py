@@ -28,7 +28,9 @@
   （空專案也列）；每專案分「近期已結案」「未結案」；各區塊依 updated_at 新到舊，同時刻以 path/project_id/iid 穩定排序；
   24h 判定只看 `last_note`（collectedAt − created_at ≤ 24h 且 author_id ≠ userId）→ flags `R`、Markdown `🆕`、confirm `new`；
   flags 順序 R/A/S/L/W（W = web_url 含 `/-/work_items/`）。Markdown 版面比照 briefs/latest.md；
-  HTML 只替換 template.html 中 `<script id="data" type="application/json">` 的 JSON，其餘位元組不動。
+  HTML 只替換 template.html 中 `<script id="data" type="application/json">` 的 JSON，其餘位元組不動；
+  每筆 Issue 陣列第 5 元素 `noteKey`（confirm 項目同名欄位）= 最新非本人留言的 `created_at:author_id`，供模板
+  「我處理過了」勾選狀態偵測新回應；本人留言、無留言或 48h 外未補查都是 ""。
 - 待我確認：一次 LLM 呼叫（透過 agentrunner_chat.chat），輸入未結案 Issue 的 ref／標題／描述前 800 字／指派／最後留言者是否本人，
   要求回傳 JSON 陣列 [{ref, kind, note}]；本機驗證 ref 必須存在、kind 限三種、最多 8 筆；解析失敗或逾時 → 退回 --no-llm 規則並在 stderr 警告。
   --no-llm 規則：指派給我、未結案、`last_note` 存在且作者非本人；無則列「無」。
@@ -376,6 +378,17 @@ def is_recent(issue: dict, collected: datetime, user_id: int) -> bool:
         return False
 
 
+def note_key_of(issue: dict, user_id: int) -> str:
+    """HTML #data 第 5 欄：最新「非本人」留言指紋 `created_at:author_id`；本人留言、沒留言或 48h 外未補查都回空字串。"""
+    ln = issue.get("last_note")
+    if not isinstance(ln, dict) or ln.get("author_id") == user_id:
+        return ""
+    created, author = ln.get("created_at"), ln.get("author_id")
+    if not isinstance(created, str) or not _is_int(author):
+        return ""
+    return f"{created}:{author}"
+
+
 def flags_of(issue: dict, recent: bool) -> str:
     f = "R" if recent else ""
     if "author" in issue["reasons"]:
@@ -429,6 +442,7 @@ def build_model(snapshot: dict, sources: dict) -> dict:
             **i,
             "recent": recent,
             "flags": flags_of(i, recent),
+            "note_key": note_key_of(i, uid),
             "updated_local": fmt_local(i["updated_at"], tz),
             "name": i["project"].split("/")[-1],
             "ref": f"{i['project'].split('/')[-1]}#{i['iid']}",
@@ -575,7 +589,7 @@ def finalize_confirm(items: "list[dict]", model: dict) -> "list[dict]":
         r = model["by_ref"][it["ref"]]
         out.append({"ref": it["ref"], "iid": str(r["iid"]), "url": r["web_url"], "title": r["title"],
                     "updated": r["updated_local"], "new": r["recent"], "kind": it["kind"], "text": it["note"],
-                    "_row": r})
+                    "noteKey": r["note_key"], "_row": r})
     out.sort(key=lambda c: sort_key(c["_row"]))
     return out
 
@@ -651,8 +665,8 @@ def render_html(model: dict, confirm: "list[dict]", template: str) -> str:
         "confirm": [{k: v for k, v in c.items() if k != "_row"} for c in confirm],
         "projects": [{
             "key": p["key"], "path": p["path"], "id": p["id"],
-            "open": [[r["iid"], r["title"], r["updated_local"], r["flags"]] for r in p["open"]],
-            "closed": [[r["iid"], r["title"], r["updated_local"], r["flags"]] for r in p["closed"]],
+            "open": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"]] for r in p["open"]],
+            "closed": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"]] for r in p["closed"]],
         } for p in model["projects"]],
     }
     m = DATA_RE.search(template)

@@ -31,8 +31,8 @@ HTML 產出規則（固定版面，不自創樣式）：HTML 一律用固定模�
    - 讀 `{cwd}/template.html`（可信工作目錄下的模板；通常是 `~/.agent-autoloop/work/gitlab-issues/template.html`）。
    - 只改模板裡 `<script id="data" type="application/json">` 與 `</script>` 之間那一段 JSON，其餘**一個位元組都不改**（不動 `<style>`、不動下方渲染 JS、不動 `<title>`、不動字型連結）。模板缺失或找不到 `#data` 區塊就當這一輪沒跑成，照實回報，不得改用自己寫的 HTML。
    - JSON 欄位：`date`（快照日期）、`collectedAt`（`YYYY-MM-DD HH:mm:ss.SSS (Taipei)`）、`timezone`、`host`、`userId`、`trackLabel`、`filterRule`、`unionLogic`、`closedSince`、`closedDays`、`closedBoundText`、`hideEmptyProjects`（預設 `false`）、`footer`、`confirm`、`projects`。
-   - `projects` 依 `sources.json` 的專案順序，每個專案 `{ "key", "path", "id", "open": [[iid, title, updated, flags], …], "closed": [[…]] }`；`updated` 用當地時間字串 `YYYY-MM-DD HH:mm:ss.SSS`（不帶時區後綴），`flags` 是字串，`R`=24 小時內有回應、`A`=我建立、`S`=指派給我、`L`=符合追蹤標籤、`W`=連結用 `/-/work_items/`（預設 `/-/issues/`）。同一區塊內依更新時間由新到舊排序，規則與 Markdown 相同。
-   - `confirm` 每筆 `{ "ref": "專案#編號", "url", "title", "updated", "new": true/false, "kind": "待決議|待確認|待討論", "text" }`；`text` 用原文，要保留 code 樣式的片段用反引號包起來（例如 `` `/` ``）。
+   - `projects` 依 `sources.json` 的專案順序，每個專案 `{ "key", "path", "id", "open": [[iid, title, updated, flags, noteKey], …], "closed": [[…]] }`；`updated` 用當地時間字串 `YYYY-MM-DD HH:mm:ss.SSS`（不帶時區後綴），`flags` 是字串，`R`=24 小時內有回應、`A`=我建立、`S`=指派給我、`L`=符合追蹤標籤、`W`=連結用 `/-/work_items/`（預設 `/-/issues/`）。第 5 元素 `noteKey` 是字串：`last_note` 的 `created_at + ":" + author_id`，**只在 `last_note.author_id !== userId` 時**才填（本人留言不算新回應）；`last_note` 為 `null`、缺欄位、作者是本人，或 `updated_at` 超過 48 小時沒補查 notes 的 Issue 一律填 `""`。模板用它判斷「我處理過了」勾選後是否有新的非本人回應（指紋變了就重設為未勾選）；舊的 4 元素格式模板仍可讀（視同 `""`）。同一區塊內依更新時間由新到舊排序，規則與 Markdown 相同。
+   - `confirm` 每筆 `{ "ref": "專案#編號", "url", "title", "updated", "new": true/false, "kind": "待決議|待確認|待討論", "text", "noteKey" }`；`noteKey` 規則同上（取該 Issue 的值）；`text` 用原文，要保留 code 樣式的片段用反引號包起來（例如 `` `/` ``）。
    - 所有筆數與總數都由模板從陣列算出，不要在 JSON 裡另外寫死統計數字；統計值必須和同一輪 Markdown 完全一致。
    - 空專案照樣列進 `projects`（`open`、`closed` 都是空陣列），模板會顯示「本次可見範圍沒有符合項目」。
 
