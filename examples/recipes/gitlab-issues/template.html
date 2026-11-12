@@ -266,6 +266,45 @@
 
   var state = { q: '', status: 'all', reason: 'all', project: 'all', hideDone: 'all' };
 
+  // 分頁回到前景時自動重載：載入超過 RELOAD_AFTER_MS 後再回到前景 → 先把篩選與捲動位置存進 sessionStorage，再 reload；
+  // 重載後還原並刪掉該 key。loadedAt 在重載前重設，60 秒內再切回不會再重載。
+  var VIEW_KEY = 'gitlab-brief:view';
+  var RELOAD_AFTER_MS = 60 * 1000;
+  var loadedAt = Date.now();
+  var LOADED_HM = (function (d) {
+    return (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
+  })(new Date(loadedAt));
+  function loadView() {
+    try {
+      var raw = sessionStorage.getItem(VIEW_KEY);
+      if (raw != null) sessionStorage.removeItem(VIEW_KEY);
+      var v = raw ? JSON.parse(raw) : null;
+      return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null;
+    } catch (err) { return null; }
+  }
+  function saveView() {
+    try {
+      sessionStorage.setItem(VIEW_KEY, JSON.stringify({ state: state, scrollY: window.scrollY || window.pageYOffset || 0 }));
+    } catch (err) {}
+  }
+  var SAVED_VIEW = loadView();
+  if (SAVED_VIEW && SAVED_VIEW.state && typeof SAVED_VIEW.state === 'object') {
+    Object.keys(state).forEach(function (k) {
+      if (typeof SAVED_VIEW.state[k] === 'string') state[k] = SAVED_VIEW.state[k];
+    });
+  }
+  function reloadIfStale() {
+    if (document.visibilityState !== 'visible') return;
+    if (Date.now() - loadedAt < RELOAD_AFTER_MS) return;
+    loadedAt = Date.now();
+    saveView();
+    location.reload();
+  }
+  document.addEventListener('visibilitychange', reloadIfStale);
+  window.addEventListener('focus', reloadIfStale);
+  // 測試用：允許在頁內調整 loadedAt
+  window.gitlabBrief = { setLoadedAt: function (t) { loadedAt = Number(t) || Date.now(); }, getLoadedAt: function () { return loadedAt; } };
+
   function match(r) {
     if (state.project !== 'all' && r.projKey !== state.project) return false;
     if (state.status !== 'all' && state.status !== (r.isClosed ? 'closed' : 'open')) return false;
@@ -314,7 +353,7 @@
       '<h1 class="title">GitLab 個人相關 Issue 摘要報告</h1></header>';
 
     h += '<section class="meta">' +
-      '<div><span class="k">收集時間</span><span class="v">' + esc(D.collectedAt) + '</span></div>' +
+      '<div><span class="k">收集時間</span><span class="v">' + esc(D.collectedAt) + '</span><span class="k">頁面載入 ' + esc(LOADED_HM) + '</span></div>' +
       '<div><span class="k">已結案下界</span><span class="v">' + esc(D.closedBoundText || (D.closedSince + '（近 ' + D.closedDays + ' 天）')) + '</span></div>' +
       '<div><span class="k">篩選規則</span><span class="v">' + esc(D.filterRule) + '</span></div>' +
       '</section>';
@@ -426,6 +465,12 @@
 
   document.title = 'GitLab 個人 Issue 摘要報告' + (D.date ? ' (' + D.date + ')' : '');
   render();
+  if (SAVED_VIEW && typeof SAVED_VIEW.scrollY === 'number' && SAVED_VIEW.scrollY > 0) {
+    try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (err) {}
+    var restoreY = SAVED_VIEW.scrollY;
+    window.scrollTo(0, restoreY);
+    window.requestAnimationFrame(function () { window.scrollTo(0, restoreY); });
+  }
 })();
 </script>
 </body>
