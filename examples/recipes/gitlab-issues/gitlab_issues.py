@@ -35,10 +35,10 @@
 - stdout 第一行是結論（做完了／没事可做／没跑成），其餘進度訊息走 stderr；不印 token。
 
 接進 agent-autoloop（取代 TS 收集器 + ACP 摘要 agent 的兩條規則；一條 command rule 即可）：
-    "agents": { "gitlab-py": { "name": "GitLab Issue 摘要（Python）", "worker": "brianchung-nb", "use": "command",
-                               "command": ["python", "C:/Users/brianchung/SynologyDrive/gemini/scripts/gitlab_issues.py", "--autoloop"] } }
+    "agents": { "gitlab-py": { "name": "GitLab Issue 摘要（Python）", "worker": "my-pc", "use": "command",
+                               "command": ["python", "{cwd}/gitlab_issues.py", "--autoloop"] } }
     "rules":  [ { "name": "GitLab 個人 Issue 摘要", "when": { "cron": "*/10 8-18 * * *" }, "to": "gitlab-py",
-                  "cwd": "C:\\Users\\brianchung\\.agent-autoloop\\work\\gitlab-issues", "tell": "needed" } ]
+                  "cwd": "~/.agent-autoloop/work/gitlab-issues", "tell": "needed" } ]
   腳本結尾的 ```agent-autoloop 區塊會送出 key=gitlab-brief-<id>、fyi=true 的 notice；同一快照只發一次。
 """
 
