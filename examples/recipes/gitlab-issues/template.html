@@ -96,17 +96,8 @@
 
   .empty-all { padding: 48px 0; font-size: 15px; color: var(--color-neutral-700); border-bottom: 1px solid var(--color-divider); }
 
-  article.proj { margin-top: 32px; border-top: 2px solid var(--color-text); }
-  .proj-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; padding: 14px 0; }
-  .proj-head .id { font-size: 12px; color: var(--color-neutral-700); }
-  .proj-head h3 { margin: 0; font-size: 22px; font-weight: 800; overflow-wrap: anywhere; }
-  .proj-head .nums { display: flex; gap: 24px; font-size: 12px; color: var(--color-neutral-700); }
-  .proj-head .nums div { display: grid; }
-  .proj-head .nums b { font-size: 22px; font-weight: 800; color: var(--color-text); }
-  .note { padding: 14px 12px; border-top: 1px solid var(--color-divider); font-size: 14px; color: var(--color-neutral-700); }
-  .gh { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--color-divider); background: var(--color-surface); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
-  .gh span:first-child { padding-left: 12px; }
-  .gh span:last-child { padding-right: 12px; }
+  .list { border-bottom: 2px solid var(--color-text); }
+  .list .row:first-child { border-top: 0; }
 
   .row { display: grid; grid-template-columns: 20px 64px minmax(0, 1fr) minmax(120px, auto); gap: 4px 16px; padding: 12px; border-top: 1px solid var(--color-neutral-300); align-items: start; }
   .row:hover { background: var(--color-neutral-100); }
@@ -120,6 +111,7 @@
   .tag.a { border: 1px solid var(--color-text); color: var(--color-text); }
   .tag.s { background: var(--color-text); color: var(--color-bg); }
   .tag.l { background: var(--color-neutral-200); color: var(--color-neutral-800); }
+  .tag.p { background: var(--color-neutral-200); color: var(--color-neutral-800); font-weight: 600; }
   .row .when { display: grid; justify-items: end; text-align: right; font-variant-numeric: tabular-nums; padding-top: 2px; }
   .row .when .d { font-size: 13px; font-weight: 600; }
   .row .when .t { font-size: 12px; color: var(--color-neutral-700); }
@@ -213,7 +205,8 @@
     var noteKey = String(a[4] == null ? '' : a[4]);
     var parts = upd.split(' ');
     var r = {
-      iid: iid, title: title, date: parts[0] || '', time: parts[1] || '', isClosed: closed,
+      iid: iid, title: title, updated: upd, date: parts[0] || '', time: parts[1] || '', isClosed: closed,
+      projKey: p.key, projPath: String(p.path || ''), projName: String(p.path || '').split('/').pop() || p.key,
       url: issueUrl(p.path, iid, f), key: p.path + '#' + iid, noteKey: noteKey,
       recent: f.indexOf('R') >= 0, author: f.indexOf('A') >= 0,
       assignee: f.indexOf('S') >= 0, label: f.indexOf('L') >= 0
@@ -231,6 +224,16 @@
       openRows: (p.open || []).map(function (a) { return toRow(p, a, false); }),
       closedRows: (p.closed || []).map(function (a) { return toRow(p, a, true); })
     };
+  });
+  // 全部專案的 open + closed 展平成單一清單：依更新時間由新到舊，同時刻以專案 path、iid 穩定排序
+  var ROWS = [];
+  DATA.forEach(function (p) { ROWS = ROWS.concat(p.openRows, p.closedRows); });
+  ROWS.sort(function (a, b) {
+    if (a.updated !== b.updated) return a.updated < b.updated ? 1 : -1;
+    if (a.projPath !== b.projPath) return a.projPath < b.projPath ? -1 : 1;
+    var ai = Number(a.iid), bi = Number(b.iid);
+    if (!isNaN(ai) && !isNaN(bi)) return ai - bi;
+    return String(a.iid) < String(b.iid) ? -1 : (String(a.iid) > String(b.iid) ? 1 : 0);
   });
   var PATH_BY_KEY = {};
   DATA.forEach(function (p) { PATH_BY_KEY[p.key] = p.path; });
@@ -258,11 +261,14 @@
   var TOTAL_OPEN = DATA.reduce(function (n, p) { return n + p.openRows.length; }, 0);
   var TOTAL_CLOSED = DATA.reduce(function (n, p) { return n + p.closedRows.length; }, 0);
   var PROJ_WITH_ITEMS = DATA.filter(function (p) { return p.openRows.length + p.closedRows.length > 0; }).length;
+  // 單一清單版面已無專案區塊；此選項保留讀取以相容舊資料，不再影響版面
   var HIDE_EMPTY = D.hideEmptyProjects === true;
 
   var state = { q: '', status: 'all', reason: 'all', project: 'all', hideDone: 'all' };
 
   function match(r) {
+    if (state.project !== 'all' && r.projKey !== state.project) return false;
+    if (state.status !== 'all' && state.status !== (r.isClosed ? 'closed' : 'open')) return false;
     if (state.reason !== 'all' && !r[state.reason]) return false;
     if (state.hideDone === 'on' && isDone(r.key)) return false;
     var qq = state.q.toLowerCase().trim();
@@ -271,32 +277,8 @@
 
   function compute() {
     var filtering = !!(state.q.trim() || state.status !== 'all' || state.reason !== 'all' || state.project !== 'all' || state.hideDone !== 'all');
-    var shown = 0;
-    var projects = [];
-    DATA.forEach(function (p) {
-      if (state.project !== 'all' && p.key !== state.project) return;
-      var groups = [];
-      function add(label, rows, st) {
-        if (state.status !== 'all' && state.status !== st) return;
-        var vis = rows.filter(match);
-        shown += vis.length;
-        if (filtering && !vis.length) return;
-        if (!rows.length && !filtering) { groups.push({ label: label, count: 0, rows: [], empty: true }); return; }
-        if (!rows.length) return;
-        groups.push({ label: label, count: vis.length, rows: vis, empty: false });
-      }
-      add('未結案', p.openRows, 'open');
-      add('近期已結案', p.closedRows, 'closed');
-      var isEmptyProj = !p.openRows.length && !p.closedRows.length;
-      if (isEmptyProj) {
-        if (filtering || HIDE_EMPTY) return;
-        projects.push({ p: p, open: 0, closed: 0, empty: true, groups: [] });
-        return;
-      }
-      if (filtering && !groups.length) return;
-      projects.push({ p: p, open: p.openRows.length, closed: p.closedRows.length, empty: false, groups: groups });
-    });
-    return { filtering: filtering, shown: shown, projects: projects };
+    var rows = ROWS.filter(match);
+    return { filtering: filtering, shown: rows.length, rows: rows };
   }
 
   function btn(key, val, label, count) {
@@ -307,7 +289,7 @@
   }
 
   function rowHtml(r) {
-    var tags = '';
+    var tags = '<span class="tag p">' + esc(r.projName) + '</span>';
     if (r.recent) tags += '<span class="tag r">24h 內回應</span>';
     if (r.isClosed) tags += '<span class="tag c">closed</span>';
     if (r.author) tags += '<span class="tag a">我建立</span>';
@@ -397,28 +379,14 @@
       '<div class="fgroup"><span class="k">已處理</span>' + btn('hideDone', 'on', '隱藏已處理') + '</div></div>' +
       '<div class="fgroup"><span class="k">專案</span>' +
       btn('project', 'all', '全部專案', TOTAL) +
-      DATA.filter(function (p) { return !HIDE_EMPTY || p.openRows.length + p.closedRows.length; })
-        .map(function (p) { return btn('project', p.key, p.name, p.openRows.length + p.closedRows.length); }).join('') +
+      DATA.map(function (p) { return btn('project', p.key, p.name, p.openRows.length + p.closedRows.length); }).join('') +
       '</div></div>';
 
-    if (c.shown === 0 && c.filtering) {
+    if (c.shown === 0) {
       h += '<div class="empty-all">沒有符合目前篩選條件的 Issue。</div>';
+    } else {
+      h += '<div class="list">' + c.rows.map(rowHtml).join('') + '</div>';
     }
-
-    c.projects.forEach(function (x) {
-      h += '<article class="proj"><div class="proj-head">' +
-        '<div><span class="id">' + esc(x.p.group) + ' · ID: ' + esc(x.p.id) + '</span>' +
-        '<h3>' + esc(x.p.name) + '</h3></div>' +
-        '<div class="nums"><div><span>未結案</span><b>' + x.open + '</b></div>' +
-        '<div><span>近期已結案</span><b>' + x.closed + '</b></div></div></div>';
-      if (x.empty) h += '<div class="note">本次可見範圍沒有符合項目</div>';
-      x.groups.forEach(function (g) {
-        h += '<div class="gh"><span>' + esc(g.label) + '</span><span>' + g.count + ' 筆</span></div>';
-        if (g.empty) h += '<div class="note">本次可見範圍沒有符合項目</div>';
-        g.rows.forEach(function (r) { h += rowHtml(r); });
-      });
-      h += '</article>';
-    });
 
     h += '</section><footer>' + esc(D.footer) + '</footer>';
 
