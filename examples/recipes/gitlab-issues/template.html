@@ -289,12 +289,13 @@
   }
 
   function rowHtml(r) {
-    var tags = '<span class="tag p">' + esc(r.projName) + '</span>';
+    var tags = '';
     if (r.recent) tags += '<span class="tag r">24h 內回應</span>';
     if (r.isClosed) tags += '<span class="tag c">closed</span>';
     if (r.author) tags += '<span class="tag a">我建立</span>';
     if (r.assignee) tags += '<span class="tag s">指派給我</span>';
     if (r.label) tags += '<span class="tag l">符合標籤</span>';
+    tags += '<span class="tag p">' + esc(r.projName) + '</span>';
     var done = isDone(r.key);
     return '<div class="row' + (r.recent ? ' recent' : '') + (done ? ' done' : '') + '">' +
       '<input type="checkbox" class="done" data-k="' + esc(r.key) + '" data-n="' + esc(r.noteKey) + '"' + (done ? ' checked' : '') + ' aria-label="我處理過了">' +
