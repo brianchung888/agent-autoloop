@@ -62,6 +62,9 @@ for (const name of NAMES) {
     assert.equal(checked.status, 0, checked.stderr);
   });
 
+  // gitlab-issues is one command rule running a Python script: no Skill rule, no Agent access level. Its own test is below.
+  if (name === "gitlab-issues") continue;
+
   test(`${name}: every Skill a rule names is here, and the README says where it goes`, () => {
     const skills = readRules(name).rules.flatMap((rule: { skill?: string }) => rule.skill ?? []);
     assert.equal(skills.length, 1);
@@ -80,6 +83,25 @@ for (const name of NAMES) {
     assert.equal(stated[1], real[0].access);
   });
 }
+
+test("gitlab-issues: one command rule runs the Python script, and the README explains that route", () => {
+  const { agents, rules } = readRules("gitlab-issues");
+  assert.equal(rules.length, 1);
+  assert.equal(rules[0].skill, undefined);
+  assert.equal(rules[0].emits, undefined);
+  const agent = agents[rules[0].to];
+  assert.equal(agent.use, "command");
+  assert.deepEqual(agent.command, ["python", "{cwd}/gitlab_issues.py", "--autoloop"]);
+  const doc = readDoc("gitlab-issues");
+  for (const words of ["gitlab_issues.py", "--autoloop", "seen.json", "--dry-run", "--no-llm", "GITLAB_TOKEN", "SKILL.md"]) {
+    assert.ok(doc.includes(words), `README 要提到 ${words}`);
+  }
+  assert.doesNotMatch(doc, /方式 [AB]/);
+  const skill = readFileSync(join(RECIPES, "gitlab-issues", "SKILL.md"), "utf8");
+  assert.match(skill, /^name: gitlab-issue-brief$/m);
+  assert.ok(skill.includes("待我確認"), "gitlab_issues.py 从 SKILL.md 里抽「待我確認」段落");
+  assert.doesNotMatch(skill, /```agent-autoloop/);
+});
 
 test("agent-autoloop check refuses a recipe that was changed for the worse", () => {
   const broken = readRules("morning-brief");

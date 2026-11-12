@@ -8,11 +8,13 @@
     python scripts/gitlab_issues.py --force               # 忽略 seen.json，同一快照重做
     python scripts/gitlab_issues.py --work-dir D:/x --model claude-haiku-4-5-20251001 --effort low --timeout 300
     python scripts/gitlab_issues.py --backend codex --model gpt-5.3-codex
+    python scripts/gitlab_issues.py --skill D:/x/SKILL.md     # 指定「待我確認」規則檔（SKILL.md）
     # 環境變數：GITLAB_TOKEN（必要）、SSL_CERT_FILE 或 GITLAB_CA_FILE（公司 CA，對應 TS 版的 NODE_EXTRA_CA_CERTS）
 
-規則來源：產出規則逐條對照 ~/.gemini/config/skills/gitlab-issue-brief/SKILL.md；
-「待我確認」的 system prompt 於執行時從 SKILL.md 讀出含「待我確認」的段落組成，腳本不複製一份規則。
-收集邏輯逐項對照 ~/.agent-autoloop/work/gitlab-issues/watch-gitlab-issues.ts（TS 收集器）。
+規則來源：產出規則逐條對照 gitlab-issue-brief 的 SKILL.md；「待我確認」的 system prompt 於執行時從 SKILL.md
+讀出含「待我確認」的段落組成，腳本不複製一份規則。SKILL.md 依序尋找：--skill 參數 → <work-dir>/SKILL.md →
+腳本同目錄的 SKILL.md → ~/.gemini/config/skills/gitlab-issue-brief/SKILL.md → ~/.codex/skills/gitlab-issue-brief/SKILL.md →
+~/.claude/skills/gitlab-issue-brief/SKILL.md；都沒有就在 stderr 警告並退回 --no-llm 規則。
 
 行為要點：
 - 收集：標準庫 urllib，不依賴 requests。每個專案 × {opened, closed} × {assignee, author, label} 三種查詢聯集、
@@ -63,7 +65,12 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-SKILL_FILE = Path.home() / ".gemini" / "config" / "skills" / "gitlab-issue-brief" / "SKILL.md"
+SKILL_NAME = "gitlab-issue-brief"
+SKILL_HOME_DIRS = (  # 依序找 CLI 的 skills 目錄
+    Path.home() / ".gemini" / "config" / "skills" / SKILL_NAME,
+    Path.home() / ".codex" / "skills" / SKILL_NAME,
+    Path.home() / ".claude" / "skills" / SKILL_NAME,
+)
 DEFAULT_WORK_DIR = Path.home() / ".agent-autoloop" / "work" / "gitlab-issues"
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"   # 只挑「待我確認」候選，便宜即可
 
@@ -463,11 +470,23 @@ def confirm_by_rule(model: dict) -> "list[dict]":
     return out
 
 
-def load_confirm_rules() -> str:
+def find_skill_file(work_dir: Path, explicit: "str | None") -> "Path | None":
+    """依序：--skill → <work-dir>/SKILL.md → 腳本同目錄 SKILL.md → 各 CLI 的 skills 目錄；都沒有回 None。"""
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+    candidates.append(work_dir / "SKILL.md")
+    candidates.append(Path(__file__).resolve().parent / "SKILL.md")
+    candidates += [d / "SKILL.md" for d in SKILL_HOME_DIRS]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return None
+
+
+def load_confirm_rules(skill_file: Path) -> str:
     """從 SKILL.md 取出含「待我確認」的段落（執行時讀，不複製規則進腳本）。"""
-    if not SKILL_FILE.exists():
-        raise RunError(f"找不到 skill 規則檔: {SKILL_FILE}")
-    paras = [p.strip() for p in SKILL_FILE.read_text(encoding="utf-8").split("\n\n")]
+    paras = [p.strip() for p in skill_file.read_text(encoding="utf-8").split("\n\n")]
     picked = [p for p in paras if "待我確認" in p and not p.startswith("```")]
     if not picked:
         raise RunError("SKILL.md 找不到「待我確認」相關段落")
@@ -486,9 +505,9 @@ def _llm(prompt: str, system_prompt: str, args) -> "str | None":
     )
 
 
-def confirm_by_llm(model: dict, args) -> "list[dict] | None":
+def confirm_by_llm(model: dict, args, skill_file: Path) -> "list[dict] | None":
     """一次 LLM 呼叫挑出需本人確認的未結案 Issue；失敗回 None。"""
-    rules = load_confirm_rules()
+    rules = load_confirm_rules(skill_file)
     system_prompt = f"""你是 GitLab 個人 Issue 摘要的「待我確認」篩選員。以下是你必須遵守的規則（取自 gitlab-issue-brief SKILL.md）：
 
 ===== 規則 =====
@@ -717,6 +736,7 @@ def main() -> int:
     parser.add_argument("--no-llm", action="store_true", help="待我確認改用本機規則")
     parser.add_argument("--autoloop", action="store_true", help="結尾加印 agent-autoloop 回執區塊")
     parser.add_argument("--force", action="store_true", help="忽略 seen.json 重做")
+    parser.add_argument("--skill", default=None, help="「待我確認」規則檔 SKILL.md（預設依序找 work-dir、腳本目錄、各 CLI skills 目錄）")
     args = parser.parse_args()
     if args.model is None:
         args.model = DEFAULT_MODEL if args.backend == "claude" else ""
@@ -754,9 +774,15 @@ def main() -> int:
 
         items = None
         if not args.no_llm:
-            items = confirm_by_llm(model, args)
-            if items is None:
-                log("  ⚠ 待我確認退回規則版（LLM 失敗）")
+            skill_file = find_skill_file(work_dir, args.skill)
+            if skill_file is None:
+                log("  ⚠ 找不到 gitlab-issue-brief 的 SKILL.md（--skill、work-dir、腳本目錄、~/.gemini、~/.codex、~/.claude 都沒有），"
+                    "待我確認退回規則版")
+            else:
+                log(f"  待我確認規則檔：{skill_file}")
+                items = confirm_by_llm(model, args, skill_file)
+                if items is None:
+                    log("  ⚠ 待我確認退回規則版（LLM 失敗）")
         if items is None:
             items = confirm_by_rule(model)
             log(f"  待我確認：規則版 {len(items)} 筆")

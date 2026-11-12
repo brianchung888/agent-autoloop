@@ -398,13 +398,3 @@ test("gitlab brief: last_note comes from the newest human note only for issues u
             : { body: [{ system: "no", author: {}, created_at: "bad" }] },
     );
 });
-test("gitlab brief Skill completion notice example passes the actual worker receipt parser", () => {
-  const skill = readFileSync(join(import.meta.dirname, "../examples/recipes/gitlab-issues/SKILL.md"), "utf8");
-  const block = /```agent-autoloop\n([\s\S]*?)```/.exec(skill);
-  assert.ok(block);
-  const parsed = resultFrom(readMessage("Fixture complete\n\n" + block[0]), {});
-  assert.equal(parsed.problem, undefined);
-  assert.equal(parsed.result.notice?.length, 1);
-  assert.equal(parsed.result.notice?.[0].fyi, true);
-  assert.equal(parsed.result.ask, undefined);
-});
