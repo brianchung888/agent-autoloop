@@ -23,6 +23,8 @@
 支援 macOS、Linux 和 Windows 11。執行前需要裝好 Node 24、Git（macOS / Linux 還要 curl，Windows 用 PowerShell 自帶的 irm），以及任意一個你已經登入好的命令列 Agent，不需要 GitHub 帳號。也可以直接把[安裝說明](INSTALL.md)丟給你的 Agent，讓它替你裝好。介面預設正體中文，可用 `agent-autoloop lang zh-CN` 或 `AGENT_AUTOLOOP_LANG` 切換簡體。
 
 > **Windows：原生支援，不需要 WSL2。** 用 PowerShell 裝，不要管理員權限：`irm https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.ps1 | iex`。有四處降級：桌面通知一律跳過（卡片還在 `agent-autoloop status` 和別的通道裡）；常駐用的是排程工作，停了之後最多等 5 分鐘才自己回來；檔案權限用 `icacls` 鎖到目前使用者，鎖不上（網路磁碟、FAT32、網域原則）不攔著啟動，`agent-autoloop doctor` 會報一條降級；Agent 得是真正的執行檔，npm 裝的 `.cmd` 包裝指令碼起不了。細節見 [INSTALL](INSTALL.md)。
+>
+> 排程工作預設會開一個 console 視窗；不想看到它，在 `~/.agent-autoloop/config.json` 的 `hub` 裡加 `"window": "hidden"`，再跑一次 `agent-autoloop service install`，工作就改由 `wscript` 無視窗啟動。中台說的話照舊寫在 `~/.agent-autoloop/logs/up.log`，`agent-autoloop doctor` 會報目前是哪一種模式。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.sh | sh

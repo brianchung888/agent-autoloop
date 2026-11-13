@@ -6,10 +6,17 @@ import { HOME } from "./home.ts";
 import { t, type Lang } from "./i18n.ts";
 import { secureDir } from "./permissions.ts";
 
+/**
+ * How the scheduled task on Windows starts the hub: in a console window of its own, or with none. Only Windows reads
+ * it — launchd and systemd have no window to show — and unset means `console`, which is what every install did before.
+ */
+export const HUB_WINDOWS = ["console", "hidden"] as const;
+export type HubWindow = (typeof HUB_WINDOWS)[number];
+
 export type ChannelConfig = { use?: string; key: string; [option: string]: unknown };
 export type Config = {
   url: string;
-  hub?: { listen: string; publicUrl?: string };
+  hub?: { listen: string; publicUrl?: string; window?: HubWindow };
   worker?: { name: string; key: string; capacity?: number; unreachable?: string[] };
   channels?: Record<string, ChannelConfig>;
   source?: { name: string; key: string };
@@ -33,7 +40,12 @@ export function parseListen(listen: string) {
 
 export function readConfig(): Config {
   if (!existsSync(CONFIG_FILE)) throw new Error(t("config.notInstalled"));
-  return JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as Config;
+  const config = JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as Config;
+  const window = config.hub?.window;
+  if (window !== undefined && !(HUB_WINDOWS as readonly string[]).includes(window as string)) {
+    throw new Error(t("config.window", { window: String(window) }));
+  }
+  return config;
 }
 
 export function writeConfig(config: Config) {

@@ -11,6 +11,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import type { HubWindow } from "./config.ts";
 import { t } from "./i18n.ts";
 import { systemTool } from "./system-tool.ts";
 
@@ -27,6 +28,11 @@ export type TaskOptions = {
   startBoundary?: string;
   /** Also start it the moment this person logs on. Registering such a trigger is not everyone's to do. */
   atLogon?: boolean;
+  /**
+   * `hidden` starts the hub with no console window: the task runs wscript on a one-line script beside service.xml,
+   * which runs the same command line with its window hidden and waits for it. Unset is `console`, the task as it was.
+   */
+  window?: HubWindow;
 };
 
 /** How often the trigger comes round again, and so the longest a stopped hub stays stopped. */
@@ -42,6 +48,8 @@ const localTime = (at: Date) =>
 // same function, so nothing about the machine this runs on changes.
 export const taskFile = (home: string) => path.win32.join(home, "service.xml");
 export const envFile = (home: string) => path.win32.join(home, "service.env");
+/** The script wscript runs in `hidden` mode. Only written in that mode, and taken away with the task in either. */
+export const hiddenFile = (home: string) => path.win32.join(home, "service-hidden.vbs");
 
 /**
  * What one install knows itself by inside the registered task: this home and this program, said in hexadecimal.
@@ -79,19 +87,46 @@ export function environment(home: string) {
 }
 
 /**
+ * What the hub is started with, after the executable. The home a task carries comes in through an env file, since a
+ * task carries no environment of its own. Then whatever has to come before a subcommand: the warning flag and the
+ * entry script in source mode, and nothing at all in a packaged build — there is no `.ts` file to name there, and no
+ * node to read the flag.
+ */
+const hubArguments = (options: TaskOptions) => [
+  `--env-file=${envFile(options.home)}`,
+  ...(options.program ? ["--disable-warning=ExperimentalWarning", options.program] : []),
+  "up",
+];
+
+/**
+ * The one line wscript runs in `hidden` mode: the whole command line, each path its own quoted argument, run with no
+ * window (`0`) and waited for (`True`). The wait is what keeps the task's instance Running for as long as the hub is
+ * up, so `IgnoreNew` still drops the trigger coming round again, and the stop file still ends it the same way.
+ *
+ * A VBScript string doubles the quote it holds, and that is the only escaping there is: `argument` has already
+ * refused anything a Windows path cannot hold.
+ */
+export function hiddenScript(options: TaskOptions) {
+  const command = [options.executable, ...hubArguments(options)].map(argument).join(" ");
+  return `CreateObject("WScript.Shell").Run "${command.replaceAll('"', '""')}", 0, True\r\n`;
+}
+
+/** What goes into the task's `<Exec>`: the hub itself, or wscript on the script that starts it with no window. */
+function exec(options: TaskOptions) {
+  if (options.window !== "hidden") {
+    return { command: options.executable, args: hubArguments(options).map(argument).join(" ") };
+  }
+  // //B is batch mode (no dialogs on an error) and //Nologo says nothing at start; neither is a path.
+  return { command: systemTool("wscript"), args: `//B //Nologo ${argument(hiddenFile(options.home))}` };
+}
+
+/**
  * The task as Task Scheduler reads it. `IgnoreNew` is what makes the trigger coming round again harmless: while one is
  * running the next is dropped, which is the same answer up.pid gives, one step earlier. `ExecutionTimeLimit` of PT0S is
  * no limit — this is meant to stay up.
  */
 export function taskXml(options: TaskOptions) {
-  // The home a task carries comes in through an env file, since a task carries no environment of its own. Then
-  // whatever has to come before a subcommand: the warning flag and the entry script in source mode, and nothing at
-  // all in a packaged build — there is no `.ts` file to name there, and no node to read the flag.
-  const args = [
-    `--env-file=${envFile(options.home)}`,
-    ...(options.program ? ["--disable-warning=ExperimentalWarning", options.program] : []),
-    "up",
-  ];
+  const { command, args } = exec(options);
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -139,8 +174,8 @@ export function taskXml(options: TaskOptions) {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>${xml(options.executable)}</Command>
-      <Arguments>${xml(args.map(argument).join(" "))}</Arguments>
+      <Command>${xml(command)}</Command>
+      <Arguments>${xml(args)}</Arguments>
       <WorkingDirectory>${xml(options.home)}</WorkingDirectory>
     </Exec>
   </Actions>
@@ -163,6 +198,10 @@ function writeTaskFile(file: string, contents: string) {
  */
 export function installTask(options: TaskOptions) {
   writeFileSync(envFile(options.home), environment(options.home), { mode: 0o600 });
+  // The script is UTF-16 with a mark, like the XML: wscript reads an unmarked file in the console's code page, and a
+  // home with 我的文件 in it would then be a path that is not there. Switching back to `console` leaves none behind.
+  if (options.window === "hidden") writeTaskFile(hiddenFile(options.home), hiddenScript(options));
+  else rmSync(hiddenFile(options.home), { force: true });
   const file = taskFile(options.home);
   // /F replaces the one that is there, which is how an update takes effect. No /RU: without it the task belongs to
   // whoever registers it, and asking for a person on the command line makes schtasks ask for their password.
@@ -179,6 +218,16 @@ export function installTask(options: TaskOptions) {
     timeout: 60_000,
     windowsHide: true,
   });
+}
+
+/**
+ * How the registered task starts the hub, read back from the task itself rather than from config.json: what is
+ * registered is what runs, and the two differ until `service install` is run again. Null when there is no task.
+ */
+export function taskWindow(label: string): HubWindow | null {
+  const registered = registeredXml(label);
+  if (registered === null) return null;
+  return /<Command>[^<]*wscript(\.exe)?<\/Command>/i.test(registered) ? "hidden" : "console";
 }
 
 /** Whether the registered task also starts at logon, or only waits for the repeat. For saying so in `doctor`. */
@@ -224,7 +273,7 @@ export function removeTask(label: string, home: string, program: string) {
     timeout: 60_000,
     windowsHide: true,
   });
-  for (const file of [taskFile(home), envFile(home)]) rmSync(file, { force: true });
+  for (const file of [taskFile(home), envFile(home), hiddenFile(home)]) rmSync(file, { force: true });
 }
 
 /** The task is there and turned on: Task Scheduler will bring the hub back, whether or not it is up this moment. */

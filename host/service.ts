@@ -10,7 +10,8 @@ import { t } from "./i18n.ts";
 import { secureDir } from "./permissions.ts";
 import { stablePath } from "./node-path.ts";
 import { alive, bornAt, running } from "../worker/process.ts";
-import { installTask, removeTask, taskAtLogon, taskEnabled } from "./service-win.ts";
+import { installTask, removeTask, taskAtLogon, taskEnabled, taskWindow } from "./service-win.ts";
+import { readConfig, type HubWindow } from "./config.ts";
 
 /** Asked each time, not once: a test may be standing in for another platform by the time it is. */
 const windows = () => process.platform === "win32";
@@ -99,12 +100,26 @@ const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(
 /** The entry script where this build has one, and nothing where the executable is the whole program (host/self.ts). */
 const entryScript = () => (fromSource() ? PROGRAM : "");
 
+/**
+ * What config.json asks for the task's window, where there is a config.json to ask and it says: `service install`
+ * runs before `init` has written one, and an install from before this setting existed says nothing. Both are the
+ * console, which is what the task has always been.
+ */
+export function wantedWindow(): HubWindow {
+  try {
+    return readConfig().hub?.window ?? "console";
+  } catch {
+    return "console";
+  }
+}
+
 /** What the service starts, whichever platform describes it: this node, this install's program, `up`. */
 const taskOptions = () => ({
   label: label(),
   home: HOME,
   executable: stablePath(process.execPath),
   program: entryScript(),
+  window: wantedWindow(),
 });
 
 export function installService() {
@@ -337,6 +352,11 @@ export function systemUnit() {
 export function serviceNote() {
   if (!windows()) return null;
   return taskAtLogon(label()) ? t("service.winNote") : t("service.winNoteNoLogon");
+}
+
+/** How the registered task starts the hub on Windows — `console` or `hidden` — and null anywhere else. For `doctor`. */
+export function serviceWindow() {
+  return windows() ? taskWindow(label()) : null;
 }
 
 /** New code counts once what's running starts again. What can't be restarted from here is said back, for the owner. */

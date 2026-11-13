@@ -36,7 +36,9 @@ import {
   restartService,
   serviceNote,
   serviceRunning,
+  serviceWindow,
   systemUnit,
+  wantedWindow,
 } from "../host/service.ts";
 // The one spelling of "how to start this program again" (host/self.ts), so a second one here cannot drift from it.
 import { fromSource, PROGRAM } from "../host/self.ts";
@@ -532,6 +534,14 @@ async function doctor() {
     // What this platform's way of keeping it running doesn't promise. Not a red mark: it is there, it just comes back slower.
     const note = serviceNote();
     if (note) aside(note);
+    // Only Windows has a window to say anything about. What is registered is what runs; config.json saying otherwise
+    // is not a fault, only a `service install` not yet run.
+    const window = serviceWindow();
+    if (window) {
+      say(true, t("cli.doctor.serviceWindow", { mode: window }));
+      const wanted = wantedWindow();
+      if (wanted !== window) aside(t("cli.doctor.serviceWindowStale", { wanted }));
+    }
   } else if (systemUnit()) say(true, t("cli.doctor.systemService"));
   else say(false, t("cli.doctor.serviceStopped"));
   try {

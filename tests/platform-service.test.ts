@@ -6,6 +6,9 @@
 // could not break the quoting; the trigger that comes round again can start a second hub beside the first; a task
 // somebody else registered under the same name is taken for ours and deleted; `up` is said to be running because its
 // number is a number, or said not to be because `ps` is not there to ask; what `up` leaves behind stops the next one.
+// And for `hub.window: "hidden"`: the task still starts node directly and a console window opens; the script wscript
+// runs holds a quote that is not doubled, or returns at once so the task is never Running and IgnoreNew stops nothing;
+// asking for the console writes a task that differs in any word from the one every install had before.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -22,9 +25,21 @@ const notWindows = {
 };
 
 const home = setup("platform-service");
-const { claimUp, runningUp, stopFile, stopUp } = await import("../host/service.ts");
-const { environment, installMark, installTask, registeredXml, removeTask, taskEnabled, taskOwned, taskXml } =
-  await import("../host/service-win.ts");
+const { claimUp, runningUp, stopFile, stopUp, wantedWindow } = await import("../host/service.ts");
+const { readConfig } = await import("../host/config.ts");
+const {
+  environment,
+  hiddenFile,
+  hiddenScript,
+  installMark,
+  installTask,
+  registeredXml,
+  removeTask,
+  taskEnabled,
+  taskOwned,
+  taskWindow,
+  taskXml,
+} = await import("../host/service-win.ts");
 
 const ordinary = {
   label: "agent-autoloop-test",
@@ -71,6 +86,64 @@ test("a logon trigger is asked for, and the task is whole without one", () => {
   assert.ok(taskXml({ ...ordinary, atLogon: false }).includes("<TimeTrigger>"));
 });
 
+test("hidden: the task runs wscript on a script that runs the same command line with no window", () => {
+  const hidden = { ...ordinary, window: "hidden" as const };
+  const written = taskXml(hidden);
+  // The command is wscript — by its full path under System32 where this machine says where that is, bare elsewhere.
+  assert.match(written, /<Command>(?:[^<]*\\)?wscript(?:\.exe)?<\/Command>/i, written);
+  assert.ok(
+    written.includes(`<Arguments>//B //Nologo &quot;${ordinary.home}\\service-hidden.vbs&quot;</Arguments>`),
+    written,
+  );
+  assert.ok(!written.includes("--env-file"), "the hub's own arguments are in the script, not the task");
+  // Everything else about the task is what it was: the mark, the trigger, the policy that drops a repeat.
+  assert.ok(written.includes(`[${installMark(ordinary.home, ordinary.program)}]</Description>`));
+  assert.ok(written.includes("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"));
+  assert.ok(written.includes(`<WorkingDirectory>${ordinary.home}</WorkingDirectory>`));
+  assert.equal(hiddenFile(ordinary.home), `${ordinary.home}\\service-hidden.vbs`);
+
+  const script = hiddenScript(hidden);
+  // Window style 0 and a wait: no window, and the task's instance stays Running for as long as the hub is up.
+  assert.ok(script.endsWith(", 0, True\r\n"), script);
+  // One VBScript string, every quote inside it doubled, every path its own argument.
+  assert.equal(
+    script,
+    `CreateObject("WScript.Shell").Run "` +
+      `""${ordinary.executable}"" ""--env-file=${ordinary.home}\\service.env""` +
+      ` ""--disable-warning=ExperimentalWarning"" ""${ordinary.program}"" ""up""", 0, True\r\n`,
+  );
+  // A packaged build names only the executable, and `up`.
+  assert.equal(
+    hiddenScript({ ...hidden, program: "", executable: String.raw`C:\Tools\agent-autoloop.exe` }),
+    `CreateObject("WScript.Shell").Run "` +
+      `""C:\\Tools\\agent-autoloop.exe"" ""--env-file=${ordinary.home}\\service.env"" ""up""", 0, True\r\n`,
+  );
+  // A quote in a path would end the VBScript string; it is refused the same way the task refuses it.
+  assert.throws(() => hiddenScript({ ...hidden, program: 'C:\\say"hi"\\x.ts' }), /引号或控制字符/);
+});
+
+test("console: asked for by name or not at all, the task is word for word what it always was", () => {
+  const before = taskXml(ordinary);
+  assert.equal(taskXml({ ...ordinary, window: "console" }), before);
+  assert.equal(taskXml({ ...ordinary, window: undefined }), before);
+  assert.ok(!before.includes("wscript"), before);
+  assert.ok(!before.includes("service-hidden.vbs"), before);
+});
+
+test("hub.window is read from config.json, and anything but the two names is refused", () => {
+  const file = join(home, "config.json");
+  rmSync(file, { force: true });
+  assert.equal(wantedWindow(), "console", "no config.json yet: the console, as every install had");
+  writeFileSync(file, JSON.stringify({ url: "http://127.0.0.1:1", hub: { listen: "127.0.0.1:1" } }));
+  assert.equal(wantedWindow(), "console", "an install from before this setting existed says nothing");
+  writeFileSync(file, JSON.stringify({ url: "http://127.0.0.1:1", hub: { listen: "127.0.0.1:1", window: "hidden" } }));
+  assert.equal(readConfig().hub?.window, "hidden");
+  assert.equal(wantedWindow(), "hidden");
+  writeFileSync(file, JSON.stringify({ url: "http://127.0.0.1:1", hub: { listen: "127.0.0.1:1", window: "none" } }));
+  assert.throws(() => readConfig(), /hub\.window.*none/);
+  rmSync(file, { force: true });
+});
+
 test("a path that could break the quoting is refused rather than written out", () => {
   for (const bad of ['C:\\say"hi"\\node.exe', "C:\\one\ttwo", "C:\\one\ntwo"]) {
     assert.throws(() => taskXml({ ...ordinary, program: bad }), /引号或控制字符/);
@@ -108,6 +181,44 @@ test("a task of ours is registered, found, and taken away again", notWindows, ()
     assert.equal(existsSync(join(where, "service.env")), false);
   } finally {
     removeTask(options.label, where, options.program);
+  }
+});
+
+test("hidden: registered, read back as hidden, and the script goes with the task", notWindows, () => {
+  const where = join(home, "task-hidden");
+  mkdirSync(where, { recursive: true });
+  const options = {
+    ...ordinary,
+    label: "agent-autoloop-platform-test-hidden",
+    home: where,
+    executable: process.execPath,
+    window: "hidden" as const,
+  };
+  try {
+    installTask(options);
+    assert.notEqual(registeredXml(options.label), null, "it is registered");
+    assert.equal(taskWindow(options.label), "hidden", "and the task itself says how it starts the hub");
+    assert.equal(taskOwned(options.label, where, options.program), true, "the mark is the same in either mode");
+    assert.ok(existsSync(join(where, "service-hidden.vbs")), "the script is beside the task");
+    // The file is UTF-16 with a mark, like the XML, so a home with 我的文件 in it is read as itself.
+    const bytes = readFileSync(join(where, "service-hidden.vbs"));
+    assert.deepEqual([...bytes.subarray(0, 2)], [0xff, 0xfe]);
+    assert.ok(bytes.subarray(2).toString("utf16le").includes(", 0, True"));
+
+    // Back to the console: the same task, re-registered, and the script is not left behind.
+    installTask({ ...options, window: "console" });
+    assert.equal(taskWindow(options.label), "console");
+    assert.equal(existsSync(join(where, "service-hidden.vbs")), false);
+
+    installTask(options);
+    assert.equal(taskWindow(options.label), "hidden");
+    removeTask(options.label, where, options.program);
+    assert.equal(registeredXml(options.label), null, "ours is gone");
+    assert.equal(taskWindow(options.label), null);
+    assert.equal(existsSync(join(where, "service-hidden.vbs")), false, "and so is the script");
+  } finally {
+    spawnSync("schtasks", ["/End", "/TN", options.label], { stdio: "ignore", timeout: 60_000 });
+    spawnSync("schtasks", ["/Delete", "/TN", options.label, "/F"], { stdio: "ignore", timeout: 60_000 });
   }
 });
 

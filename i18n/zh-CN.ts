@@ -127,6 +127,7 @@ export const zhCN = {
   "config.listen.shape": "hub.listen 要写成 主机:端口（IPv6 用 [地址]:端口）：{listen}",
   "config.listen.port": "hub.listen 的端口要在 1 到 65535 之间：{listen}",
   "config.notInstalled": "还没装好：先运行 agent-autoloop init",
+  "config.window": "hub.window 只能是 console 或 hidden：{window}",
 
   // ---- host/http.ts ----
   "http.serverError": "中台出错了",
@@ -395,6 +396,9 @@ export const zhCN = {
   "cli.doctor.serviceRunning": "系统服务在跑",
   "cli.doctor.systemService": "系统级服务在跑",
   "cli.doctor.serviceStopped": "系统服务没在跑：agent-autoloop service install",
+  "cli.doctor.serviceWindow": "计划任务的窗口模式：{mode}（hub.window）",
+  "cli.doctor.serviceWindowStale":
+    "config.json 里 hub.window 是 {wanted}，运行 agent-autoloop service install 才会换过去。",
   "cli.doctor.hub": "中台 {url}（{commit}）",
   "cli.doctor.hubUnreachable": "连不上中台 {url}：{why}",
   "cli.doctor.online": "在线",

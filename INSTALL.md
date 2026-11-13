@@ -24,6 +24,8 @@ irm https://raw.githubusercontent.com/brianchung888/agent-autoloop/main/install.
 
 它把 `agent-autoloop.cmd` 放进 `%USERPROFILE%\.local\bin` 并加进你自己的 PATH（不动系统 PATH），所以装完要重开一个终端，`agent-autoloop` 才认得。本地仓库安装时和 POSIX 一样设 `AGENT_AUTOLOOP_REPO`，再运行该目录下的 `install.ps1`。
 
+**不想看到常驻的那个窗口。** Windows 上的常驻是一条计划任务，默认直接起 node，所以桌面上会多一个 console 窗口。在 `~/.agent-autoloop/config.json` 的 `hub` 里加 `"window": "hidden"`（默认是 `"console"`，别的值会报错），再运行一次 `agent-autoloop service install`，任务就改成由 `wscript` 跑一支 `~/.agent-autoloop/service-hidden.vbs`，它以无窗口方式起同一条命令并等它结束，所以「同时只跑一个」和写 `stop` 文件停它的流程都不变。没有窗口就没有地方看输出，中台说的话照旧写在 `~/.agent-autoloop/logs/up.log`（8 MB 滚一代）；`agent-autoloop doctor` 会报目前注册的是哪一种模式，config.json 改了还没重装时也会提醒。改回 `"console"` 同样要再跑一次 `service install`。
+
 GitHub Issue 轮询和 PR 交付等功能另需已登录的 `gh`，按对应场景说明配置；运行 Agent 也仍需该 Agent 自己的登录或授权。
 
 安装和 `agent-autoloop update` 都装最新的 Release，那是通过了全部检查的版本，`main` 上还没发布的改动要等下一个 Release。

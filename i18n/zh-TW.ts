@@ -128,6 +128,7 @@ export const zhTW: Strings = {
   "config.listen.shape": "hub.listen 要寫成 主機:連接埠（IPv6 用 [位址]:連接埠）：{listen}",
   "config.listen.port": "hub.listen 的連接埠要在 1 到 65535 之間：{listen}",
   "config.notInstalled": "還沒裝好：先執行 agent-autoloop init",
+  "config.window": "hub.window 只能是 console 或 hidden：{window}",
 
   // ---- host/http.ts ----
   "http.serverError": "中台出錯了",
@@ -394,6 +395,9 @@ export const zhTW: Strings = {
   "cli.doctor.serviceRunning": "系統服務在跑",
   "cli.doctor.systemService": "系統層級服務在跑",
   "cli.doctor.serviceStopped": "系統服務沒在跑：agent-autoloop service install",
+  "cli.doctor.serviceWindow": "排程工作的視窗模式：{mode}（hub.window）",
+  "cli.doctor.serviceWindowStale":
+    "config.json 裡 hub.window 是 {wanted}，執行 agent-autoloop service install 才會換過去。",
   "cli.doctor.hub": "中台 {url}（{commit}）",
   "cli.doctor.hubUnreachable": "連不上中台 {url}：{why}",
   "cli.doctor.online": "在線",

@@ -10,21 +10,23 @@
 // not tell whether a hub was running (phase3-verification-round4.md 1). The same `PATH` takes `schtasks` away from
 // installing the task at all, `icacls` away from locking the data folder, and `taskkill` away from stopping a run.
 //
-// Windows keeps all five where `SystemRoot` says, and that variable is set by the system itself on every Windows there
-// is. So that is where they are looked for. Where one is not there — a stripped-down image, a `SystemRoot` pointing
+// Windows keeps all of these where `SystemRoot` says, and that variable is set by the system itself on every Windows
+// there is. So that is where they are looked for. Where one is not there — a stripped-down image, a `SystemRoot` pointing
 // somewhere else — the bare name is what comes back, which is exactly what this program did before and leaves `PATH`
 // the last thing tried rather than the first. Nothing here is cached: these are read immediately before starting a
 // process that takes milliseconds at best, and a cache would make the answer depend on when it was first asked.
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-/** Where each lives under `System32`. PowerShell is the one that is not loose in the folder. */
+/** Where each lives under `System32`. PowerShell is the one that is not loose in the folder; wscript runs the script
+ * that starts the hub with no window (host/service-win.ts). */
 const UNDER_SYSTEM32 = {
   powershell: path.join("WindowsPowerShell", "v1.0", "powershell.exe"),
   tasklist: "tasklist.exe",
   taskkill: "taskkill.exe",
   schtasks: "schtasks.exe",
   icacls: "icacls.exe",
+  wscript: "wscript.exe",
 } as const;
 
 export type SystemTool = keyof typeof UNDER_SYSTEM32;
