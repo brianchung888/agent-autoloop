@@ -33,6 +33,8 @@
   HTML 只替換 template.html 中 `<script id="data" type="application/json">` 的 JSON，其餘位元組不動；
   每筆 Issue 陣列第 5 元素 `noteKey`（confirm 項目同名欄位）= 最新非本人留言的 `created_at:author_id`，供模板
   「我處理過了」勾選狀態偵測新回應；本人（author_id 在 userIds 內）留言、無留言或 48h 外未補查都是 ""。
+  第 6 元素 `hitLabels` = 該 Issue 的 labels 與追蹤標籤的交集（依 trackLabel 順序的字串陣列，沒命中為 []），
+  供模板篩選列每個追蹤標籤各一顆按鈕與每筆顯示實際命中的標籤名；confirm 項目不帶此欄位。
 - 待我確認：一次 LLM 呼叫（透過 agentrunner exe），輸入未結案 Issue 的 ref／標題／描述前 800 字／指派／最後留言者是否本人，
   要求回傳 JSON 陣列 [{ref, kind, note}]；本機驗證 ref 必須存在、kind 限三種、最多 8 筆；解析失敗或逾時 → 退回 --no-llm 規則並在 stderr 警告。
   --no-llm 規則：指派給我、未結案、`last_note` 存在且作者非本人（不在 userIds 內）；無則列「無」。
@@ -455,6 +457,17 @@ def note_key_of(issue: dict, user_ids: "set[int]") -> str:
     return f"{created}:{author}"
 
 
+def reason_text_of(row: dict) -> str:
+    """Markdown 用的符合原因；label 列出實際命中的追蹤標籤，例如「符合追蹤標籤 Brian、2026重點 (label)」。"""
+    parts = []
+    for r in row["reasons"]:
+        text = REASON_TEXT[r]
+        if r == "label" and row.get("hit_labels"):
+            text += " " + "、".join(row["hit_labels"])
+        parts.append(text)
+    return "、".join(parts) + f" ({', '.join(row['reasons'])})"
+
+
 def flags_of(issue: dict, recent: bool) -> str:
     f = "R" if recent else ""
     if "author" in issue["reasons"]:
@@ -514,8 +527,9 @@ def build_model(snapshot: dict, sources: dict) -> dict:
             "updated_local": fmt_local(i["updated_at"], tz),
             "name": i["project"].split("/")[-1],
             "ref": f"{i['project'].split('/')[-1]}#{i['iid']}",
-            "reason_text": "、".join(REASON_TEXT[r] for r in i["reasons"]) + f" ({', '.join(i['reasons'])})",
+            "hit_labels": [l for l in track_labels if l in set(i["labels"])],
         })
+        rows[-1]["reason_text"] = reason_text_of(rows[-1])
     projects = []
     for p in order_projects(snapshot, sources):
         mine = [r for r in rows if r["project_id"] == p["id"]]
@@ -806,8 +820,8 @@ def render_html(model: dict, confirm: "list[dict]", template: str) -> str:
         "confirm": [{k: v for k, v in c.items() if k != "_row"} for c in confirm],
         "projects": [{
             "key": p["key"], "path": p["path"], "id": p["id"],
-            "open": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"]] for r in p["open"]],
-            "closed": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"]] for r in p["closed"]],
+            "open": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"]] for r in p["open"]],
+            "closed": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"]] for r in p["closed"]],
         } for p in model["projects"]],
     }
     m = DATA_RE.search(template)

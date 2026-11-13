@@ -204,17 +204,18 @@
   function toRow(p, a, closed) {
     var iid = a[0], title = a[1], upd = String(a[2] || ''), f = String(a[3] || '');
     var noteKey = String(a[4] == null ? '' : a[4]);
+    var hitLabels = Array.isArray(a[5]) ? a[5].map(String) : [];   // 舊資料（5 元素）當 []
     var parts = upd.split(' ');
     var r = {
       iid: iid, title: title, updated: upd, date: parts[0] || '', time: parts[1] || '', isClosed: closed,
       projKey: p.key, projPath: String(p.path || ''), projName: String(p.path || '').split('/').pop() || p.key,
       url: issueUrl(p.path, iid, f), key: p.path + '#' + iid, noteKey: noteKey,
       recent: f.indexOf('R') >= 0, author: f.indexOf('A') >= 0,
-      assignee: f.indexOf('S') >= 0, label: f.indexOf('L') >= 0
+      assignee: f.indexOf('S') >= 0, label: f.indexOf('L') >= 0, hitLabels: hitLabels
     };
     r.hay = ['#' + iid, title, p.path, upd, closed ? 'closed' : 'opened',
       r.recent ? '24h 內回應' : '', r.author ? '我建立' : '',
-      r.assignee ? '指派給我' : '', r.label ? '符合標籤' : ''].join(' ').toLowerCase();
+      r.assignee ? '指派給我' : '', r.label ? '符合標籤' : '', hitLabels.join(' ')].join(' ').toLowerCase();
     return r;
   }
 
@@ -264,6 +265,9 @@
   var PROJ_WITH_ITEMS = DATA.filter(function (p) { return p.openRows.length + p.closedRows.length > 0; }).length;
   // 單一清單版面已無專案區塊；此選項保留讀取以相容舊資料，不再影響版面
   var HIDE_EMPTY = D.hideEmptyProjects === true;
+
+  var TRACK_LABELS = [].concat(D.trackLabel == null ? [] : D.trackLabel).map(String);
+  var LABEL_PREFIX = 'label:';   // state.reason = 'label:<標籤名>' → 只看命中該追蹤標籤的 Issue
 
   var state = { q: '', status: 'all', reason: 'all', project: 'all', hideDone: 'all' };
 
@@ -318,6 +322,9 @@
     Object.keys(state).forEach(function (k) {
       if (typeof SAVED_VIEW.state[k] === 'string') state[k] = SAVED_VIEW.state[k];
     });
+    // 還原的標籤已不在追蹤清單（或是舊版的 'label'）→ 退回全部
+    if (state.reason.indexOf(LABEL_PREFIX) === 0 && TRACK_LABELS.indexOf(state.reason.slice(LABEL_PREFIX.length)) < 0) state.reason = 'all';
+    if (state.reason === 'label') state.reason = 'all';
   }
   function doReload() {
     loadedAt = Date.now();
@@ -350,7 +357,9 @@
   function match(r) {
     if (state.project !== 'all' && r.projKey !== state.project) return false;
     if (state.status !== 'all' && state.status !== (r.isClosed ? 'closed' : 'open')) return false;
-    if (state.reason !== 'all' && !r[state.reason]) return false;
+    if (state.reason.indexOf(LABEL_PREFIX) === 0) {
+      if (r.hitLabels.indexOf(state.reason.slice(LABEL_PREFIX.length)) < 0) return false;
+    } else if (state.reason !== 'all' && !r[state.reason]) return false;
     if (state.hideDone === 'on' && isDone(r.key)) return false;
     var qq = state.q.toLowerCase().trim();
     return !qq || r.hay.indexOf(qq) >= 0;
@@ -375,7 +384,9 @@
     if (r.isClosed) tags += '<span class="tag c">closed</span>';
     if (r.author) tags += '<span class="tag a">我建立</span>';
     if (r.assignee) tags += '<span class="tag s">指派給我</span>';
-    if (r.label) tags += '<span class="tag l">符合標籤</span>';
+    if (r.hitLabels.length) {
+      r.hitLabels.forEach(function (name) { tags += '<span class="tag l">' + esc(name) + '</span>'; });
+    } else if (r.label) tags += '<span class="tag l">符合標籤</span>';   // 舊資料沒有 hitLabels
     tags += '<span class="tag p">' + esc(r.projName) + '</span>';
     var done = isDone(r.key);
     return '<div class="row' + (r.recent ? ' recent' : '') + (done ? ' done' : '') + '">' +
@@ -456,7 +467,10 @@
       '</div>' +
       '<div class="fgroup"><span class="k">符合原因</span>' +
       btn('reason', 'all', '全部') + btn('reason', 'recent', '24h 內回應') + btn('reason', 'author', '我建立') +
-      btn('reason', 'assignee', '指派給我') + btn('reason', 'label', '符合標籤') +
+      btn('reason', 'assignee', '指派給我') +
+      TRACK_LABELS.map(function (name) {
+        return btn('reason', LABEL_PREFIX + name, name, ROWS.filter(function (r) { return r.hitLabels.indexOf(name) >= 0; }).length);
+      }).join('') +
       '</div>' +
       '<div class="fgroup"><span class="k">已處理</span>' + btn('hideDone', 'on', '隱藏已處理') + '</div></div>' +
       '<div class="fgroup"><span class="k">專案</span>' +
