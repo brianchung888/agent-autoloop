@@ -20,12 +20,16 @@
 - 收集：標準庫 urllib，不依賴 requests。sources.json 的 `userId` 與 `label` 都可以是單值或陣列（內部一律正規化成
   `userIds`、`labels`）。每個專案 × {opened, closed} × {每個 userId 各一個 assignee、各一個 author、每個 label 各一個 labels}
   查詢聯集（GitLab `labels` 參數用逗號是 AND，所以每個標籤分開查再聯集）、分頁（x-next-page）、每頁 30 秒逾時、不跟隨重導向；closed 只取 `updated_after` 下界（UTC 日界 − closedUpdatedDays）。
-  `updated_at` 在收集時間 48 小時內的 Issue 補查 notes，略過 system notes，取最後一則人寫留言為 `last_note`
-  （欄位：`author_id`、`created_at`、`body`＝留言原文不截斷；note 沒有 body 或型別不符時當空字串，不報錯）。
-  另外，未結案且 `updated_at` 在 OTHER_NOTE_WINDOW（7 天 + 1 天餘裕）內的 Issue 也補查，取最後一則「非本人」留言為
-  `last_other_note`（供 HTML「逾期」判定：最後一則他人留言超過 7 天）。取捨：未結案 Issue 約 150 筆，若全部補查每輪
-  多 150 次 notes 請求；但 `updated_at` 超過 7 天的 Issue，其任何留言必定也超過 7 天，模板退回用 `updated_at`
-  判斷結果相同，所以只補查 8 天內更新的未結案 Issue 即可正確判定 7 天門檻。同一筆 Issue 兩個窗口重疊時只打一次 notes。
+  **所有未結案 Issue**，以及 `updated_at` 在收集時間 48 小時內的已結案 Issue，都補查 notes（略過 system notes），
+  同一筆只打一次，取得三個欄位：
+    `last_note`      = 最後一則人寫留言的 `author_id`/`created_at`/`body`，**只在 `updated_at` ≤ 48 小時時才填**
+                       （維持原語意：24h 旗標與 `noteKey` 的唯一來源，放寬補查範圍不會改到網頁勾選狀態）；
+    `last_other_note`= 最後一則「非本人」人寫留言的 `author_id`/`created_at`，**所有未結案都填**（供「逾期」判定）；
+    `last_body_note` = 最後一則人寫留言的 `created_at` 與 `body`（原文不截斷），**所有補查到的 Issue 都填**，
+                       是 `#data` 第 8 元素 `lastNoteBody` 的來源，讓搜尋與「提到我」覆蓋全部未結案 Issue。
+  note 沒有 `body` 或型別不符時當空字串，不報錯。
+  取捨：未結案 Issue 約 150 筆，每輪就多約 150 次 notes 請求（實測整輪仍在一分鐘級）；換來的是留言內容與「逾期」
+  判定覆蓋全部未結案 Issue，不再受 48 小時/8 天窗口限制（先前版本只補查 48 小時內，導致「提到我」幾乎永遠 0 筆）。
   每筆 notes 只取最新 50 則（sort=desc），若最後一則他人留言更早於此則 `last_other_note` 為 null（極少見，視同無他人留言）。
   另外每輪對每個 userId 打一次 `GET /users/:id` 取 `username`，組成快照欄位 `mentionTags`（`@<username>` 陣列，依
   userIds 順序；取不到的略過，可為空陣列），供 HTML「提到我」篩選比對留言內容。
@@ -43,9 +47,11 @@
   「我處理過了」勾選狀態偵測新回應；本人（author_id 在 userIds 內）留言、無留言或 48h 外未補查都是 ""。
   第 6 元素 `hitLabels` = 該 Issue 的 labels 與追蹤標籤的交集（依 trackLabel 順序的字串陣列，沒命中為 []），
   供模板篩選列每個追蹤標籤各一顆按鈕與每筆顯示實際命中的標籤名；confirm 項目不帶此欄位。
-  第 7 元素 `lastReplyAt` = `last_other_note.created_at` 轉當地時間字串（同 `updated` 格式），沒有或未補查為 ""；
+  第 7 元素 `lastReplyAt` = `last_other_note.created_at` 轉當地時間字串（同 `updated` 格式），沒有或未補查為 ""
+  （未結案一律有補查，所以只有「前 50 則都是本人留言」或真的沒有他人留言時才是空的）；
   模板「逾期」用它（沒有時退回 `updated`）。第 8 元素 `lastNoteBody` = `last_note.body` 原文（不截斷），沒有或
-  未補查為 ""，供模板搜尋框搜留言內容與「提到我」篩選（`mentionTags` 任一字串出現在其中，不分大小寫）；
+  未補查為 ""（來源是 `last_body_note`，所有未結案都有；已結案只有 48 小時內更新過的才有），
+  供模板搜尋框搜留言內容與「提到我」篩選（`mentionTags` 任一字串出現在其中，不分大小寫）；
   confirm 項目不帶第 6–8 這些欄位。`last_note`、`noteKey`、24h 旗標語意不變，仍只在 48h/24h 內判定，
   補查範圍也不變，所以 `noteKey` 不受此欄位影響。latest.md 不含留言內容。
 - 待我確認：一次 LLM 呼叫（透過 agentrunner exe），輸入未結案 Issue 的 ref／標題／描述前 800 字／指派／最後留言者是否本人，
@@ -107,8 +113,7 @@ BACKEND_BIN_DEFAULTS = {
     "antigravity": None,
 }
 
-NOTE_WINDOW = timedelta(hours=48)
-OTHER_NOTE_WINDOW = timedelta(days=8)   # 逾期 7 天 + 1 天餘裕；只對未結案 Issue
+NOTE_WINDOW = timedelta(hours=48)   # 只用來決定 last_note（24h 旗標與 noteKey 的來源）填不填
 NOTES_PER_PAGE = "50"
 RECENT_WINDOW = timedelta(hours=24)
 HTTP_TIMEOUT = 30
@@ -380,15 +385,19 @@ def collect(config: dict, token: str) -> dict:
                         raise RunError("GitLab API 分頁標頭無效")
                     page = following
 
-    # 48h 內更新的 Issue 補 last_note（略過 system notes）；
-    # 未結案且 8 天內更新的 Issue 補 last_other_note（最後一則非本人留言，供「逾期」判定）。兩者重疊只打一次。
+    # 所有未結案 Issue + 48h 內更新的已結案 Issue 都補查 notes（略過 system notes），一筆只打一次：
+    #   last_note      ← 只在 age ≤ 48h 時填（維持原語意，驅動 24h 旗標與 noteKey，放寬不可影響勾選狀態）
+    #   last_other_note← 所有未結案都填（最後一則非本人留言，供「逾期」判定）
+    #   last_body_note ← 所有補查到的都填（最後一則人寫留言的原文，供搜尋與「提到我」）
     note_count = 0
     for issue in issues.values():
         age = now - parse_ts(issue["updated_at"])
-        want_last = age <= NOTE_WINDOW
-        want_other = issue["state"] == "opened" and age <= OTHER_NOTE_WINDOW
-        if not (want_last or want_other):
+        opened = issue["state"] == "opened"
+        want_notes = opened or age <= NOTE_WINDOW
+        if not want_notes:
             continue
+        want_last = age <= NOTE_WINDOW
+        want_other = opened
         notes, _ = gl.get(f"projects/{issue['project_id']}/issues/{issue['iid']}/notes",
                           {"sort": "desc", "order_by": "updated_at", "per_page": NOTES_PER_PAGE})
         if not isinstance(notes, list):
@@ -401,8 +410,11 @@ def collect(config: dict, token: str) -> dict:
                 ok = False
             if not ok:
                 raise RunError("GitLab API Note 欄位格式錯誤")
+        human = next((n for n in notes if not n["system"]), None)
+        issue["last_body_note"] = ({"created_at": human["created_at"],
+                                    "body": human["body"] if isinstance(human.get("body"), str) else ""}
+                                   if human else None)
         if want_last:
-            human = next((n for n in notes if not n["system"]), None)
             issue["last_note"] = ({"author_id": human["author"]["id"], "created_at": human["created_at"],
                                    "body": human["body"] if isinstance(human.get("body"), str) else ""}
                                   if human else None)
@@ -411,7 +423,7 @@ def collect(config: dict, token: str) -> dict:
             issue["last_other_note"] = ({"author_id": other["author"]["id"], "created_at": other["created_at"]}
                                         if other else None)
         note_count += 1
-    log(f"  收集：{len(projects)} 個專案、{len(issues)} 筆 Issue、補查 last_note {note_count} 筆")
+    log(f"  收集：{len(projects)} 個專案、{len(issues)} 筆 Issue、補查 notes {note_count} 筆")
 
     # 每個 userId 查一次 /users/:id 取 username，組成 `@<username>` 供模板「提到我」比對；取不到就略過該筆
     mention_tags: "list[str]" = []
@@ -498,8 +510,12 @@ def last_reply_local_of(issue: dict, tz: ZoneInfo) -> str:
 
 
 def last_note_body_of(issue: dict) -> str:
-    """HTML #data 第 8 欄 `lastNoteBody`：最後一則人寫留言的原文（不截斷）；沒有或未補查回空字串。"""
-    ln = issue.get("last_note")
+    """HTML #data 第 8 欄 `lastNoteBody`：最後一則人寫留言的原文（不截斷）；沒有或未補查回空字串。
+
+    來源是 `last_body_note`（所有未結案都補查），不是 `last_note`（只有 48h 內才填），
+    讀舊快照時退回 `last_note.body`。
+    """
+    ln = issue.get("last_body_note") or issue.get("last_note")
     if not isinstance(ln, dict):
         return ""
     body = ln.get("body")
