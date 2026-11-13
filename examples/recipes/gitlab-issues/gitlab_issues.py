@@ -20,12 +20,15 @@
 - 收集：標準庫 urllib，不依賴 requests。sources.json 的 `userId` 與 `label` 都可以是單值或陣列（內部一律正規化成
   `userIds`、`labels`）。每個專案 × {opened, closed} × {每個 userId 各一個 assignee、各一個 author、每個 label 各一個 labels}
   查詢聯集（GitLab `labels` 參數用逗號是 AND，所以每個標籤分開查再聯集）、分頁（x-next-page）、每頁 30 秒逾時、不跟隨重導向；closed 只取 `updated_after` 下界（UTC 日界 − closedUpdatedDays）。
-  `updated_at` 在收集時間 48 小時內的 Issue 補查 notes，略過 system notes，取最後一則人寫留言為 `last_note`。
+  `updated_at` 在收集時間 48 小時內的 Issue 補查 notes，略過 system notes，取最後一則人寫留言為 `last_note`
+  （欄位：`author_id`、`created_at`、`body`＝留言原文不截斷；note 沒有 body 或型別不符時當空字串，不報錯）。
   另外，未結案且 `updated_at` 在 OTHER_NOTE_WINDOW（7 天 + 1 天餘裕）內的 Issue 也補查，取最後一則「非本人」留言為
   `last_other_note`（供 HTML「逾期」判定：最後一則他人留言超過 7 天）。取捨：未結案 Issue 約 150 筆，若全部補查每輪
   多 150 次 notes 請求；但 `updated_at` 超過 7 天的 Issue，其任何留言必定也超過 7 天，模板退回用 `updated_at`
   判斷結果相同，所以只補查 8 天內更新的未結案 Issue 即可正確判定 7 天門檻。同一筆 Issue 兩個窗口重疊時只打一次 notes。
   每筆 notes 只取最新 50 則（sort=desc），若最後一則他人留言更早於此則 `last_other_note` 為 null（極少見，視同無他人留言）。
+  另外每輪對每個 userId 打一次 `GET /users/:id` 取 `username`，組成快照欄位 `mentionTags`（`@<username>` 陣列，依
+  userIds 順序；取不到的略過，可為空陣列），供 HTML「提到我」篩選比對留言內容。
 - 快照：欄位順序與 TS 版相同，惟 `userId`/`label` 改為陣列欄位 `userIds`/`labels`（讀舊快照時單值自動包成陣列）；
   id = sha256(JSON.stringify(排除 id/collectedAt 的內容))，Python 用 json.dumps(separators=(",",":"), ensure_ascii=False) 重現。
   id 的計算來源含這兩個欄位，所以同一組 Issue 在改欄位名後會得到新 id（只多跑一輪，seen.json 既有 id 不受影響）。
@@ -41,7 +44,10 @@
   第 6 元素 `hitLabels` = 該 Issue 的 labels 與追蹤標籤的交集（依 trackLabel 順序的字串陣列，沒命中為 []），
   供模板篩選列每個追蹤標籤各一顆按鈕與每筆顯示實際命中的標籤名；confirm 項目不帶此欄位。
   第 7 元素 `lastReplyAt` = `last_other_note.created_at` 轉當地時間字串（同 `updated` 格式），沒有或未補查為 ""；
-  模板「逾期」用它（沒有時退回 `updated`）。`last_note`、`noteKey`、24h 旗標語意不變，仍只在 48h/24h 內判定。
+  模板「逾期」用它（沒有時退回 `updated`）。第 8 元素 `lastNoteBody` = `last_note.body` 原文（不截斷），沒有或
+  未補查為 ""，供模板搜尋框搜留言內容與「提到我」篩選（`mentionTags` 任一字串出現在其中，不分大小寫）；
+  confirm 項目不帶第 6–8 這些欄位。`last_note`、`noteKey`、24h 旗標語意不變，仍只在 48h/24h 內判定，
+  補查範圍也不變，所以 `noteKey` 不受此欄位影響。latest.md 不含留言內容。
 - 待我確認：一次 LLM 呼叫（透過 agentrunner exe），輸入未結案 Issue 的 ref／標題／描述前 800 字／指派／最後留言者是否本人，
   要求回傳 JSON 陣列 [{ref, kind, note}]；本機驗證 ref 必須存在、kind 限三種、最多 8 筆；解析失敗或逾時 → 退回 --no-llm 規則並在 stderr 警告。
   --no-llm 規則：指派給我、未結案、`last_note` 存在且作者非本人（不在 userIds 內）；無則列「無」。
@@ -389,6 +395,7 @@ def collect(config: dict, token: str) -> dict:
             raise RunError("GitLab API 回傳不是 Note 清單")
         for n in notes:
             try:
+                # body 不是必要欄位：不是字串或缺漏都視為空字串，不丟 RunError
                 ok = isinstance(n.get("system"), bool) and _is_int(n["author"]["id"]) and parse_ts(n["created_at"])
             except Exception:
                 ok = False
@@ -396,13 +403,27 @@ def collect(config: dict, token: str) -> dict:
                 raise RunError("GitLab API Note 欄位格式錯誤")
         if want_last:
             human = next((n for n in notes if not n["system"]), None)
-            issue["last_note"] = {"author_id": human["author"]["id"], "created_at": human["created_at"]} if human else None
+            issue["last_note"] = ({"author_id": human["author"]["id"], "created_at": human["created_at"],
+                                   "body": human["body"] if isinstance(human.get("body"), str) else ""}
+                                  if human else None)
         if want_other:
             other = next((n for n in notes if not n["system"] and n["author"]["id"] not in uid_set), None)
             issue["last_other_note"] = ({"author_id": other["author"]["id"], "created_at": other["created_at"]}
                                         if other else None)
         note_count += 1
     log(f"  收集：{len(projects)} 個專案、{len(issues)} 筆 Issue、補查 last_note {note_count} 筆")
+
+    # 每個 userId 查一次 /users/:id 取 username，組成 `@<username>` 供模板「提到我」比對；取不到就略過該筆
+    mention_tags: "list[str]" = []
+    for uid in user_ids:
+        try:
+            user, _ = gl.get(f"users/{uid}")
+            name = user.get("username") if isinstance(user, dict) else None
+            if isinstance(name, str) and name.strip():
+                mention_tags.append("@" + name.strip())
+        except Exception:
+            continue
+    log(f"  提到我比對帳號：{'、'.join(mention_tags) or '未取得'}")
 
     content = {
         "period": period,
@@ -411,6 +432,7 @@ def collect(config: dict, token: str) -> dict:
         "projects": projects,
         "userIds": user_ids,
         "labels": labels,
+        "mentionTags": mention_tags,
         "closedUpdatedDays": config["closedUpdatedDays"],
         "updatedAfter": updated_after,
         "issues": sorted(issues.values(), key=lambda i: (i["project_id"], i["iid"])),
@@ -473,6 +495,15 @@ def last_reply_local_of(issue: dict, tz: ZoneInfo) -> str:
         return fmt_local(ln["created_at"], tz)
     except Exception:
         return ""
+
+
+def last_note_body_of(issue: dict) -> str:
+    """HTML #data 第 8 欄 `lastNoteBody`：最後一則人寫留言的原文（不截斷）；沒有或未補查回空字串。"""
+    ln = issue.get("last_note")
+    if not isinstance(ln, dict):
+        return ""
+    body = ln.get("body")
+    return body if isinstance(body, str) else ""
 
 
 def note_key_of(issue: dict, user_ids: "set[int]") -> str:
@@ -555,6 +586,7 @@ def build_model(snapshot: dict, sources: dict) -> dict:
             "note_key": note_key_of(i, uid_set),
             "updated_local": fmt_local(i["updated_at"], tz),
             "last_reply_local": last_reply_local_of(i, tz),
+            "last_note_body": last_note_body_of(i),
             "name": i["project"].split("/")[-1],
             "ref": f"{i['project'].split('/')[-1]}#{i['iid']}",
             "hit_labels": [l for l in track_labels if l in set(i["labels"])],
@@ -577,6 +609,7 @@ def build_model(snapshot: dict, sources: dict) -> dict:
         "closed_since": fmt_local(snapshot["updatedAfter"], tz)[:10],
         "days": snapshot["closedUpdatedDays"],
         "user_ids": user_ids, "uid_set": uid_set, "labels": track_labels,
+        "mention_tags": [str(t) for t in as_list(snapshot.get("mentionTags")) if isinstance(t, str) and t.strip()],
         "uid_text": uid_text, "label_text": label_text,
         "filter_rule": f"assignee∈{{{uid_text}}} 或 author∈{{{uid_text}}} 或 label∈{{{label_text}}}",
         "union_logic": (f"assignee IN ({uid_text}) OR author IN ({uid_text}) OR label IN "
@@ -840,6 +873,7 @@ def render_html(model: dict, confirm: "list[dict]", template: str) -> str:
         "host": model["host"],
         "userId": model["user_ids"],
         "trackLabel": model["labels"],
+        "mentionTags": model["mention_tags"],
         "filterRule": model["filter_rule"],
         "unionLogic": model["union_logic"],
         "closedSince": model["closed_since"],
@@ -850,8 +884,8 @@ def render_html(model: dict, confirm: "list[dict]", template: str) -> str:
         "confirm": [{k: v for k, v in c.items() if k != "_row"} for c in confirm],
         "projects": [{
             "key": p["key"], "path": p["path"], "id": p["id"],
-            "open": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"], r["last_reply_local"]] for r in p["open"]],
-            "closed": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"], r["last_reply_local"]] for r in p["closed"]],
+            "open": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"], r["last_reply_local"], r["last_note_body"]] for r in p["open"]],
+            "closed": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"], r["last_reply_local"], r["last_note_body"]] for r in p["closed"]],
         } for p in model["projects"]],
     }
     m = DATA_RE.search(template)

@@ -116,6 +116,7 @@
   .tag.s { background: var(--color-text); color: var(--color-bg); }
   .tag.l { background: var(--color-neutral-200); color: var(--color-neutral-800); }
   .tag.p { background: var(--color-neutral-200); color: var(--color-neutral-800); font-weight: 600; }
+  .tag.m { background: var(--color-accent-100); color: var(--color-accent-700); border: 1px solid var(--color-accent-700); font-weight: 600; }
   .row .when { display: grid; justify-items: end; text-align: right; font-variant-numeric: tabular-nums; padding-top: 2px; }
   .row .when .d { font-size: 13px; font-weight: 600; }
   .row .when .t { font-size: 12px; color: var(--color-neutral-700); }
@@ -227,22 +228,32 @@
   }
   function countOverdue() { return ROWS.filter(isOverdue).length; }
 
+  // 「提到我」比對用的 `@<username>` 清單（MENTION_RAW 顯示原文，MENTION_TAGS 轉小寫供比對）
+  var MENTION_RAW = [].concat(D.mentionTags == null ? [] : D.mentionTags).map(String).filter(function (t) { return !!t; });
+  var MENTION_TAGS = MENTION_RAW.map(function (t) { return t.toLowerCase(); });
+
   function toRow(p, a, closed) {
     var iid = a[0], title = a[1], upd = String(a[2] || ''), f = String(a[3] || '');
     var noteKey = String(a[4] == null ? '' : a[4]);
     var hitLabels = Array.isArray(a[5]) ? a[5].map(String) : [];   // 舊資料（5 元素）當 []
     var lastReplyAt = String(a[6] == null ? '' : a[6]);              // 舊資料（6 元素）當 ''
+    var lastNoteBody = String(a[7] == null ? '' : a[7]);             // 舊資料（7 元素）當 ''
     var parts = upd.split(' ');
     var r = {
       iid: iid, title: title, updated: upd, date: parts[0] || '', time: parts[1] || '', isClosed: closed,
       projKey: p.key, projPath: String(p.path || ''), projName: String(p.path || '').split('/').pop() || p.key,
       url: issueUrl(p.path, iid, f), key: p.path + '#' + iid, noteKey: noteKey,
       recent: f.indexOf('R') >= 0, author: f.indexOf('A') >= 0,
-      assignee: f.indexOf('S') >= 0, label: f.indexOf('L') >= 0, hitLabels: hitLabels, lastReplyAt: lastReplyAt
+      assignee: f.indexOf('S') >= 0, label: f.indexOf('L') >= 0, hitLabels: hitLabels, lastReplyAt: lastReplyAt,
+      lastNoteBody: lastNoteBody
     };
+    // 「提到我」：最後一則留言內容含任一 `@<username>`（GitLab 帳號不分大小寫，兩邊都轉小寫比對）
+    var bodyLower = lastNoteBody.toLowerCase();
+    r.mentionsMe = !!bodyLower && MENTION_TAGS.some(function (t) { return bodyLower.indexOf(t) >= 0; });
     r.hay = ['#' + iid, title, p.path, upd, closed ? 'closed' : 'opened',
       r.recent ? '24h 內回應' : '', r.author ? '我建立' : '',
-      r.assignee ? '指派給我' : '', r.label ? '符合標籤' : '', hitLabels.join(' ')].join(' ').toLowerCase();
+      r.assignee ? '指派給我' : '', r.label ? '符合標籤' : '', hitLabels.join(' '),
+      lastNoteBody].join(' ').toLowerCase();
     return r;
   }
 
@@ -386,6 +397,8 @@
     if (state.status !== 'all' && state.status !== (r.isClosed ? 'closed' : 'open')) return false;
     if (state.reason.indexOf(LABEL_PREFIX) === 0) {
       if (r.hitLabels.indexOf(state.reason.slice(LABEL_PREFIX.length)) < 0) return false;
+    } else if (state.reason === 'mention') {
+      if (!r.mentionsMe) return false;
     } else if (state.reason === 'overdue') {
       if (!isOverdue(r)) return false;   // 逾期的定義就是已處理：選「逾期」時忽略 hideDone
     } else if (state.reason !== 'all' && !r[state.reason]) return false;
@@ -411,6 +424,7 @@
     var tags = '';
     if (isOverdue(r)) tags += '<span class="tag o">逾期</span>';
     if (r.recent) tags += '<span class="tag r">24h 內回應</span>';
+    if (r.mentionsMe) tags += '<span class="tag m">提到我</span>';
     if (r.isClosed) tags += '<span class="tag c">closed</span>';
     if (r.author) tags += '<span class="tag a">我建立</span>';
     if (r.assignee) tags += '<span class="tag s">指派給我</span>';
@@ -446,6 +460,7 @@
       '<span><span class="k">時區</span>　' + esc(D.timezone) + '</span>' +
       '<span><span class="k">使用者 ID</span>　' + esc([].concat(D.userId == null ? [] : D.userId).join(', ')) + '</span>' +
       '<span><span class="k">追蹤標籤</span>　' + esc([].concat(D.trackLabel == null ? [] : D.trackLabel).join(', ')) + '</span>' +
+      '<span><span class="k">提到我比對</span>　' + esc(MENTION_RAW.join(', ') || '未取得帳號') + '</span>' +
       '<span><span class="k">聯集邏輯</span>　' + esc(D.unionLogic) + '</span>' +
       '</section>';
 
@@ -490,13 +505,15 @@
       '<span class="count">顯示 ' + c.shown + ' / ' + TOTAL + ' 筆 · 已處理 ' + countDone() + '</span></div>';
 
     h += '<div class="filters">' +
-      '<input type="text" id="q" placeholder="搜尋 Issue 標題、編號、專案、符合原因…" value="' + esc(state.q) + '">' +
+      '<input type="text" id="q" placeholder="搜尋 Issue 標題、編號、專案、符合原因、最後一則留言內容…" value="' + esc(state.q) + '">' +
       '<div class="frow">' +
       '<div class="fgroup"><span class="k">狀態</span>' +
       btn('status', 'all', '全部') + btn('status', 'open', '未結案') + btn('status', 'closed', '近期已結案') +
       '</div>' +
       '<div class="fgroup"><span class="k">符合原因</span>' +
-      btn('reason', 'all', '全部') + btn('reason', 'recent', '24h 內回應') + btn('reason', 'author', '我建立') +
+      btn('reason', 'all', '全部') + btn('reason', 'recent', '24h 內回應') +
+      btn('reason', 'mention', '提到我', ROWS.filter(function (r) { return r.mentionsMe; }).length) +
+      btn('reason', 'author', '我建立') +
       btn('reason', 'assignee', '指派給我') + btn('reason', 'overdue', '逾期', countOverdue()) +
       TRACK_LABELS.map(function (name) {
         return btn('reason', LABEL_PREFIX + name, name, ROWS.filter(function (r) { return r.hitLabels.indexOf(name) >= 0; }).length);
