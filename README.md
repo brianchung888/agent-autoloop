@@ -140,6 +140,12 @@ Agent 結束了這一輪，問了你一個問題。它現在不佔用行程、�
 
 更多範本：[Claude 委託 Codex 處理網頁](examples/recipes/browser-handoff/README.md)、[每週程式碼清理](examples/skills/weekly-sweep/SKILL.md)、[交付 PR](examples/skills/ship-pr/SKILL.md)。
 
+### 輔助工具
+
+| 工具 | 說明 |
+|---|---|
+| [本機工作流狀態網頁](examples/tools/web/README.md) | 只綁 127.0.0.1 的小 server，讀 hub 的 `status --json` 與各工作流產出，提供本機網頁與手動觸發；不是被 hub 排程驅動的工作流 |
+
 ## 外掛體系：四個方向都能自由替換
 
 內建外掛隨程式安裝，填好設定即可啟用；第三方外掛用 `agent-autoloop add <Git 位址>` 安裝。

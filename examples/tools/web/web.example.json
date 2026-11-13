@@ -1,0 +1,33 @@
+{
+  "port": 3351,
+  "autoloopExe": "<path-to>/agent-autoloop.exe",
+  "hubLog": "~/.agent-autoloop/logs/up.log",
+  "workflows": [
+    {
+      "id": "gitlab-issues",
+      "name": "GitLab 個人 Issue 摘要",
+      "ruleName": "GitLab 個人 Issue 摘要",
+      "emitType": "run.gitlab-issues",
+      "workDir": "~/.agent-autoloop/work/gitlab-issues",
+      "outputs": [
+        { "label": "最新摘要 (HTML)", "path": "briefs/latest.html" },
+        { "label": "最新摘要 (Markdown)", "path": "briefs/latest.md" }
+      ],
+      "logs": []
+    },
+    {
+      "id": "my-workflow",
+      "name": "我的工作流（範例）",
+      "ruleName": "我的工作流",
+      "emitType": "run.my-workflow",
+      "workDir": "<work-dir>/my-workflow",
+      "outputs": [
+        { "label": "文章目錄（最近 30 篇）", "path": "<docs-dir>/articles" },
+        { "label": "dashboard.html", "path": "<docs-dir>/out/dashboard.html" }
+      ],
+      "logs": [
+        { "label": "run.log", "path": "run.log" }
+      ]
+    }
+  ]
+}
