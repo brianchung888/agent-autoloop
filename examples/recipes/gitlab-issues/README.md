@@ -13,7 +13,10 @@
 
 ## 安裝
 
-把本目錄**全部檔案**複製到工作目錄（預設 `~/.agent-autoloop/work/gitlab-issues`，也可任何目錄再用 `--work-dir` 指定）。`agentrunner/` 是 `agentrunner_chat.py` 依賴的套件副本，驅動 Claude / Codex / Antigravity CLI；`SKILL.md` 是「待我確認」的規則，腳本執行時從裡面讀出含「待我確認」的段落當 LLM 的 system prompt（尋找順序見常見問題）。
+把本目錄**全部檔案**複製到工作目錄（預設 `~/.agent-autoloop/work/gitlab-issues`，也可任何目錄再用 `--work-dir` 指定）。本目錄的檔案：`gitlab_issues.py`（腳本）、`agentrunner-windows-x86_64.exe`（驅動 Claude / Codex / Antigravity CLI 的工具執行檔，見下段）、`template.html`（網頁版面）、`sources.json`（來源設定）、`rules.json`（要併入中台的規則）、`SKILL.md`、`README.md`。`SKILL.md` 是「待我確認」的規則，腳本執行時從裡面讀出含「待我確認」的段落當 LLM 的 system prompt（尋找順序見常見問題）。
+
+
+**LLM 怎麼叫**：腳本不 import 任何 agentrunner 的 Python 套件，而是以 subprocess 執行**與腳本同目錄的 `agentrunner-windows-x86_64.exe`**（`<exe> run --agent <backend> --max-turns 1 --quiet --output ndjson`，prompt 走 stdin）；要放在別處時設環境變數 `AGENTRUNNER_EXE` 指到它。後端 `claude` / `codex` / `antigravity` 的 CLI 路徑由 `gitlab_issues.py` 的 `BACKEND_BIN_DEFAULTS` 決定：`claude`、`codex` 預設帶 `--bin %APPDATA%\npm\claude.cmd` / `codex.cmd`（Windows 的 CreateProcess 找不到 PATH 上無副檔名的 npm wrapper，要指到 `.cmd`），`antigravity` 不帶 `--bin`、讓 exe 自己在 PATH 上找 `agy`；任一後端都可用環境變數 `AGENTRUNNER_<後端大寫>_BIN`（例 `AGENTRUNNER_CODEX_BIN`）覆寫，路徑不存在就不帶 `--bin`。只附 Windows x86_64 的執行檔；其他平台請自行從來源 repo 建置（Rust 專案，`rust/` 目錄）。來源：agentrunner 1.1.0（`agentrunner-windows-x86_64.exe --version` 印 `agentrunner 1.1.0`），公司內部 GitLab `gitscr1.moneydj.com/brianchung/agentrunner`，是 [Multica](https://github.com/multica-ai/multica) `server/pkg/agent` 的移植，授權沿用 Multica 修改版 Apache 2.0（單一組織內部使用不需商業授權；作為對外服務或嵌入商業產品需另取得授權，詳見來源 repo 的 `LICENSE`、`NOTICE`）。
 
 ```powershell
 # Windows（PowerShell）；$recipe 指向本目錄

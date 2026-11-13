@@ -11,3 +11,6 @@
 
 # 图是文本（diff 得出来），但不要让任何格式化工具去碰。
 *.svg text eol=lf
+
+# recipe 附帶的工具執行檔（examples/recipes/gitlab-issues/agentrunner-windows-x86_64.exe），二進位，不做行尾轉換也不 diff。
+*.exe binary
