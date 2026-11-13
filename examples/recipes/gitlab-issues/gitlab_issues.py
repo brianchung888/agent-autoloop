@@ -21,6 +21,11 @@
   `userIds`、`labels`）。每個專案 × {opened, closed} × {每個 userId 各一個 assignee、各一個 author、每個 label 各一個 labels}
   查詢聯集（GitLab `labels` 參數用逗號是 AND，所以每個標籤分開查再聯集）、分頁（x-next-page）、每頁 30 秒逾時、不跟隨重導向；closed 只取 `updated_after` 下界（UTC 日界 − closedUpdatedDays）。
   `updated_at` 在收集時間 48 小時內的 Issue 補查 notes，略過 system notes，取最後一則人寫留言為 `last_note`。
+  另外，未結案且 `updated_at` 在 OTHER_NOTE_WINDOW（7 天 + 1 天餘裕）內的 Issue 也補查，取最後一則「非本人」留言為
+  `last_other_note`（供 HTML「逾期」判定：最後一則他人留言超過 7 天）。取捨：未結案 Issue 約 150 筆，若全部補查每輪
+  多 150 次 notes 請求；但 `updated_at` 超過 7 天的 Issue，其任何留言必定也超過 7 天，模板退回用 `updated_at`
+  判斷結果相同，所以只補查 8 天內更新的未結案 Issue 即可正確判定 7 天門檻。同一筆 Issue 兩個窗口重疊時只打一次 notes。
+  每筆 notes 只取最新 50 則（sort=desc），若最後一則他人留言更早於此則 `last_other_note` 為 null（極少見，視同無他人留言）。
 - 快照：欄位順序與 TS 版相同，惟 `userId`/`label` 改為陣列欄位 `userIds`/`labels`（讀舊快照時單值自動包成陣列）；
   id = sha256(JSON.stringify(排除 id/collectedAt 的內容))，Python 用 json.dumps(separators=(",",":"), ensure_ascii=False) 重現。
   id 的計算來源含這兩個欄位，所以同一組 Issue 在改欄位名後會得到新 id（只多跑一輪，seen.json 既有 id 不受影響）。
@@ -35,6 +40,8 @@
   「我處理過了」勾選狀態偵測新回應；本人（author_id 在 userIds 內）留言、無留言或 48h 外未補查都是 ""。
   第 6 元素 `hitLabels` = 該 Issue 的 labels 與追蹤標籤的交集（依 trackLabel 順序的字串陣列，沒命中為 []），
   供模板篩選列每個追蹤標籤各一顆按鈕與每筆顯示實際命中的標籤名；confirm 項目不帶此欄位。
+  第 7 元素 `lastReplyAt` = `last_other_note.created_at` 轉當地時間字串（同 `updated` 格式），沒有或未補查為 ""；
+  模板「逾期」用它（沒有時退回 `updated`）。`last_note`、`noteKey`、24h 旗標語意不變，仍只在 48h/24h 內判定。
 - 待我確認：一次 LLM 呼叫（透過 agentrunner exe），輸入未結案 Issue 的 ref／標題／描述前 800 字／指派／最後留言者是否本人，
   要求回傳 JSON 陣列 [{ref, kind, note}]；本機驗證 ref 必須存在、kind 限三種、最多 8 筆；解析失敗或逾時 → 退回 --no-llm 規則並在 stderr 警告。
   --no-llm 規則：指派給我、未結案、`last_note` 存在且作者非本人（不在 userIds 內）；無則列「無」。
@@ -95,6 +102,8 @@ BACKEND_BIN_DEFAULTS = {
 }
 
 NOTE_WINDOW = timedelta(hours=48)
+OTHER_NOTE_WINDOW = timedelta(days=8)   # 逾期 7 天 + 1 天餘裕；只對未結案 Issue
+NOTES_PER_PAGE = "50"
 RECENT_WINDOW = timedelta(hours=24)
 HTTP_TIMEOUT = 30
 MAX_ISSUES = 300   # 多標籤後聯集變大；512 KiB 快照上限仍是硬保護
@@ -365,13 +374,17 @@ def collect(config: dict, token: str) -> dict:
                         raise RunError("GitLab API 分頁標頭無效")
                     page = following
 
-    # 48h 內更新的 Issue 補 last_note（略過 system notes）
+    # 48h 內更新的 Issue 補 last_note（略過 system notes）；
+    # 未結案且 8 天內更新的 Issue 補 last_other_note（最後一則非本人留言，供「逾期」判定）。兩者重疊只打一次。
     note_count = 0
     for issue in issues.values():
-        if now - parse_ts(issue["updated_at"]) > NOTE_WINDOW:
+        age = now - parse_ts(issue["updated_at"])
+        want_last = age <= NOTE_WINDOW
+        want_other = issue["state"] == "opened" and age <= OTHER_NOTE_WINDOW
+        if not (want_last or want_other):
             continue
         notes, _ = gl.get(f"projects/{issue['project_id']}/issues/{issue['iid']}/notes",
-                          {"sort": "desc", "order_by": "updated_at", "per_page": "20"})
+                          {"sort": "desc", "order_by": "updated_at", "per_page": NOTES_PER_PAGE})
         if not isinstance(notes, list):
             raise RunError("GitLab API 回傳不是 Note 清單")
         for n in notes:
@@ -381,8 +394,13 @@ def collect(config: dict, token: str) -> dict:
                 ok = False
             if not ok:
                 raise RunError("GitLab API Note 欄位格式錯誤")
-        human = next((n for n in notes if not n["system"]), None)
-        issue["last_note"] = {"author_id": human["author"]["id"], "created_at": human["created_at"]} if human else None
+        if want_last:
+            human = next((n for n in notes if not n["system"]), None)
+            issue["last_note"] = {"author_id": human["author"]["id"], "created_at": human["created_at"]} if human else None
+        if want_other:
+            other = next((n for n in notes if not n["system"] and n["author"]["id"] not in uid_set), None)
+            issue["last_other_note"] = ({"author_id": other["author"]["id"], "created_at": other["created_at"]}
+                                        if other else None)
         note_count += 1
     log(f"  收集：{len(projects)} 個專案、{len(issues)} 筆 Issue、補查 last_note {note_count} 筆")
 
@@ -444,6 +462,17 @@ def is_recent(issue: dict, collected: datetime, user_ids: "set[int]") -> bool:
         return (collected - parse_ts(ln["created_at"]) <= RECENT_WINDOW) and ln.get("author_id") not in user_ids
     except Exception:
         return False
+
+
+def last_reply_local_of(issue: dict, tz: ZoneInfo) -> str:
+    """HTML #data 第 7 欄 `lastReplyAt`：最後一則非本人留言的當地時間字串；沒有或未補查回空字串。"""
+    ln = issue.get("last_other_note")
+    if not isinstance(ln, dict) or not isinstance(ln.get("created_at"), str):
+        return ""
+    try:
+        return fmt_local(ln["created_at"], tz)
+    except Exception:
+        return ""
 
 
 def note_key_of(issue: dict, user_ids: "set[int]") -> str:
@@ -525,6 +554,7 @@ def build_model(snapshot: dict, sources: dict) -> dict:
             "flags": flags_of(i, recent),
             "note_key": note_key_of(i, uid_set),
             "updated_local": fmt_local(i["updated_at"], tz),
+            "last_reply_local": last_reply_local_of(i, tz),
             "name": i["project"].split("/")[-1],
             "ref": f"{i['project'].split('/')[-1]}#{i['iid']}",
             "hit_labels": [l for l in track_labels if l in set(i["labels"])],
@@ -820,8 +850,8 @@ def render_html(model: dict, confirm: "list[dict]", template: str) -> str:
         "confirm": [{k: v for k, v in c.items() if k != "_row"} for c in confirm],
         "projects": [{
             "key": p["key"], "path": p["path"], "id": p["id"],
-            "open": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"]] for r in p["open"]],
-            "closed": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"]] for r in p["closed"]],
+            "open": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"], r["last_reply_local"]] for r in p["open"]],
+            "closed": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"], r["last_reply_local"]] for r in p["closed"]],
         } for p in model["projects"]],
     }
     m = DATA_RE.search(template)

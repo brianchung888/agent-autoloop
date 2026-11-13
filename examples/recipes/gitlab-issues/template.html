@@ -204,21 +204,25 @@
     if (rec && String(rec.seenNote == null ? '' : rec.seenNote) !== String(noteKey || '')) delete DONE[key];
   }
 
-  // 「逾期」：未結案 + 已勾「我處理過了」+ 最後更新距頁面載入超過 OVERDUE_DAYS 天。
+  // 「逾期」：未結案 + 已勾「我處理過了」+ 最後一則「非本人」留言（lastReplyAt，與 24h 內回應同一把尺）
+  // 距頁面載入超過 OVERDUE_DAYS 天；沒有任何非本人留言（lastReplyAt 為空）時退回用 updated。
   // done 會變，所以不在解析時固定，每次 render 由 isOverdue() 現算。
-  // updated 是 `YYYY-MM-DD HH:mm:ss.SSS` 當地時間字串（無時區），假設瀏覽器時區與 D.timezone 相同，
+  // 兩個時間都是 `YYYY-MM-DD HH:mm:ss.SSS` 當地時間字串（無時區），假設瀏覽器時區與 D.timezone 相同，
   // 直接當瀏覽器本地時間解析；解析失敗回 NaN → 不算逾期。
   var OVERDUE_DAYS = 7;
   var OVERDUE_MS = OVERDUE_DAYS * 24 * 60 * 60 * 1000;
   var NOW = Date.now();   // 頁面載入時間
-  function updatedAt(r) {
-    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?/.exec(String(r.updated || ''));
+  function parseLocal(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?/.exec(String(s || ''));
     if (!m) return NaN;
     return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0), +((m[7] || '0') + '00').slice(0, 3)).getTime();
   }
+  function updatedAt(r) { return parseLocal(r.updated); }
+  function lastReplyAt(r) { return r.lastReplyAt ? parseLocal(r.lastReplyAt) : NaN; }
   function isOverdue(r) {
     if (r.isClosed || !isDone(r.key)) return false;
-    var t = updatedAt(r);
+    var t = lastReplyAt(r);
+    if (isNaN(t)) t = updatedAt(r);
     return !isNaN(t) && (NOW - t) > OVERDUE_MS;
   }
   function countOverdue() { return ROWS.filter(isOverdue).length; }
@@ -227,13 +231,14 @@
     var iid = a[0], title = a[1], upd = String(a[2] || ''), f = String(a[3] || '');
     var noteKey = String(a[4] == null ? '' : a[4]);
     var hitLabels = Array.isArray(a[5]) ? a[5].map(String) : [];   // 舊資料（5 元素）當 []
+    var lastReplyAt = String(a[6] == null ? '' : a[6]);              // 舊資料（6 元素）當 ''
     var parts = upd.split(' ');
     var r = {
       iid: iid, title: title, updated: upd, date: parts[0] || '', time: parts[1] || '', isClosed: closed,
       projKey: p.key, projPath: String(p.path || ''), projName: String(p.path || '').split('/').pop() || p.key,
       url: issueUrl(p.path, iid, f), key: p.path + '#' + iid, noteKey: noteKey,
       recent: f.indexOf('R') >= 0, author: f.indexOf('A') >= 0,
-      assignee: f.indexOf('S') >= 0, label: f.indexOf('L') >= 0, hitLabels: hitLabels
+      assignee: f.indexOf('S') >= 0, label: f.indexOf('L') >= 0, hitLabels: hitLabels, lastReplyAt: lastReplyAt
     };
     r.hay = ['#' + iid, title, p.path, upd, closed ? 'closed' : 'opened',
       r.recent ? '24h 內回應' : '', r.author ? '我建立' : '',
