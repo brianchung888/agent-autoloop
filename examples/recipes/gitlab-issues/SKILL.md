@@ -27,7 +27,7 @@ description: 整理本人被指派、建立或符合追蹤標籤的 GitLab Issue
 ```
 頁首不再顯示快照日期、GitLab 主機、使用者 ID 或追蹤標籤（這些資訊已包含在篩選規則或收集時間裡）。HTML 的這三行就是模板的 Meta 三欄，對應 `#data` 的 `collectedAt`、`closedBoundText`、`filterRule`；GitLab 主機、時區、使用者 ID、追蹤標籤、聯集邏輯放模板下方的設定列（`host`、`timezone`、`userId`、`trackLabel`、`unionLogic`），不算頁首。GitLab 主機、`projects` 清單（含專案數字 ID 與 path）、userId、完整 label 仍用於聯集篩選邏輯與正文分組，只是不重複列在頁首；稿件正文仍需包含這些資訊、近期已關閉的 `updatedAfter` 下界與天數，並說明聯集：assignee=userId OR author=userId OR label=文字。先依專案 path 與 project_id 分組，每個專案再分「未結案」「近期更新且已結案」；`projects` 裡沒有符合 Issue 的專案也明列「本次可見範圍沒有符合項目」。（以上分組只適用 Markdown；HTML 版面是單一清單，不依專案分區，每筆以標籤顯示專案短名，全部依更新時間由新到舊排序，要看單一專案用篩選列的專案按鈕。）每筆列專案與編號、原始標題、狀態、更新時間、原始連結與符合原因（assignee=指派給我；author=我建立；label=符合追蹤標籤），同筆只列一次。
 
-HTML 產出規則（固定版面，不自創樣式）：HTML 一律用固定模板產生，不自己寫 CSS、不自己排版、不加 emoji、不改版面、不加 favicon 或統計卡片等自創元素。
+HTML 產出規則（固定版面，不自創樣式）：HTML 一律用固定模板產生，不自己寫 CSS、不自己排版、不加 emoji、不改版面、不加統計卡片等自創元素；favicon 由模板固定提供（GitLab logo），不另加。
    - 讀 `{cwd}/template.html`（可信工作目錄下的模板；通常是 `~/.agent-autoloop/work/gitlab-issues/template.html`）。
    - 只改模板裡 `<script id="data" type="application/json">` 與 `</script>` 之間那一段 JSON，其餘**一個位元組都不改**（不動 `<style>`、不動下方渲染 JS、不動 `<title>`、不動字型連結）。模板缺失或找不到 `#data` 區塊就當這一輪沒跑成，照實回報，不得改用自己寫的 HTML。
    - JSON 欄位：`date`（快照日期）、`collectedAt`（`YYYY-MM-DD HH:mm:ss.SSS (Taipei)`）、`timezone`、`host`、`userId`、`trackLabel`、`filterRule`、`unionLogic`、`closedSince`、`closedDays`、`closedBoundText`、`hideEmptyProjects`（預設 `false`）、`footer`、`confirm`、`projects`。
