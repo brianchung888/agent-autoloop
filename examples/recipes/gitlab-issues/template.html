@@ -23,6 +23,8 @@
     --color-neutral-900: #2d2b2b;
     --color-accent-100: #fff2ef;
     --color-accent-700: #ae1800;
+    --color-warn: #f2b53a;
+    --color-warn-text: #3a2a00;
     --font-body: "Archivo", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
@@ -108,6 +110,7 @@
   .row .tags { display: flex; flex-wrap: wrap; gap: 6px; }
   .tag { font-size: 11px; padding: 2px 8px; letter-spacing: 0.02em; white-space: nowrap; }
   .tag.r { background: var(--color-accent); color: #fff; font-weight: 600; }
+  .tag.o { background: var(--color-warn); color: var(--color-warn-text); font-weight: 600; }
   .tag.c { background: var(--color-neutral-300); color: var(--color-neutral-900); }
   .tag.a { border: 1px solid var(--color-text); color: var(--color-text); }
   .tag.s { background: var(--color-text); color: var(--color-bg); }
@@ -200,6 +203,25 @@
     var rec = DONE[key];
     if (rec && String(rec.seenNote == null ? '' : rec.seenNote) !== String(noteKey || '')) delete DONE[key];
   }
+
+  // 「逾期」：未結案 + 已勾「我處理過了」+ 最後更新距頁面載入超過 OVERDUE_DAYS 天。
+  // done 會變，所以不在解析時固定，每次 render 由 isOverdue() 現算。
+  // updated 是 `YYYY-MM-DD HH:mm:ss.SSS` 當地時間字串（無時區），假設瀏覽器時區與 D.timezone 相同，
+  // 直接當瀏覽器本地時間解析；解析失敗回 NaN → 不算逾期。
+  var OVERDUE_DAYS = 7;
+  var OVERDUE_MS = OVERDUE_DAYS * 24 * 60 * 60 * 1000;
+  var NOW = Date.now();   // 頁面載入時間
+  function updatedAt(r) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?/.exec(String(r.updated || ''));
+    if (!m) return NaN;
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0), +((m[7] || '0') + '00').slice(0, 3)).getTime();
+  }
+  function isOverdue(r) {
+    if (r.isClosed || !isDone(r.key)) return false;
+    var t = updatedAt(r);
+    return !isNaN(t) && (NOW - t) > OVERDUE_MS;
+  }
+  function countOverdue() { return ROWS.filter(isOverdue).length; }
 
   function toRow(p, a, closed) {
     var iid = a[0], title = a[1], upd = String(a[2] || ''), f = String(a[3] || '');
@@ -359,8 +381,10 @@
     if (state.status !== 'all' && state.status !== (r.isClosed ? 'closed' : 'open')) return false;
     if (state.reason.indexOf(LABEL_PREFIX) === 0) {
       if (r.hitLabels.indexOf(state.reason.slice(LABEL_PREFIX.length)) < 0) return false;
+    } else if (state.reason === 'overdue') {
+      if (!isOverdue(r)) return false;   // 逾期的定義就是已處理：選「逾期」時忽略 hideDone
     } else if (state.reason !== 'all' && !r[state.reason]) return false;
-    if (state.hideDone === 'on' && isDone(r.key)) return false;
+    if (state.hideDone === 'on' && state.reason !== 'overdue' && isDone(r.key)) return false;
     var qq = state.q.toLowerCase().trim();
     return !qq || r.hay.indexOf(qq) >= 0;
   }
@@ -380,6 +404,7 @@
 
   function rowHtml(r) {
     var tags = '';
+    if (isOverdue(r)) tags += '<span class="tag o">逾期</span>';
     if (r.recent) tags += '<span class="tag r">24h 內回應</span>';
     if (r.isClosed) tags += '<span class="tag c">closed</span>';
     if (r.author) tags += '<span class="tag a">我建立</span>';
@@ -467,7 +492,7 @@
       '</div>' +
       '<div class="fgroup"><span class="k">符合原因</span>' +
       btn('reason', 'all', '全部') + btn('reason', 'recent', '24h 內回應') + btn('reason', 'author', '我建立') +
-      btn('reason', 'assignee', '指派給我') +
+      btn('reason', 'assignee', '指派給我') + btn('reason', 'overdue', '逾期', countOverdue()) +
       TRACK_LABELS.map(function (name) {
         return btn('reason', LABEL_PREFIX + name, name, ROWS.filter(function (r) { return r.hitLabels.indexOf(name) >= 0; }).length);
       }).join('') +
