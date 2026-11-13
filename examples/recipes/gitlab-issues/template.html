@@ -266,14 +266,39 @@
 
   var state = { q: '', status: 'all', reason: 'all', project: 'all', hideDone: 'all' };
 
-  // 分頁回到前景時自動重載：載入超過 RELOAD_AFTER_MS 後再回到前景 → 先把篩選與捲動位置存進 sessionStorage，再 reload；
-  // 重載後還原並刪掉該 key。loadedAt 在重載前重設，60 秒內再切回不會再重載。
+  // 分頁回到前景時決定要不要重載：先向本機 web server 問產出的版本（mtime），變了才重載；
+  // 問不到（server 沒開、file:// 被擋、逾時）或載入時就沒拿到版本 → 退回「載入超過 RELOAD_AFTER_MS 就重載」。
+  // 不管哪條路，距上次檢查不到 RELOAD_AFTER_MS 不再檢查（避免頻繁切換時連續 fetch）。
+  // 重載前把篩選與捲動位置存進 sessionStorage，重載後還原並刪掉該 key。
   var VIEW_KEY = 'gitlab-brief:view';
   var RELOAD_AFTER_MS = 60 * 1000;
+  var VERSION_URL = 'http://127.0.0.1:3351/api/version/gitlab-issues/0';
+  var VERSION_TIMEOUT_MS = 1500;
   var loadedAt = Date.now();
-  var LOADED_HM = (function (d) {
+  var loadedVersion = null;   // 載入時從 VERSION_URL 拿到的 mtime；拿不到就 null
+  var loadedVersionLocal = '';
+  var checking = false;
+  function hm(d) {
     return (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
-  })(new Date(loadedAt));
+  }
+  var LOADED_HM = hm(new Date(loadedAt));
+  function fetchVersion() {
+    return new Promise(function (resolve) {
+      var ctl = null, timer = null;
+      try {
+        if (typeof fetch !== 'function') return resolve(null);
+        if (typeof AbortController === 'function') ctl = new AbortController();
+        timer = setTimeout(function () { try { if (ctl) ctl.abort(); } catch (err) {} }, VERSION_TIMEOUT_MS);
+        fetch(VERSION_URL, { cache: 'no-store', mode: 'cors', signal: ctl ? ctl.signal : undefined })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+            clearTimeout(timer);
+            resolve(j && typeof j.mtime === 'number' ? j : null);
+          })
+          .catch(function () { clearTimeout(timer); resolve(null); });
+      } catch (err) { if (timer) clearTimeout(timer); resolve(null); }
+    });
+  }
   function loadView() {
     try {
       var raw = sessionStorage.getItem(VIEW_KEY);
@@ -293,17 +318,33 @@
       if (typeof SAVED_VIEW.state[k] === 'string') state[k] = SAVED_VIEW.state[k];
     });
   }
-  function reloadIfStale() {
-    if (document.visibilityState !== 'visible') return;
-    if (Date.now() - loadedAt < RELOAD_AFTER_MS) return;
+  function doReload() {
     loadedAt = Date.now();
     saveView();
     location.reload();
   }
+  function reloadIfStale() {
+    if (document.visibilityState !== 'visible') return;
+    if (checking) return;
+    if (Date.now() - loadedAt < RELOAD_AFTER_MS) return;
+    if (loadedVersion === null) { doReload(); return; }
+    checking = true;
+    fetchVersion().then(function (v) {
+      checking = false;
+      if (v === null) { doReload(); return; }          // 問不到 → 退回 60 秒規則（此刻已超過 60 秒）
+      loadedAt = Date.now();                            // 版本相同：60 秒內不再檢查
+      if (v.mtime !== loadedVersion) doReload();
+    }).catch(function () { checking = false; doReload(); });
+  }
   document.addEventListener('visibilitychange', reloadIfStale);
   window.addEventListener('focus', reloadIfStale);
-  // 測試用：允許在頁內調整 loadedAt
-  window.gitlabBrief = { setLoadedAt: function (t) { loadedAt = Number(t) || Date.now(); }, getLoadedAt: function () { return loadedAt; } };
+  // 測試用：允許在頁內調整 loadedAt、讀版本
+  window.gitlabBrief = {
+    setLoadedAt: function (t) { loadedAt = Number(t) || Date.now(); },
+    getLoadedAt: function () { return loadedAt; },
+    getLoadedVersion: function () { return loadedVersion; },
+    check: reloadIfStale
+  };
 
   function match(r) {
     if (state.project !== 'all' && r.projKey !== state.project) return false;
@@ -353,7 +394,7 @@
       '<h1 class="title">GitLab 個人相關 Issue 摘要報告</h1></header>';
 
     h += '<section class="meta">' +
-      '<div><span class="k">收集時間</span><span class="v">' + esc(D.collectedAt) + '</span><span class="k">頁面載入 ' + esc(LOADED_HM) + '</span></div>' +
+      '<div><span class="k">收集時間</span><span class="v">' + esc(D.collectedAt) + '</span><span class="k" id="loaded-hm">頁面載入 ' + esc(LOADED_HM) + (loadedVersionLocal ? ' · 檔案 ' + esc(loadedVersionLocal) : '') + '</span></div>' +
       '<div><span class="k">已結案下界</span><span class="v">' + esc(D.closedBoundText || (D.closedSince + '（近 ' + D.closedDays + ' 天）')) + '</span></div>' +
       '<div><span class="k">篩選規則</span><span class="v">' + esc(D.filterRule) + '</span></div>' +
       '</section>';
@@ -465,6 +506,15 @@
 
   document.title = 'GitLab 個人 Issue 摘要報告' + (D.date ? ' (' + D.date + ')' : '');
   render();
+  // 載入時問一次版本；拿到就記下 mtime，並在頁首補「· 檔案 HH:mm」
+  fetchVersion().then(function (v) {
+    if (v === null) return;
+    loadedVersion = v.mtime;
+    var m = /(\d{2}):(\d{2})(?::\d{2})?$/.exec(String(v.mtimeLocal || ''));
+    loadedVersionLocal = m ? m[1] + ':' + m[2] : '';
+    var el = document.getElementById('loaded-hm');
+    if (el && loadedVersionLocal) el.textContent = '頁面載入 ' + LOADED_HM + ' · 檔案 ' + loadedVersionLocal;
+  }).catch(function () {});
   if (SAVED_VIEW && typeof SAVED_VIEW.scrollY === 'number' && SAVED_VIEW.scrollY > 0) {
     try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (err) {}
     var restoreY = SAVED_VIEW.scrollY;
