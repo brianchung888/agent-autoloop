@@ -23,11 +23,11 @@
   **第四種收集來源（留言提到我）**：每個專案對每個 `mentionTags`（`@<username>`，來自 `GET /users/:id`）打
   `GET /projects/:id/search?scope=notes&search=@<username>&per_page=100`，分頁取完（上限 20 頁，達上限會在 log 說明
   結果可能不完整）。只留 `noteable_type == "Issue"`、`system` 非真、作者不在 `userIds`（自己提自己不算）、且
-  `created_at` 在 `collectedAt − 24h` 之內的 note；取其 `noteable_iid` 再打 `GET /projects/:id/issues/:iid` 併進聯集
-  （去重邏輯照舊）。**不論 state 都收**——24 小時內的提及是新鮮事，已結案也要看到，所以這條來源不受
+  `created_at` 在 `collectedAt − 3 天` 之內的 note；取其 `noteable_iid` 再打 `GET /projects/:id/issues/:iid` 併進聯集
+  （去重邏輯照舊）。**不論 state 都收**——3 天內的提及是新鮮事，已結案也要看到，所以這條來源不受
   `closedUpdatedDays` 限制，已結案的就照現有「近期已結案」區塊呈現。該 Issue 的 `reasons` 加 `"mention"`、flags 加 `M`。
   note 搜尋需專案 Reporter 以上權限；回 403/404（不支援或權限不足）時只記 log 跳過該專案、結論行附註，不讓整輪失敗。
-  快照每筆存 `mention_note` = 該 Issue 在 24 小時內提到使用者的**最新**一則 note 的 `author_id`/`created_at`/`body`（原文不截斷）。
+  快照每筆存 `mention_note` = 該 Issue 在 3 天內提到使用者的**最新**一則 note 的 `author_id`/`created_at`/`body`（原文不截斷）。
   **所有未結案 Issue**，以及 `updated_at` 在收集時間 48 小時內的已結案 Issue，都補查 notes（略過 system notes），
   同一筆只打一次，取得三個欄位：
     `last_note`      = 最後一則人寫留言的 `author_id`/`created_at`/`body`，**只在 `updated_at` ≤ 48 小時時才填**
@@ -49,7 +49,7 @@
 - 產出（照 SKILL.md）：時間一律轉快照 `timezone` 顯示 `YYYY-MM-DD HH:mm:ss.SSS`；依 sources.json 專案順序分組
   （空專案也列）；每專案分「近期已結案」「未結案」；各區塊依 updated_at 新到舊，同時刻以 path/project_id/iid 穩定排序；
   24h 判定只看 `last_note`（collectedAt − created_at ≤ 24h 且 author_id 不在 userIds 內）→ flags `R`、Markdown `🆕`、confirm `new`；
-  flags 順序 R/M/A/S/L/W（M = reasons 含 mention，即 24 小時內有人在留言提到我；W = web_url 含 `/-/work_items/`）。Markdown 版面比照 briefs/latest.md；
+  flags 順序 R/M/A/S/L/W（M = reasons 含 mention，即 3 天內有人在留言提到我；W = web_url 含 `/-/work_items/`）。Markdown 版面比照 briefs/latest.md；
   HTML 只替換 template.html 中 `<script id="data" type="application/json">` 的 JSON，其餘位元組不動；
   每筆 Issue 陣列第 5 元素 `noteKey`（confirm 項目同名欄位）= 最新非本人留言的 `created_at:author_id`，供模板
   「我處理過了」勾選狀態偵測新回應；本人（author_id 在 userIds 內）留言、無留言或 48h 外未補查都是 ""。
@@ -68,7 +68,7 @@
   要求回傳 JSON 陣列 [{ref, kind, note}]；本機驗證 ref 必須存在、kind 限三種、最多 8 筆；解析失敗或逾時 → 退回 --no-llm 規則並在 stderr 警告。
   --no-llm 規則：指派給我、未結案、`last_note` 存在且作者非本人（不在 userIds 內）；無則列「無」。
 - reasons 判定：assignees 任一在 userIds 內 → assignee；author 在 userIds 內 → author；labels 與追蹤標籤有交集 → label；
-  24 小時內有他人留言提到 `@<username>` → mention（REASON_TEXT「留言提到我」）。
+  3 天內有他人留言提到 `@<username>` → mention（REASON_TEXT「留言提到我」）。
 - 寫檔順序：先 `briefs/<id>.md`、`<id>.html`，再 tmp+rename 連續換上 latest.md、latest.html、<period>.md、<period>.html，
   最後才更新 seen.json。任何一步失敗不更新 seen.json，stdout 第一行印「没跑成：…」exit 1。
 - stdout 第一行是結論（做完了／没事可做／没跑成），其餘進度訊息走 stderr；不印 token。
@@ -127,7 +127,7 @@ BACKEND_BIN_DEFAULTS = {
 NOTE_WINDOW = timedelta(hours=48)   # 只用來決定 last_note（24h 旗標與 noteKey 的來源）填不填
 NOTES_PER_PAGE = "50"
 RECENT_WINDOW = timedelta(hours=24)
-MENTION_WINDOW = timedelta(hours=24)      # 留言提及只收 24 小時內的（第四種收集來源）
+MENTION_WINDOW = timedelta(days=3)        # 留言提及只收 3 天內的（第四種收集來源）
 MENTION_SEARCH_MAX_PAGES = 20             # scope=notes 搜尋的頁數上限，達到就在 log 說明可能不完整
 HTTP_TIMEOUT = 30
 MAX_ISSUES = 300   # 多標籤後聯集變大；512 KiB 快照上限仍是硬保護
@@ -317,11 +317,11 @@ def _search_mention_notes(gl: "GitLab", project: dict, tags: "list[str]", now: d
     """用 `GET /projects/:id/search?scope=notes` 找留言提到我的 Issue。
 
     回傳 (found, scanned, skipped)：
-      found   = {iid: 該 Issue 在 24 小時內提到使用者的「最新」一則 note（author_id/created_at/body 原文）}
+      found   = {iid: 該 Issue 在 3 天內提到使用者的「最新」一則 note（author_id/created_at/body 原文）}
       scanned = 搜尋 API 回傳的 note 總數（含被篩掉的）
       skipped = 該專案因 403/404（不支援或權限不足，note 搜尋需專案 Reporter 以上）被略過
     篩選：noteable_type == "Issue"、system 非真、作者不在 userIds（自己提自己不算）、
-    created_at 在 now − 24h 之內。分頁用 x-next-page，上限 MENTION_SEARCH_MAX_PAGES 頁。
+    created_at 在 now − 3 天之內。分頁用 x-next-page，上限 MENTION_SEARCH_MAX_PAGES 頁。
     """
     found: "dict[int, dict]" = {}
     scanned = 0
@@ -469,8 +469,8 @@ def collect(config: dict, token: str) -> dict:
                         raise RunError("GitLab API 分頁標頭無效")
                     page = following
 
-    # 第四種收集來源：用搜尋 API 找「留言提到我」的 Issue，只收提及留言在 24 小時內的。
-    # 不論 state 都收（24 小時內的提及是新鮮事，已結案也要看到），所以不受 closedUpdatedDays 限制。
+    # 第四種收集來源：用搜尋 API 找「留言提到我」的 Issue，只收提及留言在 3 天內的。
+    # 不論 state 都收（3 天內的提及是新鮮事，已結案也要看到），所以不受 closedUpdatedDays 限制。
     mention_skipped: "list[str]" = []
     mention_scanned = mention_issues = mention_added = 0
     if mention_tags:
@@ -524,7 +524,7 @@ def collect(config: dict, token: str) -> dict:
                 issues[key]["mention_note"] = note
                 mention_issues += 1
             mention_added += added_here
-            log(f"  搜尋提及：{project['path']} 掃 {scanned} 則 note → 24h 內 {len(found)} 個 Issue、額外抓 {added_here} 筆")
+            log(f"  搜尋提及：{project['path']} 掃 {scanned} 則 note → 3 天內 {len(found)} 個 Issue、額外抓 {added_here} 筆")
         log(f"  搜尋提及合計：{mention_scanned} 則 note、篩後 {mention_issues} 個 Issue、額外抓 {mention_added} 筆"
             + (f"；略過專案 {'、'.join(mention_skipped)}" if mention_skipped else ""))
 
@@ -687,7 +687,7 @@ def reason_text_of(row: dict) -> str:
 
 
 def flags_of(issue: dict, recent: bool) -> str:
-    """flags 順序 R/M/A/S/L/W：R=24h 內回應、M=留言提到我（24h 內）、A=我建立、S=指派給我、L=符合追蹤標籤、W=work item。"""
+    """flags 順序 R/M/A/S/L/W：R=24h 內回應、M=留言提到我（3 天內）、A=我建立、S=指派給我、L=符合追蹤標籤、W=work item。"""
     f = "R" if recent else ""
     if "mention" in issue["reasons"]:
         f += "M"
@@ -774,7 +774,7 @@ def build_model(snapshot: dict, sources: dict) -> dict:
         "mention_tags": [str(t) for t in as_list(snapshot.get("mentionTags")) if isinstance(t, str) and t.strip()],
         "uid_text": uid_text, "label_text": label_text,
         "filter_rule": (f"assignee∈{{{uid_text}}} 或 author∈{{{uid_text}}} 或 label∈{{{label_text}}}"
-                        " 或 24h 內留言提到我"),
+                        " 或 3 天內留言提到我"),
         "union_logic": (f"assignee IN ({uid_text}) OR author IN ({uid_text}) OR label IN "
                         f"({', '.join(json.dumps(lb, ensure_ascii=False) for lb in track_labels)})"),
         "host": snapshot["baseUrl"], "date": snapshot["period"],

@@ -469,7 +469,7 @@
       '<span><span class="k">時區</span>　' + esc(D.timezone) + '</span>' +
       '<span><span class="k">使用者 ID</span>　' + esc([].concat(D.userId == null ? [] : D.userId).join(', ')) + '</span>' +
       '<span><span class="k">追蹤標籤</span>　' + esc([].concat(D.trackLabel == null ? [] : D.trackLabel).join(', ')) + '</span>' +
-      '<span><span class="k">提到我比對</span>　' + esc(MENTION_RAW.join(', ') || '未取得帳號') + '（只收 24 小時內的提及）</span>' +
+      '<span><span class="k">提到我比對</span>　' + esc(MENTION_RAW.join(', ') || '未取得帳號') + '（只收 3 天內的提及）</span>' +
       '<span><span class="k">聯集邏輯</span>　' + esc(D.unionLogic) + '</span>' +
       '</section>';
 
