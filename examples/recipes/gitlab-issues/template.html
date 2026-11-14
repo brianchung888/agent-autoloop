@@ -108,6 +108,7 @@
   .row .mid { display: grid; gap: 6px; min-width: 0; }
   .row .mid a { font-size: 15px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
   .row .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .row .note { font-size: 12px; color: var(--color-neutral-700); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tag { font-size: 11px; padding: 2px 8px; letter-spacing: 0.02em; white-space: nowrap; }
   .tag.r { background: var(--color-accent); color: #fff; font-weight: 600; }
   .tag.o { background: var(--color-warn); color: var(--color-warn-text); font-weight: 600; }
@@ -228,9 +229,8 @@
   }
   function countOverdue() { return ROWS.filter(isOverdue).length; }
 
-  // 「提到我」比對用的 `@<username>` 清單（MENTION_RAW 顯示原文，MENTION_TAGS 轉小寫供比對）
+  // 搜尋留言用的 `@<username>` 清單（只供 Meta 顯示；「提到我」的判定在腳本端，旗標 M）
   var MENTION_RAW = [].concat(D.mentionTags == null ? [] : D.mentionTags).map(String).filter(function (t) { return !!t; });
-  var MENTION_TAGS = MENTION_RAW.map(function (t) { return t.toLowerCase(); });
 
   function toRow(p, a, closed) {
     var iid = a[0], title = a[1], upd = String(a[2] || ''), f = String(a[3] || '');
@@ -238,6 +238,7 @@
     var hitLabels = Array.isArray(a[5]) ? a[5].map(String) : [];   // 舊資料（5 元素）當 []
     var lastReplyAt = String(a[6] == null ? '' : a[6]);              // 舊資料（6 元素）當 ''
     var lastNoteBody = String(a[7] == null ? '' : a[7]);             // 舊資料（7 元素）當 ''
+    var mentionBody = String(a[8] == null ? '' : a[8]);              // 舊資料（8 元素）當 ''
     var parts = upd.split(' ');
     var r = {
       iid: iid, title: title, updated: upd, date: parts[0] || '', time: parts[1] || '', isClosed: closed,
@@ -245,15 +246,14 @@
       url: issueUrl(p.path, iid, f), key: p.path + '#' + iid, noteKey: noteKey,
       recent: f.indexOf('R') >= 0, author: f.indexOf('A') >= 0,
       assignee: f.indexOf('S') >= 0, label: f.indexOf('L') >= 0, hitLabels: hitLabels, lastReplyAt: lastReplyAt,
-      lastNoteBody: lastNoteBody
+      lastNoteBody: lastNoteBody, mentionBody: mentionBody
     };
-    // 「提到我」：最後一則留言內容含任一 `@<username>`（GitLab 帳號不分大小寫，兩邊都轉小寫比對）
-    var bodyLower = lastNoteBody.toLowerCase();
-    r.mentionsMe = !!bodyLower && MENTION_TAGS.some(function (t) { return bodyLower.indexOf(t) >= 0; });
+    // 「提到我」：旗標 M（腳本用搜尋 API 找到 24 小時內有他人留言提到 `@<username>`），不再比對留言內容
+    r.mentionsMe = f.indexOf('M') >= 0;
     r.hay = ['#' + iid, title, p.path, upd, closed ? 'closed' : 'opened',
       r.recent ? '24h 內回應' : '', r.author ? '我建立' : '',
       r.assignee ? '指派給我' : '', r.label ? '符合標籤' : '', hitLabels.join(' '),
-      lastNoteBody].join(' ').toLowerCase();
+      lastNoteBody, mentionBody].join(' ').toLowerCase();
     return r;
   }
 
@@ -420,6 +420,15 @@
       (count == null ? '' : '<span class="c">' + count + '</span>') + '</button>';
   }
 
+  // 「提到我」的筆在標題下方多一行提及留言摘要（純文字、單行、前 120 字）
+  function mentionLine(r) {
+    if (!r.mentionsMe || !r.mentionBody) return '';
+    var t = r.mentionBody.replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    if (t.length > 120) t = t.slice(0, 120) + '…';
+    return '<div class="note">' + esc(t) + '</div>';
+  }
+
   function rowHtml(r) {
     var tags = '';
     if (isOverdue(r)) tags += '<span class="tag o">逾期</span>';
@@ -437,7 +446,7 @@
       '<input type="checkbox" class="done" data-k="' + esc(r.key) + '" data-n="' + esc(r.noteKey) + '"' + (done ? ' checked' : '') + ' aria-label="我處理過了">' +
       '<span class="iid">#' + esc(r.iid) + '</span>' +
       '<div class="mid"><a href="' + esc(r.url) + '" target="_blank" rel="noopener" data-k="' + esc(r.key) + '" data-n="' + esc(r.noteKey) + '">' + esc(r.title) + '</a>' +
-      '<div class="tags">' + tags + '</div></div>' +
+      '<div class="tags">' + tags + '</div>' + mentionLine(r) + '</div>' +
       '<div class="when"><span class="d">' + esc(r.date) + '</span><span class="t">' + esc(r.time) + '</span></div>' +
       '</div>';
   }
@@ -460,7 +469,7 @@
       '<span><span class="k">時區</span>　' + esc(D.timezone) + '</span>' +
       '<span><span class="k">使用者 ID</span>　' + esc([].concat(D.userId == null ? [] : D.userId).join(', ')) + '</span>' +
       '<span><span class="k">追蹤標籤</span>　' + esc([].concat(D.trackLabel == null ? [] : D.trackLabel).join(', ')) + '</span>' +
-      '<span><span class="k">提到我比對</span>　' + esc(MENTION_RAW.join(', ') || '未取得帳號') + '</span>' +
+      '<span><span class="k">提到我比對</span>　' + esc(MENTION_RAW.join(', ') || '未取得帳號') + '（只收 24 小時內的提及）</span>' +
       '<span><span class="k">聯集邏輯</span>　' + esc(D.unionLogic) + '</span>' +
       '</section>';
 

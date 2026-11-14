@@ -20,6 +20,14 @@
 - 收集：標準庫 urllib，不依賴 requests。sources.json 的 `userId` 與 `label` 都可以是單值或陣列（內部一律正規化成
   `userIds`、`labels`）。每個專案 × {opened, closed} × {每個 userId 各一個 assignee、各一個 author、每個 label 各一個 labels}
   查詢聯集（GitLab `labels` 參數用逗號是 AND，所以每個標籤分開查再聯集）、分頁（x-next-page）、每頁 30 秒逾時、不跟隨重導向；closed 只取 `updated_after` 下界（UTC 日界 − closedUpdatedDays）。
+  **第四種收集來源（留言提到我）**：每個專案對每個 `mentionTags`（`@<username>`，來自 `GET /users/:id`）打
+  `GET /projects/:id/search?scope=notes&search=@<username>&per_page=100`，分頁取完（上限 20 頁，達上限會在 log 說明
+  結果可能不完整）。只留 `noteable_type == "Issue"`、`system` 非真、作者不在 `userIds`（自己提自己不算）、且
+  `created_at` 在 `collectedAt − 24h` 之內的 note；取其 `noteable_iid` 再打 `GET /projects/:id/issues/:iid` 併進聯集
+  （去重邏輯照舊）。**不論 state 都收**——24 小時內的提及是新鮮事，已結案也要看到，所以這條來源不受
+  `closedUpdatedDays` 限制，已結案的就照現有「近期已結案」區塊呈現。該 Issue 的 `reasons` 加 `"mention"`、flags 加 `M`。
+  note 搜尋需專案 Reporter 以上權限；回 403/404（不支援或權限不足）時只記 log 跳過該專案、結論行附註，不讓整輪失敗。
+  快照每筆存 `mention_note` = 該 Issue 在 24 小時內提到使用者的**最新**一則 note 的 `author_id`/`created_at`/`body`（原文不截斷）。
   **所有未結案 Issue**，以及 `updated_at` 在收集時間 48 小時內的已結案 Issue，都補查 notes（略過 system notes），
   同一筆只打一次，取得三個欄位：
     `last_note`      = 最後一則人寫留言的 `author_id`/`created_at`/`body`，**只在 `updated_at` ≤ 48 小時時才填**
@@ -41,7 +49,7 @@
 - 產出（照 SKILL.md）：時間一律轉快照 `timezone` 顯示 `YYYY-MM-DD HH:mm:ss.SSS`；依 sources.json 專案順序分組
   （空專案也列）；每專案分「近期已結案」「未結案」；各區塊依 updated_at 新到舊，同時刻以 path/project_id/iid 穩定排序；
   24h 判定只看 `last_note`（collectedAt − created_at ≤ 24h 且 author_id 不在 userIds 內）→ flags `R`、Markdown `🆕`、confirm `new`；
-  flags 順序 R/A/S/L/W（W = web_url 含 `/-/work_items/`）。Markdown 版面比照 briefs/latest.md；
+  flags 順序 R/M/A/S/L/W（M = reasons 含 mention，即 24 小時內有人在留言提到我；W = web_url 含 `/-/work_items/`）。Markdown 版面比照 briefs/latest.md；
   HTML 只替換 template.html 中 `<script id="data" type="application/json">` 的 JSON，其餘位元組不動；
   每筆 Issue 陣列第 5 元素 `noteKey`（confirm 項目同名欄位）= 最新非本人留言的 `created_at:author_id`，供模板
   「我處理過了」勾選狀態偵測新回應；本人（author_id 在 userIds 內）留言、無留言或 48h 外未補查都是 ""。
@@ -52,12 +60,15 @@
   模板「逾期」用它（沒有時退回 `updated`）。第 8 元素 `lastNoteBody` = `last_note.body` 原文（不截斷），沒有或
   未補查為 ""（來源是 `last_body_note`，所有未結案都有；已結案只有 48 小時內更新過的才有），
   供模板搜尋框搜留言內容與「提到我」篩選（`mentionTags` 任一字串出現在其中，不分大小寫）；
-  confirm 項目不帶第 6–8 這些欄位。`last_note`、`noteKey`、24h 旗標語意不變，仍只在 48h/24h 內判定，
+  第 9 元素 `mentionBody` = `mention_note.body` 原文（不截斷），沒有為 ""，供模板顯示提及留言摘要與搜尋；
+  模板的「提到我」篩選改讀 flags 的 `M`（不再比對 `lastNoteBody`）。
+  confirm 項目不帶第 6–9 這些欄位。`last_note`、`noteKey`、24h 旗標語意不變，仍只在 48h/24h 內判定，
   補查範圍也不變，所以 `noteKey` 不受此欄位影響。latest.md 不含留言內容。
 - 待我確認：一次 LLM 呼叫（透過 agentrunner exe），輸入未結案 Issue 的 ref／標題／描述前 800 字／指派／最後留言者是否本人，
   要求回傳 JSON 陣列 [{ref, kind, note}]；本機驗證 ref 必須存在、kind 限三種、最多 8 筆；解析失敗或逾時 → 退回 --no-llm 規則並在 stderr 警告。
   --no-llm 規則：指派給我、未結案、`last_note` 存在且作者非本人（不在 userIds 內）；無則列「無」。
-- reasons 判定：assignees 任一在 userIds 內 → assignee；author 在 userIds 內 → author；labels 與追蹤標籤有交集 → label。
+- reasons 判定：assignees 任一在 userIds 內 → assignee；author 在 userIds 內 → author；labels 與追蹤標籤有交集 → label；
+  24 小時內有他人留言提到 `@<username>` → mention（REASON_TEXT「留言提到我」）。
 - 寫檔順序：先 `briefs/<id>.md`、`<id>.html`，再 tmp+rename 連續換上 latest.md、latest.html、<period>.md、<period>.html，
   最後才更新 seen.json。任何一步失敗不更新 seen.json，stdout 第一行印「没跑成：…」exit 1。
 - stdout 第一行是結論（做完了／没事可做／没跑成），其餘進度訊息走 stderr；不印 token。
@@ -116,12 +127,14 @@ BACKEND_BIN_DEFAULTS = {
 NOTE_WINDOW = timedelta(hours=48)   # 只用來決定 last_note（24h 旗標與 noteKey 的來源）填不填
 NOTES_PER_PAGE = "50"
 RECENT_WINDOW = timedelta(hours=24)
+MENTION_WINDOW = timedelta(hours=24)      # 留言提及只收 24 小時內的（第四種收集來源）
+MENTION_SEARCH_MAX_PAGES = 20             # scope=notes 搜尋的頁數上限，達到就在 log 說明可能不完整
 HTTP_TIMEOUT = 30
 MAX_ISSUES = 300   # 多標籤後聯集變大；512 KiB 快照上限仍是硬保護
 MAX_SNAPSHOT_BYTES = 512 * 1024
 MAX_CONFIRM = 8
 CONFIRM_KINDS = ("待決議", "待確認", "待討論")
-REASON_TEXT = {"assignee": "指派給我", "author": "我建立", "label": "符合追蹤標籤"}
+REASON_TEXT = {"assignee": "指派給我", "author": "我建立", "label": "符合追蹤標籤", "mention": "留言提到我"}
 LIMIT_MSG = "超過摘要上限（300 個唯一 Issue / 512 KiB），請縮小專案或標籤範圍；不產生部分摘要"
 DATA_RE = re.compile(r'(<script id="data" type="application/json">)(.*?)(</script>)', re.S)
 
@@ -252,7 +265,8 @@ class GitLab:
         ctx = ssl.create_default_context(cafile=ca if ca else None)
         self.opener = urllib.request.build_opener(_NoRedirect(), urllib.request.HTTPSHandler(context=ctx))
 
-    def get(self, path: str, params: "dict | None" = None):
+    def get(self, path: str, params: "dict | None" = None, tolerate: "tuple[int, ...]" = ()):
+        """tolerate 列出的 HTTP 狀態碼不丟 RunError，回 (None, None) 讓呼叫端自行跳過。"""
         url = f"{self.base_url}/api/v4/{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
@@ -263,6 +277,8 @@ class GitLab:
                 nxt = resp.headers.get("x-next-page")
                 raw = resp.read()
         except urllib.error.HTTPError as e:
+            if e.code in tolerate:
+                return None, None
             raise RunError(f"GitLab API HTTP {e.code}；請檢查 token、專案權限或限流（不自動重試或重新導向）")
         except Exception:
             raise RunError("GitLab API 連線失敗或逾時（每頁 30 秒）；請檢查網路與公司 CA")
@@ -296,6 +312,63 @@ def _valid_issue(item, project_id: int) -> bool:
         return False
 
 
+def _search_mention_notes(gl: "GitLab", project: dict, tags: "list[str]", now: datetime,
+                          uid_set: "set[int]") -> "tuple[dict, int, bool]":
+    """用 `GET /projects/:id/search?scope=notes` 找留言提到我的 Issue。
+
+    回傳 (found, scanned, skipped)：
+      found   = {iid: 該 Issue 在 24 小時內提到使用者的「最新」一則 note（author_id/created_at/body 原文）}
+      scanned = 搜尋 API 回傳的 note 總數（含被篩掉的）
+      skipped = 該專案因 403/404（不支援或權限不足，note 搜尋需專案 Reporter 以上）被略過
+    篩選：noteable_type == "Issue"、system 非真、作者不在 userIds（自己提自己不算）、
+    created_at 在 now − 24h 之內。分頁用 x-next-page，上限 MENTION_SEARCH_MAX_PAGES 頁。
+    """
+    found: "dict[int, dict]" = {}
+    scanned = 0
+    for tag in tags:
+        page = 1
+        while True:
+            items, nxt = gl.get(f"projects/{project['id']}/search",
+                                {"scope": "notes", "search": tag, "per_page": "100", "page": str(page)},
+                                tolerate=(403, 404))
+            if items is None:
+                return found, scanned, True
+            if not isinstance(items, list):
+                raise RunError("GitLab API 搜尋回傳不是 Note 清單")
+            scanned += len(items)
+            for n in items:
+                if not isinstance(n, dict) or n.get("noteable_type") != "Issue" or n.get("system"):
+                    continue
+                iid = n.get("noteable_iid")
+                author = (n.get("author") or {}).get("id") if isinstance(n.get("author"), dict) else None
+                created = n.get("created_at")
+                if not _is_int(iid) or not _is_int(author) or author in uid_set or not isinstance(created, str):
+                    continue
+                try:
+                    ts = parse_ts(created)
+                except Exception:
+                    continue
+                if now - ts > MENTION_WINDOW:
+                    continue
+                old = found.get(iid)
+                if old is None or ts > parse_ts(old["created_at"]):
+                    found[iid] = {"author_id": author, "created_at": created,
+                                  "body": n["body"] if isinstance(n.get("body"), str) else ""}
+            if nxt == "" or (nxt is None and len(items) < 100):
+                break
+            if page >= MENTION_SEARCH_MAX_PAGES:
+                log(f"  ⚠ 搜尋 {project['path']} 的「{tag}」已達 {MENTION_SEARCH_MAX_PAGES} 頁上限，提及結果可能不完整")
+                break
+            try:
+                following = page + 1 if nxt is None else int(nxt)
+            except ValueError:
+                raise RunError("GitLab API 分頁標頭無效")
+            if following <= page:
+                raise RunError("GitLab API 分頁標頭無效")
+            page = following
+    return found, scanned, False
+
+
 def collect(config: dict, token: str) -> dict:
     """三種查詢聯集 + 分頁 + last_note，回傳未含 id/collectedAt 的 content 與 now。"""
     gl = GitLab(config["_baseUrl"], token)
@@ -322,6 +395,17 @@ def collect(config: dict, token: str) -> dict:
     issues: "dict[str, dict]" = {}
     user_ids, labels = config["userIds"], config["labels"]
     uid_set, label_set = set(user_ids), set(labels)
+    # 每個 userId 查一次 /users/:id 取 username，組成 `@<username>`：既供模板「提到我」顯示，也當搜尋字串
+    mention_tags: "list[str]" = []
+    for uid in user_ids:
+        try:
+            user, _ = gl.get(f"users/{uid}")
+            name = user.get("username") if isinstance(user, dict) else None
+            if isinstance(name, str) and name.strip():
+                mention_tags.append("@" + name.strip())
+        except Exception:
+            continue
+    log(f"  提到我比對帳號：{'、'.join(mention_tags) or '未取得'}")
     # 每個 userId 各一個 assignee_id / author_id；每個 label 各一個 labels=<單一標籤>（逗號在 GitLab 是 AND，所以分開查再聯集）
     filters = ([{"assignee_id": str(u)} for u in user_ids]
                + [{"author_id": str(u)} for u in user_ids]
@@ -385,6 +469,65 @@ def collect(config: dict, token: str) -> dict:
                         raise RunError("GitLab API 分頁標頭無效")
                     page = following
 
+    # 第四種收集來源：用搜尋 API 找「留言提到我」的 Issue，只收提及留言在 24 小時內的。
+    # 不論 state 都收（24 小時內的提及是新鮮事，已結案也要看到），所以不受 closedUpdatedDays 限制。
+    mention_skipped: "list[str]" = []
+    mention_scanned = mention_issues = mention_added = 0
+    if mention_tags:
+        for project in projects:
+            found, scanned, skipped = _search_mention_notes(gl, project, mention_tags, now, uid_set)
+            mention_scanned += scanned
+            if skipped:
+                mention_skipped.append(project["path"])
+                log(f"  搜尋提及：{project['path']} HTTP 403/404（note 搜尋需 Reporter 以上），略過該專案")
+                continue
+            added_here = 0
+            for iid in sorted(found):
+                note = found[iid]
+                key = f"{project['id']}:{iid}"
+                if key not in issues:
+                    item, _ = gl.get(f"projects/{project['id']}/issues/{iid}", tolerate=(403, 404))
+                    if item is None:
+                        continue
+                    if not _valid_issue(item, project["id"]):
+                        raise RunError("GitLab API Issue 欄位格式錯誤")
+                    link = urllib.parse.urlsplit(item.get("web_url") or "")
+                    if link.scheme not in ("https", "http") or link.username or link.password:
+                        raise RunError("GitLab API Issue 連結格式錯誤")
+                    reasons = []
+                    if any(a["id"] in uid_set for a in item["assignees"]):
+                        reasons.append("assignee")
+                    if item["author"]["id"] in uid_set:
+                        reasons.append("author")
+                    if label_set & set(item["labels"]):
+                        reasons.append("label")
+                    reasons.append("mention")
+                    issues[key] = {
+                        "project_id": item["project_id"],
+                        "project": project["path"],
+                        "iid": item["iid"],
+                        "title": item["title"],
+                        "description": item["description"],
+                        "web_url": item["web_url"],
+                        "state": item["state"],
+                        "updated_at": item["updated_at"],
+                        "author": {"id": item["author"]["id"]},
+                        "assignees": sorted(({"id": a["id"]} for a in item["assignees"]), key=lambda a: a["id"]),
+                        "labels": sorted(item["labels"]),
+                        "reasons": reasons,
+                    }
+                    added_here += 1
+                    if len(issues) > MAX_ISSUES:
+                        raise RunError(LIMIT_MSG)
+                elif "mention" not in issues[key]["reasons"]:
+                    issues[key]["reasons"].append("mention")
+                issues[key]["mention_note"] = note
+                mention_issues += 1
+            mention_added += added_here
+            log(f"  搜尋提及：{project['path']} 掃 {scanned} 則 note → 24h 內 {len(found)} 個 Issue、額外抓 {added_here} 筆")
+        log(f"  搜尋提及合計：{mention_scanned} 則 note、篩後 {mention_issues} 個 Issue、額外抓 {mention_added} 筆"
+            + (f"；略過專案 {'、'.join(mention_skipped)}" if mention_skipped else ""))
+
     # 所有未結案 Issue + 48h 內更新的已結案 Issue 都補查 notes（略過 system notes），一筆只打一次：
     #   last_note      ← 只在 age ≤ 48h 時填（維持原語意，驅動 24h 旗標與 noteKey，放寬不可影響勾選狀態）
     #   last_other_note← 所有未結案都填（最後一則非本人留言，供「逾期」判定）
@@ -425,18 +568,6 @@ def collect(config: dict, token: str) -> dict:
         note_count += 1
     log(f"  收集：{len(projects)} 個專案、{len(issues)} 筆 Issue、補查 notes {note_count} 筆")
 
-    # 每個 userId 查一次 /users/:id 取 username，組成 `@<username>` 供模板「提到我」比對；取不到就略過該筆
-    mention_tags: "list[str]" = []
-    for uid in user_ids:
-        try:
-            user, _ = gl.get(f"users/{uid}")
-            name = user.get("username") if isinstance(user, dict) else None
-            if isinstance(name, str) and name.strip():
-                mention_tags.append("@" + name.strip())
-        except Exception:
-            continue
-    log(f"  提到我比對帳號：{'、'.join(mention_tags) or '未取得'}")
-
     content = {
         "period": period,
         "timezone": config["timezone"],
@@ -449,6 +580,8 @@ def collect(config: dict, token: str) -> dict:
         "updatedAfter": updated_after,
         "issues": sorted(issues.values(), key=lambda i: (i["project_id"], i["iid"])),
     }
+    if mention_skipped:
+        config["_mentionSkipped"] = mention_skipped
     return content, now
 
 
@@ -522,6 +655,15 @@ def last_note_body_of(issue: dict) -> str:
     return body if isinstance(body, str) else ""
 
 
+def mention_body_of(issue: dict) -> str:
+    """HTML #data 第 9 欄 `mentionBody`：`mention_note.body` 原文（不截斷）；沒有為空字串。"""
+    mn = issue.get("mention_note")
+    if not isinstance(mn, dict):
+        return ""
+    body = mn.get("body")
+    return body if isinstance(body, str) else ""
+
+
 def note_key_of(issue: dict, user_ids: "set[int]") -> str:
     """HTML #data 第 5 欄：最新「非本人」留言指紋 `created_at:author_id`；本人留言、沒留言或 48h 外未補查都回空字串。"""
     ln = issue.get("last_note")
@@ -545,7 +687,10 @@ def reason_text_of(row: dict) -> str:
 
 
 def flags_of(issue: dict, recent: bool) -> str:
+    """flags 順序 R/M/A/S/L/W：R=24h 內回應、M=留言提到我（24h 內）、A=我建立、S=指派給我、L=符合追蹤標籤、W=work item。"""
     f = "R" if recent else ""
+    if "mention" in issue["reasons"]:
+        f += "M"
     if "author" in issue["reasons"]:
         f += "A"
     if "assignee" in issue["reasons"]:
@@ -603,6 +748,7 @@ def build_model(snapshot: dict, sources: dict) -> dict:
             "updated_local": fmt_local(i["updated_at"], tz),
             "last_reply_local": last_reply_local_of(i, tz),
             "last_note_body": last_note_body_of(i),
+            "mention_body": mention_body_of(i),
             "name": i["project"].split("/")[-1],
             "ref": f"{i['project'].split('/')[-1]}#{i['iid']}",
             "hit_labels": [l for l in track_labels if l in set(i["labels"])],
@@ -627,7 +773,8 @@ def build_model(snapshot: dict, sources: dict) -> dict:
         "user_ids": user_ids, "uid_set": uid_set, "labels": track_labels,
         "mention_tags": [str(t) for t in as_list(snapshot.get("mentionTags")) if isinstance(t, str) and t.strip()],
         "uid_text": uid_text, "label_text": label_text,
-        "filter_rule": f"assignee∈{{{uid_text}}} 或 author∈{{{uid_text}}} 或 label∈{{{label_text}}}",
+        "filter_rule": (f"assignee∈{{{uid_text}}} 或 author∈{{{uid_text}}} 或 label∈{{{label_text}}}"
+                        " 或 24h 內留言提到我"),
         "union_logic": (f"assignee IN ({uid_text}) OR author IN ({uid_text}) OR label IN "
                         f"({', '.join(json.dumps(lb, ensure_ascii=False) for lb in track_labels)})"),
         "host": snapshot["baseUrl"], "date": snapshot["period"],
@@ -636,6 +783,7 @@ def build_model(snapshot: dict, sources: dict) -> dict:
         "by_ref": {r["ref"]: r for r in rows},
         "n_open": sum(len(p["open"]) for p in projects),
         "n_closed": sum(len(p["closed"]) for p in projects),
+        "n_mention": sum(1 for r in rows if "mention" in r["reasons"]),
     }
 
 
@@ -842,7 +990,7 @@ def render_md(model: dict, confirm: "list[dict]", work_dir: Path) -> str:
          f"- **追蹤標籤**：{model['label_text']}",
          f"- **篩選條件（聯集）**：`{model['union_logic']}`",
          f"- **已結案篩選下界**：{model['closed_since_local']} ({L})（近 {model['days']} 天）",
-         f"- **總計**：未結案 {model['n_open']} 筆、近期已結案 {model['n_closed']} 筆",
+         f"- **總計**：未結案 {model['n_open']} 筆、近期已結案 {model['n_closed']} 筆、提到我 {model['n_mention']} 筆",
          "", "### 各專案統計"]
     for p in model["projects"]:
         tail = "（本次可見範圍沒有符合項目）" if not p["open"] and not p["closed"] else ""
@@ -900,8 +1048,8 @@ def render_html(model: dict, confirm: "list[dict]", template: str) -> str:
         "confirm": [{k: v for k, v in c.items() if k != "_row"} for c in confirm],
         "projects": [{
             "key": p["key"], "path": p["path"], "id": p["id"],
-            "open": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"], r["last_reply_local"], r["last_note_body"]] for r in p["open"]],
-            "closed": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"], r["last_reply_local"], r["last_note_body"]] for r in p["closed"]],
+            "open": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"], r["last_reply_local"], r["last_note_body"], r["mention_body"]] for r in p["open"]],
+            "closed": [[r["iid"], r["title"], r["updated_local"], r["flags"], r["note_key"], r["hit_labels"], r["last_reply_local"], r["last_note_body"], r["mention_body"]] for r in p["closed"]],
         } for p in model["projects"]],
     }
     m = DATA_RE.search(template)
@@ -914,7 +1062,7 @@ def render_html(model: dict, confirm: "list[dict]", template: str) -> str:
 # ====== 通知回執 ======
 
 def build_notice(model: dict, confirm: "list[dict]", sid: str, work_dir: Path) -> dict:
-    t = [f"【總覽】未結案 {model['n_open']} 筆、近期已結案 {model['n_closed']} 筆"]
+    t = [f"【總覽】未結案 {model['n_open']} 筆、近期已結案 {model['n_closed']} 筆、提到我 {model['n_mention']} 筆"]
     t += [f"- {p['key']}: 未結案 {len(p['open'])} / 已結案 {len(p['closed'])}" for p in model["projects"]]
     closed = sorted((r for p in model["projects"] for r in p["closed"]), key=sort_key)
     if closed:
@@ -1006,7 +1154,8 @@ def main() -> int:
         model = build_model(snapshot, sources)
 
         if args.dry_run:
-            print(f"做完了（dry-run）：快照 {sid}，未結案 {model['n_open']} 筆、近期已結案 {model['n_closed']} 筆；未叫 LLM、未寫 briefs")
+            print(f"做完了（dry-run）：快照 {sid}，未結案 {model['n_open']} 筆、近期已結案 {model['n_closed']} 筆、"
+                  f"提到我 {model['n_mention']} 筆；未叫 LLM、未寫 briefs")
             print(f"收集時間：{model['collected_local']} ({model['tzlabel']})")
             for p in model["projects"]:
                 nr = sum(r["recent"] for r in p["open"] + p["closed"])
@@ -1050,8 +1199,11 @@ def main() -> int:
         print(f"没跑成：{type(e).__name__}: {e}")
         return 1
 
-    print(f"做完了：快照 {sid}，未結案 {model['n_open']} 筆、近期已結案 {model['n_closed']} 筆、待我確認 {len(confirm)} 筆"
-          f" → {(briefs / 'latest.html').as_posix()}")
+    skipped = sources.get("_mentionSkipped") or []
+    print(f"做完了：快照 {sid}，未結案 {model['n_open']} 筆、近期已結案 {model['n_closed']} 筆、"
+          f"提到我 {model['n_mention']} 筆、待我確認 {len(confirm)} 筆"
+          + (f"（留言搜尋略過 {'、'.join(skipped)}：權限不足）" if skipped else "")
+          + f" → {(briefs / 'latest.html').as_posix()}")
     if args.autoloop:
         receipt = {"notice": [build_notice(model, confirm, sid, work_dir)]}
         print("\n```agent-autoloop\n" + json.dumps(receipt, ensure_ascii=False) + "\n```")
