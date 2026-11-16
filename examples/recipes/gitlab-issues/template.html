@@ -450,6 +450,8 @@
     return { filtering: filtering, shown: rows.length, rows: rows };
   }
 
+  function countBy(pred) { return ROWS.filter(pred).length; }
+
   function btn(key, val, label, count) {
     var active = state[key] === val;
     return '<button type="button" data-key="' + key + '" data-val="' + esc(val) + '" aria-pressed="' +
@@ -558,10 +560,12 @@
       btn('status', 'all', '全部') + btn('status', 'open', '未結案') + btn('status', 'closed', '近期已結案') +
       '</div>' +
       '<div class="fgroup"><span class="k">符合原因</span>' +
-      btn('reason', 'all', '全部') + btn('reason', 'recent', '24h 內回應') +
-      btn('reason', 'mention', '提到我', ROWS.filter(function (r) { return r.mentionsMe; }).length) +
-      btn('reason', 'author', '我建立') +
-      btn('reason', 'assignee', '指派給我') + btn('reason', 'overdue', '逾期', countOverdue()) +
+      btn('reason', 'all', '全部') +
+      btn('reason', 'recent', '24h 內回應', countBy(function (r) { return r.recent; })) +
+      btn('reason', 'mention', '提到我', countBy(function (r) { return r.mentionsMe; })) +
+      btn('reason', 'author', '我建立', countBy(function (r) { return r.author; })) +
+      btn('reason', 'assignee', '指派給我', countBy(function (r) { return r.assignee; })) +
+      btn('reason', 'overdue', '逾期', countOverdue()) +
       TRACK_LABELS.map(function (name) {
         return btn('reason', LABEL_PREFIX + name, name, ROWS.filter(function (r) { return r.hitLabels.indexOf(name) >= 0; }).length);
       }).join('') +
