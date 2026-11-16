@@ -248,7 +248,7 @@
       assignee: f.indexOf('S') >= 0, label: f.indexOf('L') >= 0, hitLabels: hitLabels, lastReplyAt: lastReplyAt,
       lastNoteBody: lastNoteBody, mentionBody: mentionBody
     };
-    // 「提到我」：旗標 M（腳本用搜尋 API 找到 24 小時內有他人留言提到 `@<username>`），不再比對留言內容
+    // 「提到我」：旗標 M（腳本端判定，涵蓋留言提及、Issue 描述提及與 GitLab 待辦），不再比對留言內容
     r.mentionsMe = f.indexOf('M') >= 0;
     r.hay = ['#' + iid, title, p.path, upd, closed ? 'closed' : 'opened',
       r.recent ? '24h 內回應' : '', r.author ? '我建立' : '',
@@ -469,7 +469,7 @@
       '<span><span class="k">時區</span>　' + esc(D.timezone) + '</span>' +
       '<span><span class="k">使用者 ID</span>　' + esc([].concat(D.userId == null ? [] : D.userId).join(', ')) + '</span>' +
       '<span><span class="k">追蹤標籤</span>　' + esc([].concat(D.trackLabel == null ? [] : D.trackLabel).join(', ')) + '</span>' +
-      '<span><span class="k">提到我比對</span>　' + esc(MENTION_RAW.join(', ') || '未取得帳號') + '（只收 3 天內的提及）</span>' +
+      '<span><span class="k">提到我比對</span>　' + esc(MENTION_RAW.join(', ') || '未取得帳號') + '（留言／描述提及與 GitLab 待辦，只收 ' + esc(D.mentionDays == null ? 7 : D.mentionDays) + ' 天內）</span>' +
       '<span><span class="k">聯集邏輯</span>　' + esc(D.unionLogic) + '</span>' +
       '</section>';
 

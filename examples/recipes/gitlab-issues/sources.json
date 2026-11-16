@@ -3,6 +3,8 @@
   "projects": ["your-group/your-first-repo", "your-group/your-second-repo"],
   "userId": [12345, 67890],
   "label": ["請替換為你的追蹤標籤", "第二個追蹤標籤"],
+  "scope": "instance",
   "closedUpdatedDays": 7,
+  "mentionDays": 7,
   "timezone": "Asia/Taipei"
 }

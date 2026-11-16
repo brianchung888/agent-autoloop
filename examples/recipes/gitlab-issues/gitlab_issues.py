@@ -18,16 +18,30 @@
 
 行為要點：
 - 收集：標準庫 urllib，不依賴 requests。sources.json 的 `userId` 與 `label` 都可以是單值或陣列（內部一律正規化成
-  `userIds`、`labels`）。每個專案 × {opened, closed} × {每個 userId 各一個 assignee、各一個 author、每個 label 各一個 labels}
-  查詢聯集（GitLab `labels` 參數用逗號是 AND，所以每個標籤分開查再聯集）、分頁（x-next-page）、每頁 30 秒逾時、不跟隨重導向；closed 只取 `updated_after` 下界（UTC 日界 − closedUpdatedDays）。
-  **第四種收集來源（留言提到我）**：每個專案對每個 `mentionTags`（`@<username>`，來自 `GET /users/:id`）打
+  `userIds`、`labels`）。六種來源聯集、分頁（x-next-page）、每頁 30 秒逾時、不跟隨重導向：
+  **來源 1–3（指派給我／我建立／符合追蹤標籤）**：{opened, closed} × {每個 userId 各一個 assignee_id、各一個
+  author_id、每個 label 各一個 labels}（GitLab `labels` 參數用逗號是 AND，所以每個標籤分開查再聯集）；
+  closed 只取 `updated_after` 下界（UTC 日界 − closedUpdatedDays）。`scope`（sources.json，預設 `"instance"`）決定打
+  全站 `GET /issues?scope=all`（不綁專案白名單，別人把我加進新專案或幫我貼追蹤標籤都收得到）還是舊行為
+  `"projects"`（只查列出的專案）。全站查到的新專案會自動補進快照的 `projects`（用 `GET /projects/:id` 取路徑，快取）。
+  **來源 4（描述提到我）**：`GET /search?scope=issues&search=@<username>`（`scope=projects` 時逐專案打），
+  只留 `updated_at` 在 `collectedAt − mentionDays` 之內的；`scope=notes` 只搜留言搜不到描述，所以這條必要。
+  reasons 加 `"desc-mention"`。
+  **來源 5（GitLab 待辦）**：`GET /todos?state=pending|done`，取 `target_type == "Issue"` 且 `created_at` 在
+  mentionDays 之內的，直接用 `target` 當 Issue 本體、`project.path_with_namespace` 當路徑（省一次 API）。
+  todos 涵蓋 mentioned / directly_addressed / assigned，不必逐專案、不需 Reporter 權限、沒有專案白名單。
+  reasons 加 `"todo"`。
+  **來源 6（留言提到我）**：每個**設定檔列出的**專案對每個 `mentionTags`（`@<username>`，來自 `GET /users/:id`）打
   `GET /projects/:id/search?scope=notes&search=@<username>&per_page=100`，分頁取完（上限 20 頁，達上限會在 log 說明
   結果可能不完整）。只留 `noteable_type == "Issue"`、`system` 非真、作者不在 `userIds`（自己提自己不算）、且
-  `created_at` 在 `collectedAt − 3 天` 之內的 note；取其 `noteable_iid` 再打 `GET /projects/:id/issues/:iid` 併進聯集
-  （去重邏輯照舊）。**不論 state 都收**——3 天內的提及是新鮮事，已結案也要看到，所以這條來源不受
-  `closedUpdatedDays` 限制，已結案的就照現有「近期已結案」區塊呈現。該 Issue 的 `reasons` 加 `"mention"`、flags 加 `M`。
+  `created_at` 在 `collectedAt − mentionDays` 之內的 note；取其 `noteable_iid` 再打 `GET /projects/:id/issues/:iid`
+  併進聯集（去重邏輯照舊）。白名單外專案的提及由來源 5 的 /todos 接手。
+  來源 4–6 **不論 state 都收**——被點名是新鮮事，已結案也要看到，所以不受 `closedUpdatedDays` 限制，
+  已結案的就照現有「近期已結案」區塊呈現；三者任一命中就 flags 加 `M`。
   note 搜尋需專案 Reporter 以上權限；回 403/404（不支援或權限不足）時只記 log 跳過該專案、結論行附註，不讓整輪失敗。
-  快照每筆存 `mention_note` = 該 Issue 在 3 天內提到使用者的**最新**一則 note 的 `author_id`/`created_at`/`body`（原文不截斷）。
+  來源 4、5 的欄位若不完整就跳過該筆（不讓整輪失敗），來源 1–3、6 仍是格式錯就報錯。
+  同一筆 Issue 被多個來源命中時，`reasons` 取聯集並依 REASON_ORDER 排序，其餘欄位取 `updated_at` 較新的那份。
+  快照每筆存 `mention_note` = 該 Issue 在 mentionDays 內提到使用者的**最新**一則 note 的 `author_id`/`created_at`/`body`（原文不截斷）。
   **所有未結案 Issue**，以及 `updated_at` 在收集時間 48 小時內的已結案 Issue，都補查 notes（略過 system notes），
   同一筆只打一次，取得三個欄位：
     `last_note`      = 最後一則人寫留言的 `author_id`/`created_at`/`body`，**只在 `updated_at` ≤ 48 小時時才填**
@@ -41,7 +55,8 @@
   每筆 notes 只取最新 50 則（sort=desc），若最後一則他人留言更早於此則 `last_other_note` 為 null（極少見，視同無他人留言）。
   另外每輪對每個 userId 打一次 `GET /users/:id` 取 `username`，組成快照欄位 `mentionTags`（`@<username>` 陣列，依
   userIds 順序；取不到的略過，可為空陣列），供 HTML「提到我」篩選比對留言內容。
-- 快照：欄位順序與 TS 版相同，惟 `userId`/`label` 改為陣列欄位 `userIds`/`labels`（讀舊快照時單值自動包成陣列）；
+- 快照：欄位順序與 TS 版相同，惟 `userId`/`label` 改為陣列欄位 `userIds`/`labels`（讀舊快照時單值自動包成陣列），
+  並多了 `mentionDays`、`scope` 兩個欄位；
   id = sha256(JSON.stringify(排除 id/collectedAt 的內容))，Python 用 json.dumps(separators=(",",":"), ensure_ascii=False) 重現。
   id 的計算來源含這兩個欄位，所以同一組 Issue 在改欄位名後會得到新 id（只多跑一輪，seen.json 既有 id 不受影響）。
   寫到 `gitlab-inputs/<id>.json`，已存在不覆寫。
@@ -49,7 +64,7 @@
 - 產出（照 SKILL.md）：時間一律轉快照 `timezone` 顯示 `YYYY-MM-DD HH:mm:ss.SSS`；依 sources.json 專案順序分組
   （空專案也列）；每專案分「近期已結案」「未結案」；各區塊依 updated_at 新到舊，同時刻以 path/project_id/iid 穩定排序；
   24h 判定只看 `last_note`（collectedAt − created_at ≤ 24h 且 author_id 不在 userIds 內）→ flags `R`、Markdown `🆕`、confirm `new`；
-  flags 順序 R/M/A/S/L/W（M = reasons 含 mention，即 3 天內有人在留言提到我；W = web_url 含 `/-/work_items/`）。Markdown 版面比照 briefs/latest.md；
+  flags 順序 R/M/A/S/L/W（M = reasons 含 mention / desc-mention / todo 任一，即 mentionDays 內被點名；W = web_url 含 `/-/work_items/`）。Markdown 版面比照 briefs/latest.md；
   HTML 只替換 template.html 中 `<script id="data" type="application/json">` 的 JSON，其餘位元組不動；
   每筆 Issue 陣列第 5 元素 `noteKey`（confirm 項目同名欄位）= 最新非本人留言的 `created_at:author_id`，供模板
   「我處理過了」勾選狀態偵測新回應；本人（author_id 在 userIds 內）留言、無留言或 48h 外未補查都是 ""。
@@ -68,7 +83,8 @@
   要求回傳 JSON 陣列 [{ref, kind, note}]；本機驗證 ref 必須存在、kind 限三種、最多 8 筆；解析失敗或逾時 → 退回 --no-llm 規則並在 stderr 警告。
   --no-llm 規則：指派給我、未結案、`last_note` 存在且作者非本人（不在 userIds 內）；無則列「無」。
 - reasons 判定：assignees 任一在 userIds 內 → assignee；author 在 userIds 內 → author；labels 與追蹤標籤有交集 → label；
-  3 天內有他人留言提到 `@<username>` → mention（REASON_TEXT「留言提到我」）。
+  mentionDays 內有他人留言提到 `@<username>` → mention（「留言提到我」）；標題/描述提到 `@<username>` → desc-mention
+  （「描述提到我」）；mentionDays 內有對應的 GitLab 待辦 → todo（「GitLab 待辦」）。
 - 寫檔順序：先 `briefs/<id>.md`、`<id>.html`，再 tmp+rename 連續換上 latest.md、latest.html、<period>.md、<period>.html，
   最後才更新 seen.json。任何一步失敗不更新 seen.json，stdout 第一行印「没跑成：…」exit 1。
 - stdout 第一行是結論（做完了／没事可做／没跑成），其餘進度訊息走 stderr；不印 token。
@@ -127,15 +143,19 @@ BACKEND_BIN_DEFAULTS = {
 NOTE_WINDOW = timedelta(hours=48)   # 只用來決定 last_note（24h 旗標與 noteKey 的來源）填不填
 NOTES_PER_PAGE = "50"
 RECENT_WINDOW = timedelta(hours=24)
-MENTION_WINDOW = timedelta(days=3)        # 留言提及只收 3 天內的（第四種收集來源）
-MENTION_SEARCH_MAX_PAGES = 20             # scope=notes 搜尋的頁數上限，達到就在 log 說明可能不完整
+DEFAULT_MENTION_DAYS = 7                  # sources.json 沒寫 mentionDays 時的預設（與 closedUpdatedDays 對齊）
+MENTION_SEARCH_MAX_PAGES = 20             # 搜尋 API 的頁數上限，達到就在 log 說明可能不完整
 HTTP_TIMEOUT = 30
-MAX_ISSUES = 300   # 多標籤後聯集變大；512 KiB 快照上限仍是硬保護
-MAX_SNAPSHOT_BYTES = 512 * 1024
+MAX_ISSUES = 400   # 全站查詢 + 描述提及 + 待辦後聯集又變大；1 MiB 快照上限仍是硬保護
+MAX_SNAPSHOT_BYTES = 1024 * 1024
 MAX_CONFIRM = 8
 CONFIRM_KINDS = ("待決議", "待確認", "待討論")
-REASON_TEXT = {"assignee": "指派給我", "author": "我建立", "label": "符合追蹤標籤", "mention": "留言提到我"}
-LIMIT_MSG = "超過摘要上限（300 個唯一 Issue / 512 KiB），請縮小專案或標籤範圍；不產生部分摘要"
+# reasons 的固定順序（合併多個來源時依此排，快照 id 才穩定）
+REASON_ORDER = ("assignee", "author", "label", "mention", "desc-mention", "todo")
+REASON_TEXT = {"assignee": "指派給我", "author": "我建立", "label": "符合追蹤標籤", "mention": "留言提到我",
+               "desc-mention": "描述提到我", "todo": "GitLab 待辦"}
+MENTION_REASONS = ("mention", "desc-mention", "todo")   # 「提到我」旗標 M 的來源
+LIMIT_MSG = "超過摘要上限（400 個唯一 Issue / 1 MiB），請縮小追蹤標籤或把 mentionDays 調小；不產生部分摘要"
 DATA_RE = re.compile(r'(<script id="data" type="application/json">)(.*?)(</script>)', re.S)
 
 
@@ -188,6 +208,15 @@ def load_sources(work_dir: Path) -> dict:
                        "closedUpdatedDays 須為 1–365；填寫 timezone")
     config["userIds"] = user_ids
     config["labels"] = labels
+    mention_days = config.get("mentionDays", DEFAULT_MENTION_DAYS)
+    if not isinstance(mention_days, int) or isinstance(mention_days, bool) or not 1 <= mention_days <= 365:
+        raise RunError("檢查 sources.json：mentionDays 須為 1–365（沒寫就是 7，代表提及/待辦只收幾天內的）")
+    config["mentionDays"] = mention_days
+    scope = config.get("scope", "instance")
+    if scope not in ("instance", "projects"):
+        raise RunError('檢查 sources.json：scope 只能是 "instance"（預設，指派/建立/標籤打全站查詢）'
+                       ' 或 "projects"（舊行為，只查列出的專案）')
+    config["_scope"] = scope
     if "project" in config and "projects" in config:
         raise RunError("project 與 projects 不能同時設定；多專案請使用 projects 陣列")
     given = config["projects"] if "projects" in config else [config.get("project")]
@@ -312,16 +341,16 @@ def _valid_issue(item, project_id: int) -> bool:
         return False
 
 
-def _search_mention_notes(gl: "GitLab", project: dict, tags: "list[str]", now: datetime,
+def _search_mention_notes(gl: "GitLab", project: dict, tags: "list[str]", after: datetime,
                           uid_set: "set[int]") -> "tuple[dict, int, bool]":
     """用 `GET /projects/:id/search?scope=notes` 找留言提到我的 Issue。
 
     回傳 (found, scanned, skipped)：
-      found   = {iid: 該 Issue 在 3 天內提到使用者的「最新」一則 note（author_id/created_at/body 原文）}
+      found   = {iid: 該 Issue 在 mentionDays 天內提到使用者的「最新」一則 note（author_id/created_at/body 原文）}
       scanned = 搜尋 API 回傳的 note 總數（含被篩掉的）
       skipped = 該專案因 403/404（不支援或權限不足，note 搜尋需專案 Reporter 以上）被略過
     篩選：noteable_type == "Issue"、system 非真、作者不在 userIds（自己提自己不算）、
-    created_at 在 now − 3 天之內。分頁用 x-next-page，上限 MENTION_SEARCH_MAX_PAGES 頁。
+    created_at 不早於 after（collectedAt − mentionDays）。分頁用 x-next-page，上限 MENTION_SEARCH_MAX_PAGES 頁。
     """
     found: "dict[int, dict]" = {}
     scanned = 0
@@ -348,7 +377,7 @@ def _search_mention_notes(gl: "GitLab", project: dict, tags: "list[str]", now: d
                     ts = parse_ts(created)
                 except Exception:
                     continue
-                if now - ts > MENTION_WINDOW:
+                if ts < after:
                     continue
                 old = found.get(iid)
                 if old is None or ts > parse_ts(old["created_at"]):
@@ -369,8 +398,83 @@ def _search_mention_notes(gl: "GitLab", project: dict, tags: "list[str]", now: d
     return found, scanned, False
 
 
+def _project_of(gl: "GitLab", cache: dict, pid: int, path_hint: "str | None" = None) -> "dict | None":
+    """以 project_id 取 {id, path}（快取）。有 path_hint（例如 /todos 回傳的 project）就直接用，
+    省一次 API；取不到或無權限回 None，由呼叫端跳過該筆。"""
+    if pid not in cache:
+        if isinstance(path_hint, str) and path_hint.strip():
+            cache[pid] = {"id": pid, "path": path_hint.strip()}
+        else:
+            value, _ = gl.get(f"projects/{pid}", tolerate=(403, 404))
+            if (not isinstance(value, dict) or not isinstance(value.get("path_with_namespace"), str)
+                    or not value["path_with_namespace"].strip()):
+                return None
+            cache[pid] = {"id": pid, "path": value["path_with_namespace"]}
+    return cache[pid]
+
+
+def _reasons_of(item: dict, uids: "set[int]", labs: "set[str]") -> "list[str]":
+    """assignees 任一在 userIds 內 → assignee；author 在 userIds 內 → author；labels 有交集 → label。"""
+    reasons = []
+    if any(a["id"] in uids for a in item["assignees"]):
+        reasons.append("assignee")
+    if item["author"]["id"] in uids:
+        reasons.append("author")
+    if labs & set(item["labels"]):
+        reasons.append("label")
+    return reasons
+
+
+def _merge_reasons(*groups) -> "list[str]":
+    """合併多組 reasons，依 REASON_ORDER 固定順序（顯示與快照 id 才穩定）。"""
+    have = set()
+    for g in groups:
+        have |= set(g)
+    return [r for r in REASON_ORDER if r in have]
+
+
+def _issue_row(item: dict, path: str, reasons: "list[str]") -> dict:
+    """快照裡一筆 Issue 的欄位（只留需要的，順序固定）。"""
+    return {
+        "project_id": item["project_id"],
+        "project": path,
+        "iid": item["iid"],
+        "title": item["title"],
+        "description": item["description"],
+        "web_url": item["web_url"],
+        "state": item["state"],
+        "updated_at": item["updated_at"],
+        "author": {"id": item["author"]["id"]},
+        "assignees": sorted(({"id": a["id"]} for a in item["assignees"]), key=lambda a: a["id"]),
+        "labels": sorted(item["labels"]),
+        "reasons": reasons,
+    }
+
+
+def _pages(gl: "GitLab", path: str, params: dict, max_pages: "int | None" = None):
+    """依 x-next-page 逐頁 yield；頁碼不前進或標頭無效就報錯（與原本逐處展開的邏輯相同）。"""
+    page = 1
+    while True:
+        items, nxt = gl.get(path, {**params, "per_page": "100", "page": str(page)})
+        if not isinstance(items, list):
+            raise RunError("GitLab API 回傳格式錯誤（預期清單）")
+        yield items
+        if nxt == "" or (nxt is None and len(items) < 100):
+            return
+        if max_pages is not None and page >= max_pages:
+            log(f"  ⚠ {path} 已達 {max_pages} 頁上限，結果可能不完整")
+            return
+        try:
+            following = page + 1 if nxt is None else int(nxt)
+        except ValueError:
+            raise RunError("GitLab API 分頁標頭無效")
+        if following <= page:
+            raise RunError("GitLab API 分頁標頭無效")
+        page = following
+
+
 def collect(config: dict, token: str) -> dict:
-    """三種查詢聯集 + 分頁 + last_note，回傳未含 id/collectedAt 的 content 與 now。"""
+    """六種收集來源聯集 + 分頁 + last_note，回傳未含 id/collectedAt 的 content 與 now。"""
     gl = GitLab(config["_baseUrl"], token)
     requested = sorted({p.strip() for p in config["_given"]})
     canonical = {}
@@ -380,7 +484,9 @@ def collect(config: dict, token: str) -> dict:
                 or not isinstance(value.get("path_with_namespace"), str) or not value["path_with_namespace"].strip()):
             raise RunError("GitLab API 專案欄位格式錯誤")
         canonical[value["id"]] = {"id": value["id"], "path": value["path_with_namespace"]}
-    projects = [canonical[k] for k in sorted(canonical)]
+    configured = [canonical[k] for k in sorted(canonical)]
+    # 顯示用專案清單：設定檔列的專案一定在（沒有符合項目也列），全站查詢發現的新專案會補進來
+    known = dict(canonical)
 
     now = datetime.now(timezone.utc)
     try:
@@ -391,10 +497,12 @@ def collect(config: dict, token: str) -> dict:
     day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
     updated_after_dt = day0 - timedelta(days=config["closedUpdatedDays"])
     updated_after = js_iso(updated_after_dt)
+    mention_after_dt = now - timedelta(days=config["mentionDays"])
 
     issues: "dict[str, dict]" = {}
     user_ids, labels = config["userIds"], config["labels"]
     uid_set, label_set = set(user_ids), set(labels)
+    instance = config["_scope"] == "instance"
     # 每個 userId 查一次 /users/:id 取 username，組成 `@<username>`：既供模板「提到我」顯示，也當搜尋字串
     mention_tags: "list[str]" = []
     for uid in user_ids:
@@ -406,76 +514,121 @@ def collect(config: dict, token: str) -> dict:
         except Exception:
             continue
     log(f"  提到我比對帳號：{'、'.join(mention_tags) or '未取得'}")
-    # 每個 userId 各一個 assignee_id / author_id；每個 label 各一個 labels=<單一標籤>（逗號在 GitLab 是 AND，所以分開查再聯集）
+
+    def take(item, extra_reason: "str | None" = None, state_hint: "str | None" = None,
+             path_hint: "str | None" = None, strict: bool = True) -> bool:
+        """驗證 → 算 reasons → 併進聯集（同鍵取 updated_at 較新的那份，reasons 永遠取聯集）。
+        回傳 True 表示這筆是新加入的。strict=False 給欄位可能不完整的來源（搜尋、/todos）用：
+        格式不符就跳過，不讓整輪失敗。"""
+        pid = item.get("project_id") if isinstance(item, dict) else None
+        if not _is_int(pid) or not _valid_issue(item, pid):
+            if strict:
+                raise RunError("GitLab API Issue 欄位格式錯誤")
+            return False
+        link = urllib.parse.urlsplit(item.get("web_url") or "")
+        if link.scheme not in ("https", "http") or link.username or link.password:
+            if strict:
+                raise RunError("GitLab API Issue 連結格式錯誤")
+            return False
+        reasons = _reasons_of(item, uid_set, label_set)
+        if extra_reason:
+            reasons = _merge_reasons(reasons, [extra_reason])
+        elif not reasons:
+            return False
+        if state_hint is not None and item["state"] != state_hint:
+            return False
+        upd = parse_ts(item["updated_at"])
+        if state_hint == "closed" and upd < updated_after_dt:
+            return False
+        project = _project_of(gl, known, pid, path_hint)
+        if project is None:
+            return False
+        key = f"{pid}:{item['iid']}"
+        old = issues.get(key)
+        if old is not None:
+            reasons = _merge_reasons(old["reasons"], reasons)
+            if upd < parse_ts(old["updated_at"]):
+                old["reasons"] = reasons      # 既有那份比較新：只補 reasons，其餘不動
+                return False
+        row = _issue_row(item, project["path"], reasons)
+        if old is not None:
+            for k, v in old.items():          # 保住 mention_note 之類後補上去的欄位
+                row.setdefault(k, v)
+        issues[key] = row
+        if len(issues) > MAX_ISSUES:
+            raise RunError(LIMIT_MSG)
+        return old is None
+
+    # 來源 1–3：指派給我 / 我建立 / 符合追蹤標籤。
+    # 每個 userId 各一個 assignee_id / author_id；每個 label 各一個 labels=<單一標籤>
+    # （逗號在 GitLab 是 AND，所以分開查再聯集）。
+    # scope=instance（預設）打全站 `GET /issues`，不綁專案白名單——別人把我加進新專案、幫我貼追蹤標籤都收得到；
+    # scope=projects 是舊行為，只查 sources.json 列的專案。
     filters = ([{"assignee_id": str(u)} for u in user_ids]
                + [{"author_id": str(u)} for u in user_ids]
                + [{"labels": lb} for lb in labels])
-    for project in projects:
+    endpoints = ["issues"] if instance else [f"projects/{p['id']}/issues" for p in configured]
+    for endpoint in endpoints:
         for state in ("opened", "closed"):
             for flt in filters:
-                page = 1
-                while True:
-                    params = {"scope": "all", "state": state, "per_page": "100", "order_by": "updated_at",
-                              "sort": "asc", "page": str(page)}
-                    if state == "closed":
-                        params["updated_after"] = updated_after
-                    params.update(flt)
-                    items, nxt = gl.get(f"projects/{project['id']}/issues", params)
-                    if not isinstance(items, list):
-                        raise RunError("GitLab API 回傳不是 Issue 清單")
+                params = {"scope": "all", "state": state, "order_by": "updated_at", "sort": "asc", **flt}
+                if state == "closed":
+                    params["updated_after"] = updated_after
+                for items in _pages(gl, endpoint, params):
                     for item in items:
-                        if not _valid_issue(item, project["id"]):
-                            raise RunError("GitLab API Issue 欄位格式錯誤")
-                        link = urllib.parse.urlsplit(item.get("web_url") or "")
-                        if link.scheme not in ("https", "http") or link.username or link.password:
-                            raise RunError("GitLab API Issue 連結格式錯誤")
-                        reasons = []
-                        if any(a["id"] in uid_set for a in item["assignees"]):
-                            reasons.append("assignee")
-                        if item["author"]["id"] in uid_set:
-                            reasons.append("author")
-                        if label_set & set(item["labels"]):
-                            reasons.append("label")
-                        upd = parse_ts(item["updated_at"])
-                        if (not reasons or item["state"] != state
-                                or (state == "closed" and upd < updated_after_dt)):
-                            continue
-                        key = f"{item['project_id']}:{item['iid']}"
-                        old = issues.get(key)
-                        if not old or upd >= parse_ts(old["updated_at"]):
-                            issues[key] = {
-                                "project_id": item["project_id"],
-                                "project": project["path"],
-                                "iid": item["iid"],
-                                "title": item["title"],
-                                "description": item["description"],
-                                "web_url": item["web_url"],
-                                "state": item["state"],
-                                "updated_at": item["updated_at"],
-                                "author": {"id": item["author"]["id"]},
-                                "assignees": sorted(({"id": a["id"]} for a in item["assignees"]), key=lambda a: a["id"]),
-                                "labels": sorted(item["labels"]),
-                                "reasons": reasons,
-                            }
-                        if len(issues) > MAX_ISSUES:
-                            raise RunError(LIMIT_MSG)
-                    if nxt == "" or (nxt is None and len(items) < 100):
-                        break
-                    try:
-                        following = page + 1 if nxt is None else int(nxt)
-                    except ValueError:
-                        raise RunError("GitLab API 分頁標頭無效")
-                    if following <= page:
-                        raise RunError("GitLab API 分頁標頭無效")
-                    page = following
+                        take(item, state_hint=state)
+    log(f"  個人關聯（{'全站' if instance else '指定專案'}）：{len(issues)} 筆")
 
-    # 第四種收集來源：用搜尋 API 找「留言提到我」的 Issue，只收提及留言在 3 天內的。
-    # 不論 state 都收（3 天內的提及是新鮮事，已結案也要看到），所以不受 closedUpdatedDays 限制。
+    # 第四種收集來源：Issue 標題/描述裡提到我。`scope=notes` 只搜留言、搜不到描述，所以另打 `scope=issues`；
+    # 不論 state 都收（被點名就是新鮮事），只看 updated_at 在 mentionDays 之內。
+    desc_added = desc_hits = 0
+    search_endpoints = ["search"] if instance else [f"projects/{p['id']}/search" for p in configured]
+    for tag in mention_tags:
+        for endpoint in search_endpoints:
+            for items in _pages(gl, endpoint, {"scope": "issues", "search": tag}, MENTION_SEARCH_MAX_PAGES):
+                for item in items:
+                    if not isinstance(item, dict) or not isinstance(item.get("updated_at"), str):
+                        continue
+                    try:
+                        if parse_ts(item["updated_at"]) < mention_after_dt:
+                            continue
+                    except Exception:
+                        continue
+                    desc_hits += 1
+                    if take(item, extra_reason="desc-mention", strict=False):
+                        desc_added += 1
+    if mention_tags:
+        log(f"  描述提及：{config['mentionDays']} 天內 {desc_hits} 筆、額外抓 {desc_added} 筆")
+
+    # 第五種收集來源：GitLab 待辦 /todos（action_name = mentioned / directly_addressed / assigned）。
+    # 不必逐專案、不需 Reporter 權限、沒有專案白名單，GitLab 認定該通知我的事都在這裡；
+    # 只收 mentionDays 之內建立的，state=done 的也收（看過不代表處理完）。
+    todo_added = todo_hits = 0
+    for state in ("pending", "done"):
+        for items in _pages(gl, "todos", {"state": state}):
+            for t in items:
+                if not isinstance(t, dict) or t.get("target_type") != "Issue":
+                    continue
+                try:
+                    if parse_ts(t["created_at"]) < mention_after_dt:
+                        continue
+                except Exception:
+                    continue
+                todo_hits += 1
+                proj = t.get("project")
+                hint = proj.get("path_with_namespace") if isinstance(proj, dict) else None
+                if take(t.get("target"), extra_reason="todo", path_hint=hint, strict=False):
+                    todo_added += 1
+    log(f"  GitLab 待辦：{config['mentionDays']} 天內 {todo_hits} 筆、額外抓 {todo_added} 筆")
+
+    # 第六種收集來源：用搜尋 API 找「留言提到我」的 Issue，只收提及留言在 mentionDays 之內的。
+    # 不論 state 都收，所以這條來源不受 closedUpdatedDays 限制，已結案的就照「近期已結案」區塊呈現。
+    # note 搜尋需專案 Reporter 以上，只跑 sources.json 列的專案；白名單外的提及由 /todos 接手。
     mention_skipped: "list[str]" = []
     mention_scanned = mention_issues = mention_added = 0
     if mention_tags:
-        for project in projects:
-            found, scanned, skipped = _search_mention_notes(gl, project, mention_tags, now, uid_set)
+        for project in configured:
+            found, scanned, skipped = _search_mention_notes(gl, project, mention_tags, mention_after_dt, uid_set)
             mention_scanned += scanned
             if skipped:
                 mention_skipped.append(project["path"])
@@ -487,46 +640,20 @@ def collect(config: dict, token: str) -> dict:
                 key = f"{project['id']}:{iid}"
                 if key not in issues:
                     item, _ = gl.get(f"projects/{project['id']}/issues/{iid}", tolerate=(403, 404))
-                    if item is None:
+                    if item is None or not take(item, extra_reason="mention", path_hint=project["path"]):
                         continue
-                    if not _valid_issue(item, project["id"]):
-                        raise RunError("GitLab API Issue 欄位格式錯誤")
-                    link = urllib.parse.urlsplit(item.get("web_url") or "")
-                    if link.scheme not in ("https", "http") or link.username or link.password:
-                        raise RunError("GitLab API Issue 連結格式錯誤")
-                    reasons = []
-                    if any(a["id"] in uid_set for a in item["assignees"]):
-                        reasons.append("assignee")
-                    if item["author"]["id"] in uid_set:
-                        reasons.append("author")
-                    if label_set & set(item["labels"]):
-                        reasons.append("label")
-                    reasons.append("mention")
-                    issues[key] = {
-                        "project_id": item["project_id"],
-                        "project": project["path"],
-                        "iid": item["iid"],
-                        "title": item["title"],
-                        "description": item["description"],
-                        "web_url": item["web_url"],
-                        "state": item["state"],
-                        "updated_at": item["updated_at"],
-                        "author": {"id": item["author"]["id"]},
-                        "assignees": sorted(({"id": a["id"]} for a in item["assignees"]), key=lambda a: a["id"]),
-                        "labels": sorted(item["labels"]),
-                        "reasons": reasons,
-                    }
                     added_here += 1
-                    if len(issues) > MAX_ISSUES:
-                        raise RunError(LIMIT_MSG)
                 elif "mention" not in issues[key]["reasons"]:
-                    issues[key]["reasons"].append("mention")
+                    issues[key]["reasons"] = _merge_reasons(issues[key]["reasons"], ["mention"])
                 issues[key]["mention_note"] = note
                 mention_issues += 1
             mention_added += added_here
-            log(f"  搜尋提及：{project['path']} 掃 {scanned} 則 note → 3 天內 {len(found)} 個 Issue、額外抓 {added_here} 筆")
+            log(f"  搜尋提及：{project['path']} 掃 {scanned} 則 note → {config['mentionDays']} 天內 "
+                f"{len(found)} 個 Issue、額外抓 {added_here} 筆")
         log(f"  搜尋提及合計：{mention_scanned} 則 note、篩後 {mention_issues} 個 Issue、額外抓 {mention_added} 筆"
             + (f"；略過專案 {'、'.join(mention_skipped)}" if mention_skipped else ""))
+
+    projects = [known[k] for k in sorted(known)]
 
     # 所有未結案 Issue + 48h 內更新的已結案 Issue 都補查 notes（略過 system notes），一筆只打一次：
     #   last_note      ← 只在 age ≤ 48h 時填（維持原語意，驅動 24h 旗標與 noteKey，放寬不可影響勾選狀態）
@@ -577,6 +704,8 @@ def collect(config: dict, token: str) -> dict:
         "labels": labels,
         "mentionTags": mention_tags,
         "closedUpdatedDays": config["closedUpdatedDays"],
+        "mentionDays": config["mentionDays"],
+        "scope": config["_scope"],
         "updatedAfter": updated_after,
         "issues": sorted(issues.values(), key=lambda i: (i["project_id"], i["iid"])),
     }
@@ -687,9 +816,9 @@ def reason_text_of(row: dict) -> str:
 
 
 def flags_of(issue: dict, recent: bool) -> str:
-    """flags 順序 R/M/A/S/L/W：R=24h 內回應、M=留言提到我（3 天內）、A=我建立、S=指派給我、L=符合追蹤標籤、W=work item。"""
+    """flags 順序 R/M/A/S/L/W：R=24h 內回應、M=提到我（留言/描述/待辦）、A=我建立、S=指派給我、L=符合追蹤標籤、W=work item。"""
     f = "R" if recent else ""
-    if "mention" in issue["reasons"]:
+    if any(r in issue["reasons"] for r in MENTION_REASONS):
         f += "M"
     if "author" in issue["reasons"]:
         f += "A"
@@ -733,6 +862,7 @@ def build_model(snapshot: dict, sources: dict) -> dict:
     except Exception:
         raise RunError(f"timezone 無效：{tzname}")
     collected = parse_ts(snapshot["collectedAt"])
+    mention_days = snapshot.get("mentionDays", sources.get("mentionDays", DEFAULT_MENTION_DAYS))
     user_ids = snapshot_user_ids(snapshot)
     track_labels = snapshot_labels(snapshot)
     uid_set = set(user_ids)
@@ -773,17 +903,19 @@ def build_model(snapshot: dict, sources: dict) -> dict:
         "user_ids": user_ids, "uid_set": uid_set, "labels": track_labels,
         "mention_tags": [str(t) for t in as_list(snapshot.get("mentionTags")) if isinstance(t, str) and t.strip()],
         "uid_text": uid_text, "label_text": label_text,
+        "mention_days": mention_days,
         "filter_rule": (f"assignee∈{{{uid_text}}} 或 author∈{{{uid_text}}} 或 label∈{{{label_text}}}"
-                        " 或 3 天內留言提到我"),
+                        f" 或 {mention_days} 天內留言/描述提到我 或 {mention_days} 天內的 GitLab 待辦"),
         "union_logic": (f"assignee IN ({uid_text}) OR author IN ({uid_text}) OR label IN "
-                        f"({', '.join(json.dumps(lb, ensure_ascii=False) for lb in track_labels)})"),
+                        f"({', '.join(json.dumps(lb, ensure_ascii=False) for lb in track_labels)})"
+                        f" OR mentioned_in(note, description) OR todo"),
         "host": snapshot["baseUrl"], "date": snapshot["period"],
         "projects": projects,
         "rows": rows,
         "by_ref": {r["ref"]: r for r in rows},
         "n_open": sum(len(p["open"]) for p in projects),
         "n_closed": sum(len(p["closed"]) for p in projects),
-        "n_mention": sum(1 for r in rows if "mention" in r["reasons"]),
+        "n_mention": sum(1 for r in rows if any(x in r["reasons"] for x in MENTION_REASONS)),
     }
 
 
@@ -1042,6 +1174,7 @@ def render_html(model: dict, confirm: "list[dict]", template: str) -> str:
         "unionLogic": model["union_logic"],
         "closedSince": model["closed_since"],
         "closedDays": model["days"],
+        "mentionDays": model["mention_days"],
         "closedBoundText": f"{model['closed_since']}（近 {model['days']} 天）",
         "hideEmptyProjects": False,
         "footer": f"由 Agent 自動化中台於 {model['collected_local']} ({L}) 自動生成 · 獨立自包含離線報告",
