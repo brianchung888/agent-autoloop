@@ -1,0 +1,27 @@
+From: Carol <carol@client.example>
+To: someone@example.com
+Cc: you@example.com
+Subject: =?utf-8?b?5pyD6K2w6KiY6YyE6IiH6ZmE5Lu2?=
+Date: Sun, 08 Nov 2026 11:00:00 +0800
+Message-ID: <c1@client.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============1571949510714578014=="
+X-Test-Flags:
+X-Test-Labels:
+X-Test-Internaldate: 08-Nov-2026 11:00:00 +0800
+
+--===============1571949510714578014==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+附上會議記錄。
+
+--===============1571949510714578014==
+Content-Type: text/csv
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="notes.csv"
+MIME-Version: 1.0
+
+Y29sMSxjb2wyCjEsMgo=
+
+--===============1571949510714578014==--

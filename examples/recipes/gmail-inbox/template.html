@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gmail 收件匣摘要報告</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath fill='%23fff' d='M6 12h36v26H6z'/%3E%3Cpath fill='%234285f4' d='M4 14v22a2 2 0 002 2h6V20L4 14z'/%3E%3Cpath fill='%2334a853' d='M36 38h6a2 2 0 002-2V14l-8 6v18z'/%3E%3Cpath fill='%23fbbc04' d='M4 14l8 6 12 9 12-9 8-6-4-3-16 12L8 11l-4 3z'/%3E%3Cpath fill='%23ea4335' d='M12 38V20l12 9 12-9v18H12z'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap">
+<style>
+  :root {
+    --color-bg: #f3f2f2;
+    --color-surface: #eae9e9;
+    --color-text: #201e1d;
+    --color-accent: #ec3013;
+    --color-divider: rgba(32, 30, 29, 0.4);
+    --color-neutral-100: #f8f4f4;
+    --color-neutral-200: #eae7e7;
+    --color-neutral-300: #d7d3d3;
+    --color-neutral-700: #605d5d;
+    --color-neutral-800: #444141;
+    --color-neutral-900: #2d2b2b;
+    --color-accent-100: #fff2ef;
+    --color-accent-700: #ae1800;
+    --color-warn: #f2b53a;
+    --color-warn-text: #3a2a00;
+    --font-body: "Archivo", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-body), "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  }
+  h1, h2, h3 { font-family: var(--font-body), "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; font-weight: 800; }
+  a { color: var(--color-text); text-decoration: none; }
+  a:hover { color: var(--color-accent-700); text-decoration: underline; text-underline-offset: 3px; }
+
+  .page { max-width: 1200px; margin: 0 auto; padding: 40px 24px 64px; }
+
+  .head { display: grid; gap: 24px; padding-bottom: 24px; border-bottom: 2px solid var(--color-text); }
+  .kicker { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+  .kicker i { width: 12px; height: 12px; background: var(--color-accent); display: block; }
+  .title { margin: 0; font-size: clamp(30px, 5vw, 52px); line-height: 1.05; font-weight: 800; letter-spacing: -0.01em; text-wrap: balance; }
+
+  .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); border-bottom: 1px solid var(--color-divider); }
+  .meta > div { padding: 16px; display: grid; gap: 4px; border-left: 1px solid var(--color-divider); }
+  .meta > div:first-child { padding-left: 0; border-left: 0; }
+  .meta .k { font-size: 12px; color: var(--color-neutral-700); }
+  .meta .v { font-size: 14px; font-weight: 600; }
+
+  .config { display: flex; flex-wrap: wrap; gap: 8px 28px; padding: 12px 0; font-size: 13px; color: var(--color-neutral-800); border-bottom: 2px solid var(--color-text); }
+  .config .k { color: var(--color-neutral-700); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); border-bottom: 2px solid var(--color-text); }
+  .stats > div { padding: 24px; display: grid; gap: 6px; border-left: 1px solid var(--color-divider); }
+  .stats > div:first-child { padding-left: 0; border-left: 0; }
+  .stats .k { font-size: 13px; font-weight: 600; }
+  .stats .n { font-size: 64px; line-height: 1; font-weight: 800; }
+  .stats .n.accent { color: var(--color-accent); }
+  .stats .sub { font-size: 13px; color: var(--color-neutral-700); }
+
+  .sect { margin-top: 48px; }
+  .sect-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-bottom: 12px; }
+  .sect-head.ruled { border-bottom: 2px solid var(--color-text); }
+  .sect-head h2 { margin: 0; font-size: 24px; font-weight: 800; }
+  .sect-head .count { font-size: 13px; font-weight: 600; }
+
+  ol.confirm { list-style: none; margin: 0; padding: 0; }
+  ol.confirm > li { display: grid; grid-template-columns: 20px 48px minmax(0, 1fr); gap: 0 16px; padding: 20px 0; border-bottom: 1px solid var(--color-divider); }
+  ol.confirm > li:last-child { border-bottom: 2px solid var(--color-text); }
+  ol.confirm .idx { font-size: 28px; font-weight: 800; line-height: 1; }
+  ol.confirm .idx.accent { color: var(--color-accent); }
+  ol.confirm .body { display: grid; gap: 8px; }
+  ol.confirm .line1 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--color-neutral-700); }
+  ol.confirm .ref { font-weight: 600; color: var(--color-text); }
+  ol.confirm .ttl { font-size: 17px; font-weight: 700; line-height: 1.4; }
+  ol.confirm p { margin: 0; font-size: 14px; line-height: 1.7; color: var(--color-neutral-900); text-wrap: pretty; }
+  ol.confirm p strong { color: var(--color-accent-700); }
+  ol.confirm > li.done .idx, ol.confirm > li.done .line1, ol.confirm > li.done .ref, ol.confirm > li.done .ttl, ol.confirm > li.done p, ol.confirm > li.done p strong { color: var(--color-neutral-700); }
+  ol.confirm > li.done .ttl { text-decoration: line-through; }
+  input.done { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--color-text); cursor: pointer; }
+  .new { background: var(--color-accent); color: #fff; font-weight: 800; padding: 2px 8px; letter-spacing: 0.06em; }
+  code { background: var(--color-neutral-200); padding: 0 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  .filters { position: sticky; top: 0; z-index: 20; background: var(--color-bg); border-top: 2px solid var(--color-text); border-bottom: 1px solid var(--color-divider); padding: 12px 0; display: grid; gap: 10px; }
+  .filters input[type="text"] { font: inherit; min-height: 44px; font-size: 15px; padding: 8px 14px; background: #fff; border: 1px solid var(--color-divider); color: var(--color-text); width: 100%; }
+  .filters input[type="text"]:focus-visible { border-color: var(--color-accent); outline: none; }
+  .frow { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; }
+  .fgroup { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .fgroup > .k { font-size: 12px; color: var(--color-neutral-700); margin-right: 4px; }
+  .fgroup button { font: inherit; font-size: 13px; padding: 5px 12px; border: 1px solid var(--color-divider); background: transparent; color: var(--color-text); cursor: pointer; display: flex; gap: 8px; }
+  .fgroup button:hover { background: var(--color-accent-100); border-color: var(--color-accent); }
+  .fgroup button[aria-pressed="true"] { font-weight: 600; border-color: var(--color-text); background: var(--color-text); color: var(--color-bg); }
+  .fgroup button .c { color: var(--color-neutral-700); }
+  .fgroup button[aria-pressed="true"] .c { color: var(--color-bg); }
+
+  .empty-all { padding: 48px 0; font-size: 15px; color: var(--color-neutral-700); border-bottom: 1px solid var(--color-divider); }
+
+  .list { border-bottom: 2px solid var(--color-text); }
+  .list .row:first-child { border-top: 0; }
+
+  .row { display: grid; grid-template-columns: 20px 64px minmax(0, 1fr) minmax(120px, auto); gap: 4px 16px; padding: 12px; border-top: 1px solid var(--color-neutral-300); align-items: start; }
+  .row:hover { background: var(--color-neutral-100); }
+  .row .iid { font-size: 13px; font-weight: 600; color: var(--color-neutral-700); padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .row .mid { display: grid; gap: 6px; min-width: 0; }
+  .row .mid a { font-size: 15px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+  .row .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .row .note { font-size: 12px; color: var(--color-neutral-700); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tag { font-size: 11px; padding: 2px 8px; letter-spacing: 0.02em; white-space: nowrap; }
+  .tag.r { background: var(--color-accent); color: #fff; font-weight: 600; }
+  .tag.o { background: var(--color-warn); color: var(--color-warn-text); font-weight: 600; }
+  .tag.c { background: var(--color-neutral-300); color: var(--color-neutral-900); }
+  .tag.a { border: 1px solid var(--color-text); color: var(--color-text); }
+  .tag.s { background: var(--color-text); color: var(--color-bg); }
+  .tag.l { background: var(--color-neutral-200); color: var(--color-neutral-800); }
+  .tag.p { background: var(--color-neutral-200); color: var(--color-neutral-800); font-weight: 600; }
+  .tag.m { background: var(--color-accent-100); color: var(--color-accent-700); border: 1px solid var(--color-accent-700); font-weight: 600; }
+  .row .when { display: grid; justify-items: end; text-align: right; font-variant-numeric: tabular-nums; padding-top: 2px; }
+  .row .when .d { font-size: 13px; font-weight: 600; }
+  .row .when .t { font-size: 12px; color: var(--color-neutral-700); }
+  .row.recent .when .d { font-weight: 700; color: var(--color-accent-700); }
+  .row.recent .when .t { color: var(--color-accent-700); }
+  .row.done .iid, .row.done .mid a, .row.done .when .d, .row.done .when .t { color: var(--color-neutral-700); }
+  .row.done .mid a { text-decoration: line-through; font-weight: 400; }
+
+  footer { margin-top: 56px; padding-top: 16px; border-top: 2px solid var(--color-text); font-size: 13px; color: var(--color-neutral-700); }
+
+  @media (max-width: 600px) {
+    .page { padding: 24px 16px 48px; }
+    .stats .n { font-size: 48px; }
+    .row { grid-template-columns: 20px 56px minmax(0, 1fr); }
+    .row .when { justify-items: start; text-align: left; grid-column: 3; }
+  }
+</style>
+</head>
+<body>
+<div class="page" id="app"></div>
+
+<script id="data" type="application/json">
+{
+  "date": "",
+  "collectedAt": "",
+  "timezone": "",
+  "account": "",
+  "mailbox": "",
+  "query": "",
+  "filterRule": "",
+  "labels": [],
+  "reply": [],
+  "groups": []
+}
+</script>
+
+<script>
+(function () {
+  'use strict';
+  var D = JSON.parse(document.getElementById('data').textContent);
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  // 把原文的 `x` 轉成 <code>x</code>，其餘一律逃脫
+  function rich(s) {
+    return String(s == null ? '' : s).split('`').map(function (part, i) {
+      return i % 2 ? '<code>' + esc(part) + '</code>' : esc(part);
+    }).join('');
+  }
+
+  // 「我處理過了」狀態：localStorage。指紋是 thrid:最新一封的 X-GM-MSGID，
+  // 串裡來了新信就與記錄的 seenNote 不同 → 自動取消勾選，回到待處理。
+  var DONE_KEY = 'gmail-brief:done';
+  var DONE = {};
+  function loadDone() {
+    try {
+      var raw = localStorage.getItem(DONE_KEY);
+      var obj = raw ? JSON.parse(raw) : {};
+      return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+    } catch (err) { return {}; }
+  }
+  function saveDone() {
+    try { localStorage.setItem(DONE_KEY, JSON.stringify(DONE)); } catch (err) {}
+  }
+  function isDone(key) { return Object.prototype.hasOwnProperty.call(DONE, key); }
+  function setDone(key, noteKey, on) {
+    if (on) DONE[key] = { doneAt: new Date().toISOString(), seenNote: String(noteKey || '') };
+    else delete DONE[key];
+    saveDone();
+  }
+  function reconcileDone(key, noteKey) {
+    var rec = DONE[key];
+    if (rec && String(rec.seenNote == null ? '' : rec.seenNote) !== String(noteKey || '')) delete DONE[key];
+  }
+
+  // 「拖太久」：直接寄給我 + 還沒回過 + 最新一封距頁面載入超過 OVERDUE_DAYS 天。
+  // 時間是 `YYYY-MM-DD HH:mm:ss.SSS` 當地字串（無時區），假設瀏覽器時區與 D.timezone 相同。
+  var OVERDUE_DAYS = 3;
+  var OVERDUE_MS = OVERDUE_DAYS * 24 * 60 * 60 * 1000;
+  var NOW = Date.now();
+  function parseLocal(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?/.exec(String(s || ''));
+    if (!m) return NaN;
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0), +((m[7] || '0') + '00').slice(0, 3)).getTime();
+  }
+  function isOverdue(r) {
+    if (!r.direct || r.answered) return false;
+    var t = parseLocal(r.updated);
+    return !isNaN(t) && (NOW - t) > OVERDUE_MS;
+  }
+
+  function toRow(groupName, a) {
+    var thrid = String(a[0] || ''), subject = String(a[1] || ''), sender = String(a[2] || '');
+    var upd = String(a[3] || ''), f = String(a[4] || ''), noteKey = String(a[5] == null ? '' : a[5]);
+    var labels = Array.isArray(a[6]) ? a[6].map(String) : [];
+    var n = Number(a[7] || 1), snippet = String(a[8] == null ? '' : a[8]), url = String(a[9] || '');
+    var fromAddr = String(a[10] == null ? '' : a[10]);
+    var parts = upd.split(' ');
+    var r = {
+      thrid: thrid, subject: subject, sender: sender, updated: upd,
+      date: parts[0] || '', time: parts[1] || '', group: groupName,
+      key: thrid, noteKey: noteKey, labels: labels, n: n, snippet: snippet, url: url, fromAddr: fromAddr,
+      unread: f.indexOf('U') >= 0, direct: f.indexOf('D') >= 0, answered: f.indexOf('R') >= 0,
+      starred: f.indexOf('S') >= 0, list: f.indexOf('L') >= 0, attach: f.indexOf('A') >= 0
+    };
+    r.domain = (function () { var i = fromAddr.lastIndexOf('@'); return i >= 0 ? fromAddr.slice(i + 1) : ''; })();
+    r.hay = [subject, sender, fromAddr, groupName, upd, labels.join(' '), snippet,
+      r.unread ? '未讀' : '已讀', r.direct ? '直接寄給我' : '', r.answered ? '已回覆' : '',
+      r.starred ? '星號' : '', r.attach ? '夾檔' : ''].join(' ').toLowerCase();
+    return r;
+  }
+
+  var GROUPS = (D.groups || []).map(function (g) {
+    return { name: String(g.name || ''), rows: (g.rows || []).map(function (a) { return toRow(String(g.name || ''), a); }) };
+  });
+  var ROWS = [];
+  GROUPS.forEach(function (g) { ROWS = ROWS.concat(g.rows); });
+  // 單一清單：依最新一封時間由新到舊，同時刻以 thrid 穩定排序
+  ROWS.sort(function (a, b) {
+    if (a.updated !== b.updated) return a.updated < b.updated ? 1 : -1;
+    return a.thrid < b.thrid ? -1 : (a.thrid > b.thrid ? 1 : 0);
+  });
+  var BY_KEY = {};
+  ROWS.forEach(function (r) { BY_KEY[r.key] = r; });
+  var REPLY = (D.reply || []).map(function (it) {
+    return { it: it, key: String(it.key || ''), noteKey: String(it.noteKey == null ? '' : it.noteKey) };
+  });
+  DONE = loadDone();
+  ROWS.forEach(function (r) { reconcileDone(r.key, r.noteKey); });
+  REPLY.forEach(function (c) { reconcileDone(c.key, c.noteKey); });
+  saveDone();
+  function countDone() { return ROWS.filter(function (r) { return isDone(r.key); }).length; }
+  function countOverdue() { return ROWS.filter(isOverdue).length; }
+
+  var TOTAL = ROWS.length;
+  var TOTAL_UNREAD = ROWS.filter(function (r) { return r.unread; }).length;
+  var TOTAL_DIRECT = ROWS.filter(function (r) { return r.direct; }).length;
+  var LABELS = [].concat(D.labels == null ? [] : D.labels).map(String);
+  var LABEL_PREFIX = 'label:';
+
+  var state = { q: '', status: 'all', reason: 'all', group: 'all', hideDone: 'all' };
+
+  // 分頁回到前景時決定要不要重載（同 gitlab-issues：先問本機 web server 的 mtime）
+  var VIEW_KEY = 'gmail-brief:view';
+  var RELOAD_AFTER_MS = 60 * 1000;
+  var VERSION_URL = 'http://127.0.0.1:3351/api/version/gmail-inbox/0';
+  var VERSION_TIMEOUT_MS = 1500;
+  var loadedAt = Date.now();
+  var loadedVersion = null;
+  var loadedVersionLocal = '';
+  var checking = false;
+  function hm(d) {
+    return (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
+  }
+  var LOADED_HM = hm(new Date(loadedAt));
+  function fetchVersion() {
+    return new Promise(function (resolve) {
+      var ctl = null, timer = null;
+      try {
+        if (typeof fetch !== 'function') return resolve(null);
+        if (typeof AbortController === 'function') ctl = new AbortController();
+        timer = setTimeout(function () { try { if (ctl) ctl.abort(); } catch (err) {} }, VERSION_TIMEOUT_MS);
+        fetch(VERSION_URL, { cache: 'no-store', mode: 'cors', signal: ctl ? ctl.signal : undefined })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+            clearTimeout(timer);
+            resolve(j && typeof j.mtime === 'number' ? j : null);
+          })
+          .catch(function () { clearTimeout(timer); resolve(null); });
+      } catch (err) { if (timer) clearTimeout(timer); resolve(null); }
+    });
+  }
+  function loadView() {
+    try {
+      var raw = sessionStorage.getItem(VIEW_KEY);
+      if (raw != null) sessionStorage.removeItem(VIEW_KEY);
+      var v = raw ? JSON.parse(raw) : null;
+      return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null;
+    } catch (err) { return null; }
+  }
+  function saveView() {
+    try {
+      sessionStorage.setItem(VIEW_KEY, JSON.stringify({ state: state, scrollY: window.scrollY || window.pageYOffset || 0 }));
+    } catch (err) {}
+  }
+  var SAVED_VIEW = loadView();
+  if (SAVED_VIEW && SAVED_VIEW.state && typeof SAVED_VIEW.state === 'object') {
+    Object.keys(state).forEach(function (k) {
+      if (typeof SAVED_VIEW.state[k] === 'string') state[k] = SAVED_VIEW.state[k];
+    });
+    if (state.reason.indexOf(LABEL_PREFIX) === 0 && LABELS.indexOf(state.reason.slice(LABEL_PREFIX.length)) < 0) state.reason = 'all';
+  }
+  function doReload() { loadedAt = Date.now(); saveView(); location.reload(); }
+  function reloadIfStale() {
+    if (document.visibilityState !== 'visible') return;
+    if (checking) return;
+    if (Date.now() - loadedAt < RELOAD_AFTER_MS) return;
+    if (loadedVersion === null) { doReload(); return; }
+    checking = true;
+    fetchVersion().then(function (v) {
+      checking = false;
+      if (v === null) { doReload(); return; }
+      loadedAt = Date.now();
+      if (v.mtime !== loadedVersion) doReload();
+    }).catch(function () { checking = false; doReload(); });
+  }
+  document.addEventListener('visibilitychange', reloadIfStale);
+  window.addEventListener('focus', reloadIfStale);
+  window.gmailBrief = {
+    setLoadedAt: function (t) { loadedAt = Number(t) || Date.now(); },
+    getLoadedAt: function () { return loadedAt; },
+    getLoadedVersion: function () { return loadedVersion; },
+    check: reloadIfStale
+  };
+
+  function match(r) {
+    if (state.group !== 'all' && r.group !== state.group) return false;
+    if (state.status === 'unread' && !r.unread) return false;
+    if (state.status === 'read' && r.unread) return false;
+    if (state.reason.indexOf(LABEL_PREFIX) === 0) {
+      if (r.labels.indexOf(state.reason.slice(LABEL_PREFIX.length)) < 0) return false;
+    } else if (state.reason === 'overdue') {
+      if (!isOverdue(r)) return false;
+    } else if (state.reason !== 'all' && !r[state.reason]) return false;
+    if (state.hideDone === 'on' && isDone(r.key)) return false;
+    var qq = state.q.toLowerCase().trim();
+    return !qq || r.hay.indexOf(qq) >= 0;
+  }
+
+  function compute() {
+    var filtering = !!(state.q.trim() || state.status !== 'all' || state.reason !== 'all' || state.group !== 'all' || state.hideDone !== 'all');
+    var rows = ROWS.filter(match);
+    return { filtering: filtering, shown: rows.length, rows: rows };
+  }
+
+  function btn(key, val, label, count) {
+    var active = state[key] === val;
+    return '<button type="button" data-key="' + key + '" data-val="' + esc(val) + '" aria-pressed="' +
+      (active ? 'true' : 'false') + '"><span>' + esc(label) + '</span>' +
+      (count == null ? '' : '<span class="c">' + count + '</span>') + '</button>';
+  }
+
+  // 內文摘要：純文字單行，前 120 字
+  function snippetLine(r) {
+    if (!r.snippet) return '';
+    var t = r.snippet.replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    if (t.length > 120) t = t.slice(0, 120) + '…';
+    return '<div class="note">' + esc(t) + '</div>';
+  }
+
+  function rowHtml(r) {
+    var tags = '';
+    if (isOverdue(r)) tags += '<span class="tag o">拖 ' + OVERDUE_DAYS + ' 天</span>';
+    if (r.unread) tags += '<span class="tag r">未讀</span>';
+    if (r.direct) tags += '<span class="tag m">寄給我</span>';
+    if (r.answered) tags += '<span class="tag c">已回覆</span>';
+    if (r.starred) tags += '<span class="tag a">星號</span>';
+    if (r.attach) tags += '<span class="tag s">夾檔</span>';
+    r.labels.forEach(function (name) { tags += '<span class="tag l">' + esc(name) + '</span>'; });
+    if (r.list) tags += '<span class="tag p">清單信</span>';
+    var done = isDone(r.key);
+    return '<div class="row' + (r.unread ? ' recent' : '') + (done ? ' done' : '') + '">' +
+      '<input type="checkbox" class="done" data-k="' + esc(r.key) + '" data-n="' + esc(r.noteKey) + '"' + (done ? ' checked' : '') + ' aria-label="我處理過了">' +
+      '<span class="iid">' + esc(r.n > 1 ? r.n + ' 封' : '1 封') + '</span>' +
+      '<div class="mid"><a href="' + esc(r.url) + '" target="_blank" rel="noopener" data-k="' + esc(r.key) + '" data-n="' + esc(r.noteKey) + '">' + esc(r.subject) + '</a>' +
+      '<div class="tags"><span class="tag p">' + esc(r.sender) + '</span>' + tags + '</div>' + snippetLine(r) + '</div>' +
+      '<div class="when"><span class="d">' + esc(r.date) + '</span><span class="t">' + esc(r.time) + '</span></div>' +
+      '</div>';
+  }
+
+  function render() {
+    var c = compute();
+    var h = '';
+
+    h += '<header class="head"><div class="kicker"><i></i><span>Gmail Inbox Digest · ' + esc(D.date) + '</span></div>' +
+      '<h1 class="title">Gmail 收件匣摘要報告</h1></header>';
+
+    h += '<section class="meta">' +
+      '<div><span class="k">收集時間</span><span class="v">' + esc(D.collectedAt) + '</span><span class="k" id="loaded-hm">頁面載入 ' + esc(LOADED_HM) + (loadedVersionLocal ? ' · 檔案 ' + esc(loadedVersionLocal) : '') + '</span></div>' +
+      '<div><span class="k">信箱</span><span class="v">' + esc(D.account) + '</span></div>' +
+      '<div><span class="k">篩選規則</span><span class="v">' + esc(D.filterRule || D.query) + '</span></div>' +
+      '</section>';
+
+    h += '<section class="config">' +
+      '<span><span class="k">資料夾</span>　' + esc(D.mailbox) + '（唯讀）</span>' +
+      '<span><span class="k">時區</span>　' + esc(D.timezone) + '</span>' +
+      '<span><span class="k">Gmail 搜尋</span>　' + esc(D.query) + '</span>' +
+      '<span><span class="k">旗標</span>　U=未讀、D=直接寄給我、R=已回覆最新一封、S=星號、L=清單信、A=夾檔</span>' +
+      '</section>';
+
+    var reply = D.reply || [];
+    h += '<section class="stats">' +
+      '<div><span class="k">對話串</span><span class="n accent">' + TOTAL + '</span>' +
+      '<span class="sub">涵蓋 ' + GROUPS.length + ' 個分組</span></div>' +
+      '<div><span class="k">未讀</span><span class="n">' + TOTAL_UNREAD + '</span>' +
+      '<span class="sub">直接寄給我 ' + TOTAL_DIRECT + '</span></div>' +
+      '<div><span class="k">待我回覆</span><span class="n">' + reply.length + '</span>' +
+      '<span class="sub">我在收件人且尚未回覆</span></div>' +
+      '</section>';
+
+    if (reply.length) {
+      h += '<section class="sect"><div class="sect-head ruled"><h2>待我回覆</h2>' +
+        '<span class="count">' + reply.length + ' 筆</span></div><ol class="confirm">';
+      REPLY.forEach(function (c2, i) {
+        var it = c2.it;
+        var done = isDone(c2.key);
+        var isNew = it['new'] === true;
+        h += '<li' + (done ? ' class="done"' : '') + '>' +
+          '<input type="checkbox" class="done" data-k="' + esc(c2.key) + '" data-n="' + esc(c2.noteKey) + '"' + (done ? ' checked' : '') + ' aria-label="我處理過了">' +
+          '<span class="idx' + (isNew ? ' accent' : '') + '">' + (i < 9 ? '0' : '') + (i + 1) + '</span>' +
+          '<div class="body"><div class="line1">' +
+          (isNew ? '<span class="new">未讀</span>' : '') +
+          '<span class="ref">' + esc(it.sender) + '</span>' +
+          '<span>最新一封：' + esc(it.updated) + '</span></div>' +
+          '<a class="ttl" href="' + esc(it.url) + '" target="_blank" rel="noopener" data-k="' + esc(c2.key) + '" data-n="' + esc(c2.noteKey) + '">' + esc(it.subject) + '</a>' +
+          '<p>' + (it.kind ? '<strong>' + esc(it.kind) + '：</strong>' : '') + rich(it.text || '') + '</p>' +
+          '</div></li>';
+      });
+      h += '</ol></section>';
+    }
+
+    h += '<section class="sect"><div class="sect-head"><h2>全部對話串</h2>' +
+      '<span class="count">顯示 ' + c.shown + ' / ' + TOTAL + ' 筆 · 已處理 ' + countDone() + '</span></div>';
+
+    h += '<div class="filters">' +
+      '<input type="text" id="q" placeholder="搜尋主旨、寄件者、標籤、內文摘要…" value="' + esc(state.q) + '">' +
+      '<div class="frow">' +
+      '<div class="fgroup"><span class="k">狀態</span>' +
+      btn('status', 'all', '全部') + btn('status', 'unread', '未讀', TOTAL_UNREAD) + btn('status', 'read', '已讀') +
+      '</div>' +
+      '<div class="fgroup"><span class="k">條件</span>' +
+      btn('reason', 'all', '全部') +
+      btn('reason', 'direct', '寄給我', TOTAL_DIRECT) +
+      btn('reason', 'overdue', '拖太久', countOverdue()) +
+      btn('reason', 'starred', '星號', ROWS.filter(function (r) { return r.starred; }).length) +
+      btn('reason', 'attach', '夾檔', ROWS.filter(function (r) { return r.attach; }).length) +
+      btn('reason', 'list', '清單信', ROWS.filter(function (r) { return r.list; }).length) +
+      LABELS.map(function (name) {
+        return btn('reason', LABEL_PREFIX + name, name, ROWS.filter(function (r) { return r.labels.indexOf(name) >= 0; }).length);
+      }).join('') +
+      '</div>' +
+      '<div class="fgroup"><span class="k">已處理</span>' + btn('hideDone', 'on', '隱藏已處理') + '</div></div>' +
+      '<div class="fgroup"><span class="k">分組</span>' +
+      btn('group', 'all', '全部', TOTAL) +
+      GROUPS.map(function (g) { return btn('group', g.name, g.name, g.rows.length); }).join('') +
+      '</div></div>';
+
+    if (c.shown === 0) {
+      h += '<div class="empty-all">沒有符合目前篩選條件的對話串。</div>';
+    } else {
+      h += '<div class="list">' + c.rows.map(rowHtml).join('') + '</div>';
+    }
+
+    h += '</section><footer>' + esc(D.footer || ('共 ' + TOTAL + ' 個對話串 · ' + esc(D.account))) + '</footer>';
+
+    var app = document.getElementById('app');
+    app.innerHTML = h;
+
+    var input = document.getElementById('q');
+    input.addEventListener('input', function (e) {
+      state.q = e.target.value;
+      var pos = e.target.selectionStart;
+      render();
+      var ni = document.getElementById('q');
+      ni.focus();
+      try { ni.setSelectionRange(pos, pos); } catch (err) {}
+    });
+    app.querySelectorAll('.fgroup button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var k = b.getAttribute('data-key'), v = b.getAttribute('data-val');
+        state[k] = (state[k] === v && v !== 'all') ? 'all' : v;
+        render();
+      });
+    });
+    app.querySelectorAll('input.done').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        setDone(cb.getAttribute('data-k'), cb.getAttribute('data-n'), cb.checked);
+        render();
+      });
+    });
+    app.querySelectorAll('a[data-k]').forEach(function (a) {
+      a.addEventListener('click', function () {
+        setDone(a.getAttribute('data-k'), a.getAttribute('data-n'), true);
+        setTimeout(render, 0);
+      });
+    });
+  }
+
+  document.title = 'Gmail 收件匣摘要報告' + (D.date ? ' (' + D.date + ')' : '');
+  render();
+  fetchVersion().then(function (v) {
+    if (v === null) return;
+    loadedVersion = v.mtime;
+    var m = /(\d{2}):(\d{2})(?::\d{2})?$/.exec(String(v.mtimeLocal || ''));
+    loadedVersionLocal = m ? m[1] + ':' + m[2] : '';
+    var el = document.getElementById('loaded-hm');
+    if (el && loadedVersionLocal) el.textContent = '頁面載入 ' + LOADED_HM + ' · 檔案 ' + loadedVersionLocal;
+  }).catch(function () {});
+  if (SAVED_VIEW && typeof SAVED_VIEW.scrollY === 'number' && SAVED_VIEW.scrollY > 0) {
+    try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (err) {}
+    var restoreY = SAVED_VIEW.scrollY;
+    window.scrollTo(0, restoreY);
+    window.requestAnimationFrame(function () { window.scrollTo(0, restoreY); });
+  }
+})();
+</script>
+</body>
+</html>

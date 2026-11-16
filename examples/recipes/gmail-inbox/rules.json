@@ -1,0 +1,23 @@
+{
+  "timezone": "Asia/Taipei",
+  "sources": {
+    "local": { "name": "本機" }
+  },
+  "agents": {
+    "gmail-py": {
+      "name": "Gmail 收件匣摘要（Python）",
+      "worker": "my-pc",
+      "use": "command",
+      "command": ["python", "~/scripts/gmail_inbox.py", "--autoloop"]
+    }
+  },
+  "rules": [
+    {
+      "name": "Gmail 收件匣摘要",
+      "when": { "cron": "*/10 8-18 * * *" },
+      "to": "gmail-py",
+      "cwd": "~/.agent-autoloop/work/gmail-inbox",
+      "tell": "needed"
+    }
+  ]
+}

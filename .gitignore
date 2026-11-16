@@ -4,3 +4,5 @@ node_modules/
 .claude/
 .project-map/
 build/
+.gstack/
+__pycache__/

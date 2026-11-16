@@ -1,0 +1,10 @@
+{
+  "imapHost": "imap.gmail.com",
+  "mailbox": "[Gmail]/All Mail",
+  "query": "in:inbox newer_than:7d",
+  "me": ["you@example.com"],
+  "labelOrder": ["工作", "帳單"],
+  "maxThreads": 300,
+  "bodyChars": 400,
+  "timezone": "Asia/Taipei"
+}

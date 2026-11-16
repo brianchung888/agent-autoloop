@@ -1,0 +1,14 @@
+From: GitLab <gitlab@example.com>
+To: you@example.com
+Subject: =?utf-8?b?5pyI57WQ5biz5Zau6YCa55+l?=
+Date: Mon, 09 Nov 2026 08:00:00 +0800
+Message-ID: <b1@example.com>
+List-Id: billing.example.com
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+X-Test-Flags: \Seen
+X-Test-Labels: =?utf-8?b?IuW4s+WWriI=?=
+X-Test-Internaldate: 09-Nov-2026 08:00:00 +0800
+
+您的 11 月帳單已出，金額 NT$1,280。
