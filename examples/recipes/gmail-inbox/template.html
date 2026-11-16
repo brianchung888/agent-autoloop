@@ -224,12 +224,13 @@
       date: parts[0] || '', time: parts[1] || '', group: groupName,
       key: thrid, noteKey: noteKey, labels: labels, n: n, snippet: snippet, url: url, fromAddr: fromAddr,
       unread: f.indexOf('U') >= 0, direct: f.indexOf('D') >= 0, answered: f.indexOf('R') >= 0,
-      starred: f.indexOf('S') >= 0, list: f.indexOf('L') >= 0, attach: f.indexOf('A') >= 0
+      starred: f.indexOf('S') >= 0, list: f.indexOf('L') >= 0, attach: f.indexOf('A') >= 0,
+      onlyMe: f.indexOf('O') >= 0
     };
     r.domain = (function () { var i = fromAddr.lastIndexOf('@'); return i >= 0 ? fromAddr.slice(i + 1) : ''; })();
     r.hay = [subject, sender, fromAddr, groupName, upd, labels.join(' '), snippet,
       r.unread ? '未讀' : '已讀', r.direct ? '直接寄給我' : '', r.answered ? '已回覆' : '',
-      r.starred ? '星號' : '', r.attach ? '夾檔' : ''].join(' ').toLowerCase();
+      r.starred ? '星號' : '', r.attach ? '夾檔' : '', r.onlyMe ? '只寄給我' : ''].join(' ').toLowerCase();
     return r;
   }
 
@@ -252,6 +253,12 @@
   ROWS.forEach(function (r) { reconcileDone(r.key, r.noteKey); });
   REPLY.forEach(function (c) { reconcileDone(c.key, c.noteKey); });
   saveDone();
+  // 上一輪就標成「已處理」的，這一輪不再列進待我回覆；
+  // 在這裡定格，所以現在才勾的那筆會留到下次重新載入才消失（不會勾到一半跳掉）。
+  var REPLY_WAS_DONE = {};
+  REPLY.forEach(function (c) { if (isDone(c.key)) REPLY_WAS_DONE[c.key] = true; });
+  var REPLY_OPEN = REPLY.filter(function (c) { return !REPLY_WAS_DONE[c.key]; });
+  var REPLY_HIDDEN = REPLY.length - REPLY_OPEN.length;
   function countDone() { return ROWS.filter(function (r) { return isDone(r.key); }).length; }
   function countOverdue() { return ROWS.filter(isOverdue).length; }
 
@@ -350,6 +357,40 @@
     return !qq || r.hay.indexOf(qq) >= 0;
   }
 
+  // 最上面三格一律扣掉「已處理」，不然勾了數字不動，量永遠消不掉。
+  function liveCounts() {
+    var open = ROWS.filter(function (r) { return !isDone(r.key); });
+    var replyOpen = REPLY.filter(function (c) { return !isDone(c.key); });
+    return {
+      threads: open.length,
+      done: ROWS.length - open.length,
+      unread: open.filter(function (r) { return r.unread; }).length,
+      direct: open.filter(function (r) { return r.direct; }).length,
+      reply: replyOpen.length,
+      replyDone: REPLY.length - replyOpen.length
+    };
+  }
+
+  function shownText(c) {
+    return '顯示 ' + c.shown + ' / ' + TOTAL + ' 筆 · 已處理 ' + countDone();
+  }
+
+  function listHtml(c) {
+    if (c.shown === 0) return '<div class="empty-all">沒有符合目前篩選條件的對話串。</div>';
+    return '<div class="list">' + c.rows.map(rowHtml).join('') + '</div>';
+  }
+
+  // 只換列表，不動搜尋框本身——輸入法組字中途把 input 砍掉重建會吃掉或重複送字。
+  function renderList() {
+    var wrap = document.getElementById('listwrap');
+    if (!wrap) { render(); return; }
+    var c = compute();
+    var shown = document.getElementById('shown');
+    if (shown) shown.textContent = shownText(c);
+    wrap.innerHTML = listHtml(c);
+    bindRows(wrap);
+  }
+
   function compute() {
     var filtering = !!(state.q.trim() || state.status !== 'all' || state.reason !== 'all' || state.group !== 'all' || state.hideDone !== 'all');
     var rows = ROWS.filter(match);
@@ -376,7 +417,8 @@
     var tags = '';
     if (isOverdue(r)) tags += '<span class="tag o">拖 ' + OVERDUE_DAYS + ' 天</span>';
     if (r.unread) tags += '<span class="tag r">未讀</span>';
-    if (r.direct) tags += '<span class="tag m">寄給我</span>';
+    if (r.onlyMe) tags += '<span class="tag m">只寄給我</span>';
+    else if (r.direct) tags += '<span class="tag m">寄給我</span>';
     if (r.answered) tags += '<span class="tag c">已回覆</span>';
     if (r.starred) tags += '<span class="tag a">星號</span>';
     if (r.attach) tags += '<span class="tag s">夾檔</span>';
@@ -409,23 +451,24 @@
       '<span><span class="k">資料夾</span>　' + esc(D.mailbox) + '（唯讀）</span>' +
       '<span><span class="k">時區</span>　' + esc(D.timezone) + '</span>' +
       '<span><span class="k">Gmail 搜尋</span>　' + esc(D.query) + '</span>' +
-      '<span><span class="k">旗標</span>　U=未讀、D=直接寄給我、R=已回覆最新一封、S=星號、L=清單信、A=夾檔</span>' +
+      '<span><span class="k">旗標</span>　U=未讀、D=直接寄給我、O=收件人只有我、R=已回覆最新一封、S=星號、L=清單信、A=夾檔</span>' +
       '</section>';
 
-    var reply = D.reply || [];
+    var reply = REPLY_OPEN;
+    var st = liveCounts();
     h += '<section class="stats">' +
-      '<div><span class="k">對話串</span><span class="n accent">' + TOTAL + '</span>' +
-      '<span class="sub">涵蓋 ' + GROUPS.length + ' 個分組</span></div>' +
-      '<div><span class="k">未讀</span><span class="n">' + TOTAL_UNREAD + '</span>' +
-      '<span class="sub">直接寄給我 ' + TOTAL_DIRECT + '</span></div>' +
-      '<div><span class="k">待我回覆</span><span class="n">' + reply.length + '</span>' +
-      '<span class="sub">我在收件人且尚未回覆</span></div>' +
+      '<div><span class="k">對話串</span><span class="n accent">' + st.threads + '</span>' +
+      '<span class="sub">' + (st.done ? '已處理 ' + st.done + ' / 共 ' + TOTAL : '涵蓋 ' + GROUPS.length + ' 個分組') + '</span></div>' +
+      '<div><span class="k">未讀</span><span class="n">' + st.unread + '</span>' +
+      '<span class="sub">直接寄給我 ' + st.direct + '</span></div>' +
+      '<div><span class="k">待我回覆</span><span class="n">' + st.reply + '</span>' +
+      '<span class="sub">' + (st.replyDone ? '已處理 ' + st.replyDone + ' / 共 ' + REPLY.length : '我在收件人且尚未回覆') + '</span></div>' +
       '</section>';
 
     if (reply.length) {
       h += '<section class="sect"><div class="sect-head ruled"><h2>待我回覆</h2>' +
         '<span class="count">' + reply.length + ' 筆</span></div><ol class="confirm">';
-      REPLY.forEach(function (c2, i) {
+      REPLY_OPEN.forEach(function (c2, i) {
         var it = c2.it;
         var done = isDone(c2.key);
         var isNew = it['new'] === true;
@@ -444,7 +487,7 @@
     }
 
     h += '<section class="sect"><div class="sect-head"><h2>全部對話串</h2>' +
-      '<span class="count">顯示 ' + c.shown + ' / ' + TOTAL + ' 筆 · 已處理 ' + countDone() + '</span></div>';
+      '<span class="count" id="shown">' + shownText(c) + '</span></div>';
 
     h += '<div class="filters">' +
       '<input type="text" id="q" placeholder="搜尋主旨、寄件者、標籤、內文摘要…" value="' + esc(state.q) + '">' +
@@ -454,6 +497,7 @@
       '</div>' +
       '<div class="fgroup"><span class="k">條件</span>' +
       btn('reason', 'all', '全部') +
+      btn('reason', 'onlyMe', '只寄給我', ROWS.filter(function (r) { return r.onlyMe; }).length) +
       btn('reason', 'direct', '寄給我', TOTAL_DIRECT) +
       btn('reason', 'overdue', '拖太久', countOverdue()) +
       btn('reason', 'starred', '星號', ROWS.filter(function (r) { return r.starred; }).length) +
@@ -469,11 +513,7 @@
       GROUPS.map(function (g) { return btn('group', g.name, g.name, g.rows.length); }).join('') +
       '</div></div>';
 
-    if (c.shown === 0) {
-      h += '<div class="empty-all">沒有符合目前篩選條件的對話串。</div>';
-    } else {
-      h += '<div class="list">' + c.rows.map(rowHtml).join('') + '</div>';
-    }
+    h += '<div id="listwrap">' + listHtml(c) + '</div>';
 
     h += '</section><footer>' + esc(D.footer || ('共 ' + TOTAL + ' 個對話串 · ' + esc(D.account))) + '</footer>';
 
@@ -481,13 +521,18 @@
     app.innerHTML = h;
 
     var input = document.getElementById('q');
+    var composing = false;
+    // 輸入法（嘸蝦米、注音…）組字期間不重畫；組完再更新一次。
+    input.addEventListener('compositionstart', function () { composing = true; });
+    input.addEventListener('compositionend', function (e) {
+      composing = false;
+      state.q = e.target.value;
+      renderList();
+    });
     input.addEventListener('input', function (e) {
       state.q = e.target.value;
-      var pos = e.target.selectionStart;
-      render();
-      var ni = document.getElementById('q');
-      ni.focus();
-      try { ni.setSelectionRange(pos, pos); } catch (err) {}
+      if (composing) return;
+      renderList();
     });
     app.querySelectorAll('.fgroup button').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -496,13 +541,18 @@
         render();
       });
     });
-    app.querySelectorAll('input.done').forEach(function (cb) {
+    bindRows(app);
+  }
+
+  // 列表那段會被 renderList() 換掉，所以綁定要能只對新的那塊重跑一次。
+  function bindRows(scope) {
+    scope.querySelectorAll('input.done').forEach(function (cb) {
       cb.addEventListener('change', function () {
         setDone(cb.getAttribute('data-k'), cb.getAttribute('data-n'), cb.checked);
         render();
       });
     });
-    app.querySelectorAll('a[data-k]').forEach(function (a) {
+    scope.querySelectorAll('a[data-k]').forEach(function (a) {
       a.addEventListener('click', function () {
         setDone(a.getAttribute('data-k'), a.getAttribute('data-n'), true);
         setTimeout(render, 0);

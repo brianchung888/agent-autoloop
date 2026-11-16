@@ -67,7 +67,7 @@ IMAP_TIMEOUT = 60
 MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024
 LIMIT_MSG = ("超過摘要上限（{n} 個對話串 / 2 MiB），請把 query 縮小（例如 newer_than 改短、加 -category:promotions）"
              "或調低 maxThreads；不產生部分摘要")
-HEADER_FIELDS = "FROM TO CC SUBJECT DATE MESSAGE-ID LIST-ID IN-REPLY-TO REFERENCES"
+HEADER_FIELDS = "FROM TO CC SUBJECT DATE MESSAGE-ID LIST-ID IN-REPLY-TO REFERENCES REPLY-TO"
 DATA_RE = re.compile(r'(<script id="data" type="application/json">)(.*?)(</script>)', re.S)
 # FETCH 回應前綴裡的欄位（imaplib 不幫忙解析，自己抓）
 RE_UID = re.compile(rb"UID (\d+)")
@@ -85,6 +85,18 @@ NO_REPLY_RE = re.compile(
 AUTO_MAIL_RE = re.compile(
     "請勿(直接)?回信|請勿回覆|勿回覆此信|系統自動(發送|發信|寄送)|自動發送(的)?(郵件|信件)"
     "|本信件為系統|do not reply|automated message", re.I)
+
+
+# 要我做事：信裡明講要我填、回、確認、簽核、交東西或有期限
+REPLY_MAX = 12          # 待我回覆最多幾筆
+
+ACTION_RE = re.compile(
+    "請(填寫|回覆|回復|確認|提供|協助|核准|簽核|審核|處理|安排|補充|告知|查收|撥冗)"
+    "|填寫|回條|問卷|報名|截止|逾期|期限|前完成|請於|需要你|麻煩你|麻煩您|待簽核|待審核|待確認"
+    "|請假|面談|會議邀請|please (fill|confirm|review|reply|approve)|action required|deadline", re.I)
+
+# 例行報表：有價值但不是在等我回話，排最後
+REPORT_RE = re.compile("日報|週報|月報|排行|報表|統計|summary|digest|daily report", re.I)
 
 
 class RunError(Exception):
@@ -174,6 +186,22 @@ def load_sources(work_dir: Path, account: str) -> dict:
 
     labels = [str(x) for x in as_list(config.get("labelOrder")) if str(x).strip()]
     config["labelOrder"] = labels
+    config["replyExcludeLabels"] = [str(x).strip() for x in as_list(config.get("replyExcludeLabels"))
+                                    if str(x).strip()]
+    rules = []
+    for i, item in enumerate(as_list(config.get("exclude")), 1):
+        if isinstance(item, str):
+            item = {"label": item}
+        if not isinstance(item, dict):
+            raise RunError(f"檢查 sources.json：exclude 第 {i} 條要是物件或標籤字串")
+        rule = {k: str(v).strip().lower() for k, v in item.items() if str(v).strip()}
+        unknown = set(rule) - {"label", "from", "subject", "body", "replyto"}
+        if unknown:
+            raise RunError(f"檢查 sources.json：exclude 第 {i} 條有不認得的欄位 {sorted(unknown)}"
+                           "（只收 label／from／subject／body／replyto）")
+        if rule:
+            rules.append(rule)
+    config["exclude"] = rules
     return config
 
 
@@ -458,14 +486,55 @@ def _msg_record(prefix: bytes, head: bytes, me: "set[str]") -> dict:
         "answered": "\\Answered" in flags,
         "starred": "\\Flagged" in flags,
         "list_id": decode_hdr(msg.get("List-Id")),
+        "reply_to": [a["addr"] for a in parse_addrs(msg.get("Reply-To"))],
+        "in_thread": bool(msg.get("In-Reply-To") or msg.get("References")),
         "labels": _labels_of(prefix),
         "from_me": bool(frm) and frm[0]["addr"] in me,
         "direct": bool(me & {a["addr"] for a in to}),
     }
 
 
+def excluded(t: dict, rules: "list[dict]") -> bool:
+    """整串從報告裡拿掉：一條規則裡的每個欄位都要中（AND），規則之間是 OR。
+
+    `body` 要等信件內文抓回來才比得了，所以帶 body 的規則晚一步套（見 _drop_by_body）。
+    """
+    if not rules:
+        return False
+    labels = {l.lower() for l in t["labels"]}
+    addr = (t["from_addr"] or "").lower()
+    subject = (t["subject"] or "").lower()
+    body = (t.get("_body") or "").lower()
+    replyto = " ".join(t.get("reply_to") or []).lower()
+    for rule in rules:
+        if "label" in rule and rule["label"] not in labels:
+            continue
+        if "from" in rule and rule["from"] not in addr:
+            continue
+        if "subject" in rule and rule["subject"] not in subject:
+            continue
+        if "replyto" in rule and rule["replyto"] not in replyto:
+            continue
+        if "body" in rule and rule["body"] not in body:
+            continue
+        return True
+    return False
+
+
+def _drop_by_body(threads: "list[dict]", rules: "list[dict]") -> "list[dict]":
+    """內文抓回來之後再跑一次 exclude，然後把比對用的全文丟掉（不進快照）。"""
+    body_rules = [r for r in rules if "body" in r]
+    kept = [t for t in threads if not (body_rules and excluded(t, body_rules))]
+    if len(kept) < len(threads):
+        log(f"  依 exclude 的 body 規則再拿掉 {len(threads) - len(kept)} 串")
+    for t in kept:
+        t.pop("_body", None)
+    return kept
+
+
 def _fold(records: "list[dict]", config: dict) -> "list[dict]":
     """一封一封的紀錄 → 對話串。"""
+    me = set(config["me"])
     threads: "dict[str, dict]" = {}
     for r in records:
         t = threads.setdefault(r["thrid"] or r["gmsgid"] or r["uid"], _blank_thread(r["thrid"]))
@@ -492,6 +561,7 @@ def _fold(records: "list[dict]", config: dict) -> "list[dict]":
             "senders": senders,
             "to": sorted(set(last["to"])),
             "cc": sorted(set(last["cc"])),
+            "reply_to": sorted(set(last["reply_to"])),
             "first_at": js_iso(msgs[0]["at"]),
             "last_at": js_iso(last["at"]),
             "n": t["n"],
@@ -499,7 +569,11 @@ def _fold(records: "list[dict]", config: dict) -> "list[dict]":
             "labels": sorted(t["labels"]),
             "unread": t["n_unread"] > 0,
             # 「我回過」只看最新一封：對方又回一封就會變回待回覆
-        "answered": last["from_me"] or last["answered"],
+            "answered": last["from_me"] or last["answered"],
+            # 「只寄給我」：最新一封的 To 只有我一個（Cc 不算）
+            "only_me": bool(last["to"]) and set(last["to"]) <= me,
+            # 「真人對話」：最新一封是回覆別人的，或這串有來有往
+            "conversation": last["in_thread"] or len(senders) > 1,
             "starred": t["starred"],
             "list_id": last["list_id"],
             "direct": any(m["direct"] for m in msgs),
@@ -510,8 +584,12 @@ def _fold(records: "list[dict]", config: dict) -> "list[dict]":
             "last_msgid": last["gmsgid"],
             "url": _thread_url(t["thrid"] or key),
         })
-    out.sort(key=lambda t: (t["last_at"], t["thrid"]), reverse=True)
-    return out[:config["maxThreads"]]
+    head_rules = [r for r in config["exclude"] if "body" not in r]
+    kept = [t for t in out if not excluded(t, head_rules)]
+    if len(kept) < len(out):
+        log(f"  依 exclude 規則拿掉 {len(out) - len(kept)} 串")
+    kept.sort(key=lambda t: (t["last_at"], t["thrid"]), reverse=True)
+    return kept[:config["maxThreads"]]
 
 
 def _add_bodies(gm: "Gmail | None", threads: "list[dict]", config: dict,
@@ -537,7 +615,9 @@ def _add_bodies(gm: "Gmail | None", threads: "list[dict]", config: dict,
             msg = email.message_from_bytes(payload)
         except Exception:
             continue
-        t["snippet"] = clean_snippet(body_text(msg), limit)
+        text = body_text(msg)
+        t["_body"] = text                 # 只給 exclude 的 body 規則比對，之後丟掉
+        t["snippet"] = clean_snippet(text, limit)
         t["has_attachment"] = has_attachment(msg)
 
 
@@ -559,8 +639,9 @@ def collect(config: dict, user: str, password: str) -> "tuple[dict, datetime]":
                 except Exception as e:   # 單封壞信不讓整輪失敗
                     log(f"  ⚠ 跳過一封解析失敗的信（{type(e).__name__}）")
         threads = _fold(records, config)
-        log(f"  對話串：{len(threads)} 串（{len(records)} 封）")
         _add_bodies(gm, threads, config)
+        threads = _drop_by_body(threads, config["exclude"])
+        log(f"  對話串：{len(threads)} 串（{len(records)} 封）")
     finally:
         gm.close()
     return _content(config, threads, now, len(records)), now
@@ -588,6 +669,7 @@ def collect_fixture(config: dict, folder: Path) -> "tuple[dict, datetime]":
         bodies[str(n)] = raw
     threads = _fold(records, config)
     _add_bodies(None, threads, config, bodies)
+    threads = _drop_by_body(threads, config["exclude"])
     log(f"  離線來源：{len(files)} 封 → {len(threads)} 串")
     return _content(config, threads, now, len(records)), now
 
@@ -651,6 +733,8 @@ def flags_of(t: dict) -> str:
         f += "U"
     if t["direct"]:
         f += "D"
+    if t.get("only_me"):
+        f += "O"
     if t["answered"]:
         f += "R"
     if t["starred"]:
@@ -717,21 +801,47 @@ def build_model(snapshot: dict, sources: dict) -> dict:
         "n_direct": sum(1 for r in rows if r["direct"]),
         "n_msgs": snapshot.get("messageCount", 0),
         "labels": sorted({l for r in rows for l in r["labels"]}),
+        "replyExclude": [x.lower() for x in as_list(sources.get("replyExcludeLabels"))],
     }
 
 
 def reply_by_rule(model: dict) -> "list[dict]":
-    """待我回覆：我在 To、最新一封還沒被我回覆（也不是我自己寄的）、不是清單信。"""
-    out = []
+    """待我回覆：我在 To、最新一封還沒被我回覆（也不是我自己寄的）、不是清單信。
+
+    另外排除 replyExcludeLabels 列到的標籤（那些是看板型的通知，不是對話），
+    並且把「To 只有我一個」的排在前面——那種才是真的在等我回話。
+    """
+    skip = set(model.get("replyExclude") or [])
+    picked = []
     for r in model["rows"]:
         if NO_REPLY_RE.search(r["from_addr"] or ""):
             continue  # noreply@／notification@ 這類寄件者回了也沒人看
         if AUTO_MAIL_RE.search(r["snippet"] or ""):
             continue  # 內文自己寫了「請勿回信／系統自動發送」
+        if skip & {l.lower() for l in r["labels"]}:
+            continue
         if r["direct"] and not r["answered"] and not r["list_id"]:
-            out.append({"key": r["key"], "kind": "待回覆",
-                        "text": r["snippet"] or r["subject"]})
-    return out[:8]
+            picked.append(r)
+    picked.sort(key=reply_rank)   # 穩定排序，同一層內維持時間序
+    return [{"key": r["key"], "kind": reply_kind(r), "text": r["snippet"] or r["subject"]}
+            for r in picked[:REPLY_MAX]]
+
+
+def reply_kind(r: dict) -> str:
+    if r.get("conversation"):
+        return "真人對話"
+    if ACTION_RE.search(r["subject"] or "") or ACTION_RE.search(r["snippet"] or ""):
+        return "要我做事"
+    return "只寄給我" if r.get("only_me") else "待回覆"
+
+
+def reply_rank(r: dict) -> tuple:
+    """排序：真人對話 → 要我做事 → 其他；每層裡「只寄給我」優先，例行報表墊底。"""
+    kind = reply_kind(r)
+    tier = {"真人對話": 0, "要我做事": 1}.get(kind, 2)
+    if REPORT_RE.search(r["subject"] or ""):
+        tier = 3
+    return (tier, 0 if r.get("only_me") else 1)
 
 
 def finalize_reply(items: "list[dict]", model: dict) -> "list[dict]":

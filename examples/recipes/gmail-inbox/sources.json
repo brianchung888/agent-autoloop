@@ -2,9 +2,33 @@
   "imapHost": "imap.gmail.com",
   "mailbox": "[Gmail]/All Mail",
   "query": "in:inbox newer_than:7d",
-  "me": ["you@example.com"],
-  "labelOrder": ["工作", "帳單"],
+  "me": [
+    "you@example.com"
+  ],
+  "labelOrder": [
+    "工作",
+    "帳單"
+  ],
   "maxThreads": 300,
   "bodyChars": 400,
-  "timezone": "Asia/Taipei"
+  "timezone": "Asia/Taipei",
+  "exclude": [
+    {
+      "label": "TODO：Bug"
+    },
+    {
+      "from": "dailynotify@example.com"
+    },
+    {
+      "from": "report@example.com",
+      "subject": "成交值"
+    },
+    {
+      "from": "tickets@example.com",
+      "body": "gitlab.example.com"
+    },
+    {
+      "replyto": "news@newsletter.example.com"
+    }
+  ]
 }

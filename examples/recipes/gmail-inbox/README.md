@@ -50,6 +50,13 @@ Windows 上還會補一手：環境變數抓不到時，直接讀 `HKCU\Environm
   "query": "in:inbox newer_than:7d",
   "me": ["you@example.com"],
   "labelOrder": ["工作", "帳單"],
+  "exclude": [
+    { "label": "TODO：Bug" },
+    { "from": "dailynotify@example.com" },
+    { "from": "report@example.com", "subject": "成交值" },
+    { "from": "tickets@example.com", "body": "gitlab.example.com" },
+    { "replyto": "news@newsletter.example.com" }
+  ],
   "maxThreads": 300,
   "bodyChars": 400,
   "timezone": "Asia/Taipei"
@@ -62,6 +69,8 @@ Windows 上還會補一手：環境變數抓不到時，直接讀 `HKCU\Environm
 | `mailbox` | 預設 `[Gmail]/All Mail`；帳號若是其他語言介面，腳本會用 IMAP `LIST` 的 `\All` 屬性自動找到真名。 |
 | `me` | 你自己的信箱位址（可多個，別名、群組信箱都列進來）。用來判斷「直接寄給我」與「這封是我寄的」。`GMAIL_USER` 會自動併入。 |
 | `labelOrder` | Markdown 分組的順序；沒列到的標籤排在後面，沒有標籤的歸「（無標籤）」。 |
+| `exclude` | **整串從報告裡拿掉**（不收、不計數、不佔快照）。一條規則可寫 `label`／`from`／`subject`／`body`／`replyto`，同一條裡全部要中（AND），條目之間是 OR；除了 `label` 是整串比對，其餘都是不分大小寫的子字串比對。`body` 比的是內文全文（HTML 轉純文字後），不是 400 字摘要，所以要等信抓回來才套——帶 `body` 的規則晚一步跑，其餘先跑，省掉抓內文的流量。 |
+| `replyExcludeLabels` | 只擋「待我回覆」，信仍留在列表。要整串不見請用 `exclude`。 |
 | `maxThreads` | 上限，預設 300（1–2000）。達到上限會砍掉較舊的對話串並在 log 提醒。 |
 | `bodyChars` | 內文摘要字數，預設 400；設 0 就完全不抓內文（最省、最快、快照最小）。 |
 
@@ -82,14 +91,25 @@ Windows 上還會補一手：環境變數抓不到時，直接讀 `HKCU\Environm
 |---|---|
 | `U` | 串裡有未讀 |
 | `D` | 直接寄給我（我在 `To`，只在 `Cc` 不算） |
+| `O` | 收件人只有我（最新一封的 `To` 只有我一個，`Cc` 不算） |
 | `R` | 最新一封是我寄的，或最新一封已被我回覆（`\Answered`） |
 | `S` | 已加星號（`\Flagged`） |
 | `L` | 清單信（有 `List-Id`） |
 | `A` | 有夾檔 |
 
-「待我回覆」= `D` 且沒有 `R`（最新一封還沒被我回覆、也不是我自己寄的）且不是清單信、寄件位址不是 noreply／notification 這類機器信箱，最多 8 筆。
-對方在我回覆後又寄一封，這串就會變回待回覆。
-（gitlab-issues 的「待我確認」有 LLM 版，這裡目前只有規則版。）
+「待我回覆」最多 12 筆，先濾掉再排序。
+
+濾掉：清單信、寄件位址像機器信箱（`noreply`／`notification`／`mailer`…）、內文自述「請勿回信／系統自動發送」、
+`replyExcludeLabels` 列到的標籤。
+
+排序分四層，同層維持時間序，每層裡「只寄給我」（`O`）優先：
+
+| 層 | 標示 | 判斷 |
+|---|---|---|
+| 1 | 真人對話 | 最新一封有 `In-Reply-To`／`References`，或這串有兩個以上寄件者 |
+| 2 | 要我做事 | 主旨或內文出現「請填寫／請確認／待簽核／截止／報名／問卷…」這類字眼 |
+| 3 | 只寄給我／待回覆 | 其餘 |
+| 4 | — | 主旨像例行報表（日報／週報／排行／報表／digest）的墊底 |
 
 ## 快照
 

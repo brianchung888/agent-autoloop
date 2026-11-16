@@ -290,6 +290,11 @@
   });
   CONFIRM.forEach(function (c) { reconcileDone(c.key, c.noteKey); });
   saveDone();
+  // 上一輪就標成「已處理」的，這一輪不再列進待我確認；
+  // 在這裡定格，所以現在才勾的那筆會留到下次重新載入才消失（不會勾到一半跳掉）。
+  var CONFIRM_WAS_DONE = {};
+  CONFIRM.forEach(function (c) { if (isDone(c.key)) CONFIRM_WAS_DONE[c.key] = true; });
+  var CONFIRM_OPEN = CONFIRM.filter(function (c) { return !CONFIRM_WAS_DONE[c.key]; });
   function countDone() {
     var n = 0;
     DATA.forEach(function (p) {
@@ -407,6 +412,38 @@
     return !qq || r.hay.indexOf(qq) >= 0;
   }
 
+  // 最上面三格一律扣掉「已處理」，不然勾了數字不動，量永遠消不掉。
+  function liveCounts() {
+    var open = 0, openDone = 0, closed = 0, closedDone = 0;
+    DATA.forEach(function (p) {
+      p.openRows.forEach(function (r) { if (isDone(r.key)) openDone++; else open++; });
+      p.closedRows.forEach(function (r) { if (isDone(r.key)) closedDone++; else closed++; });
+    });
+    var cOpen = CONFIRM.filter(function (c) { return !isDone(c.key); }).length;
+    return { open: open, openDone: openDone, closed: closed, closedDone: closedDone,
+             confirm: cOpen, confirmDone: CONFIRM.length - cOpen };
+  }
+
+  function shownText(c) {
+    return '顯示 ' + c.shown + ' / ' + TOTAL + ' 筆 · 已處理 ' + countDone();
+  }
+
+  function listHtml(c) {
+    if (c.shown === 0) return '<div class="empty-all">沒有符合目前篩選條件的 Issue。</div>';
+    return '<div class="list">' + c.rows.map(rowHtml).join('') + '</div>';
+  }
+
+  // 只換列表，不動搜尋框本身——輸入法組字中途把 input 砍掉重建會吃掉或重複送字。
+  function renderList() {
+    var wrap = document.getElementById('listwrap');
+    if (!wrap) { render(); return; }
+    var c = compute();
+    var shown = document.getElementById('shown');
+    if (shown) shown.textContent = shownText(c);
+    wrap.innerHTML = listHtml(c);
+    bindRows(wrap);
+  }
+
   function compute() {
     var filtering = !!(state.q.trim() || state.status !== 'all' || state.reason !== 'all' || state.project !== 'all' || state.hideDone !== 'all');
     var rows = ROWS.filter(match);
@@ -473,20 +510,21 @@
       '<span><span class="k">聯集邏輯</span>　' + esc(D.unionLogic) + '</span>' +
       '</section>';
 
-    var confirm = D.confirm || [];
+    var confirm = CONFIRM_OPEN;
+    var st = liveCounts();
     h += '<section class="stats">' +
-      '<div><span class="k">未結案 Issues</span><span class="n accent">' + TOTAL_OPEN + '</span>' +
-      '<span class="sub">涵蓋 ' + PROJ_WITH_ITEMS + ' 個專案</span></div>' +
-      '<div><span class="k">近期已結案 (' + esc(D.closedDays) + '天內)</span><span class="n">' + TOTAL_CLOSED + '</span>' +
-      '<span class="sub">更新於 ' + esc(String(D.closedSince || '').slice(5)) + ' 之後</span></div>' +
-      '<div><span class="k">待確認事項</span><span class="n">' + confirm.length + '</span>' +
-      '<span class="sub">需本人回覆或決策</span></div>' +
+      '<div><span class="k">未結案 Issues</span><span class="n accent">' + st.open + '</span>' +
+      '<span class="sub">' + (st.openDone ? '已處理 ' + st.openDone + ' / 共 ' + TOTAL_OPEN : '涵蓋 ' + PROJ_WITH_ITEMS + ' 個專案') + '</span></div>' +
+      '<div><span class="k">近期已結案 (' + esc(D.closedDays) + '天內)</span><span class="n">' + st.closed + '</span>' +
+      '<span class="sub">' + (st.closedDone ? '已處理 ' + st.closedDone + ' / 共 ' + TOTAL_CLOSED : '更新於 ' + esc(String(D.closedSince || '').slice(5)) + ' 之後') + '</span></div>' +
+      '<div><span class="k">待確認事項</span><span class="n">' + st.confirm + '</span>' +
+      '<span class="sub">' + (st.confirmDone ? '已處理 ' + st.confirmDone + ' / 共 ' + CONFIRM.length : '需本人回覆或決策') + '</span></div>' +
       '</section>';
 
     if (confirm.length) {
       h += '<section class="sect"><div class="sect-head ruled"><h2>待我確認重點</h2>' +
         '<span class="count">' + confirm.length + ' 筆</span></div><ol class="confirm">';
-      CONFIRM.forEach(function (c, i) {
+      CONFIRM_OPEN.forEach(function (c, i) {
         var it = c.it;
         var done = isDone(c.key);
         var isNew = it['new'] === true;
@@ -511,7 +549,7 @@
     }
 
     h += '<section class="sect"><div class="sect-head"><h2>全部 Issues</h2>' +
-      '<span class="count">顯示 ' + c.shown + ' / ' + TOTAL + ' 筆 · 已處理 ' + countDone() + '</span></div>';
+      '<span class="count" id="shown">' + shownText(c) + '</span></div>';
 
     h += '<div class="filters">' +
       '<input type="text" id="q" placeholder="搜尋 Issue 標題、編號、專案、符合原因、最後一則留言內容…" value="' + esc(state.q) + '">' +
@@ -534,11 +572,7 @@
       DATA.map(function (p) { return btn('project', p.key, p.name, p.openRows.length + p.closedRows.length); }).join('') +
       '</div></div>';
 
-    if (c.shown === 0) {
-      h += '<div class="empty-all">沒有符合目前篩選條件的 Issue。</div>';
-    } else {
-      h += '<div class="list">' + c.rows.map(rowHtml).join('') + '</div>';
-    }
+    h += '<div id="listwrap">' + listHtml(c) + '</div>';
 
     h += '</section><footer>' + esc(D.footer) + '</footer>';
 
@@ -546,13 +580,18 @@
     app.innerHTML = h;
 
     var input = document.getElementById('q');
+    var composing = false;
+    // 輸入法（嘸蝦米、注音…）組字期間不重畫；組完再更新一次。
+    input.addEventListener('compositionstart', function () { composing = true; });
+    input.addEventListener('compositionend', function (e) {
+      composing = false;
+      state.q = e.target.value;
+      renderList();
+    });
     input.addEventListener('input', function (e) {
       state.q = e.target.value;
-      var pos = e.target.selectionStart;
-      render();
-      var ni = document.getElementById('q');
-      ni.focus();
-      try { ni.setSelectionRange(pos, pos); } catch (err) {}
+      if (composing) return;
+      renderList();
     });
     app.querySelectorAll('.fgroup button').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -561,13 +600,18 @@
         render();
       });
     });
-    app.querySelectorAll('input.done').forEach(function (cb) {
+    bindRows(app);
+  }
+
+  // 列表那段會被 renderList() 換掉，所以綁定要能只對新的那塊重跑一次。
+  function bindRows(scope) {
+    scope.querySelectorAll('input.done').forEach(function (cb) {
       cb.addEventListener('change', function () {
         setDone(cb.getAttribute('data-k'), cb.getAttribute('data-n'), cb.checked);
         render();
       });
     });
-    app.querySelectorAll('a[data-k]').forEach(function (a) {
+    scope.querySelectorAll('a[data-k]').forEach(function (a) {
       a.addEventListener('click', function () {
         setDone(a.getAttribute('data-k'), a.getAttribute('data-n'), true);
         setTimeout(render, 0);
