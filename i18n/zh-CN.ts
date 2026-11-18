@@ -54,6 +54,13 @@ export const zhCN = {
   "kernel.decide.fieldTooLong": "{field} 要是 500 字以内的文字",
   "kernel.decide.noSuchRun": "没有这一轮",
   "kernel.decide.runOver": "这一轮已经结束了",
+  "kernel.decide.workerUnnamed": "不知道是哪台接单程序",
+  "kernel.decide.workerStillThere": "{worker} 刚才还在，不用强制停：直接 stop 它就收到了",
+  "kernel.decide.forced": "已强制停止",
+  "kernel.decide.forcedWords":
+    "{worker} 已经 {minutes} 分钟没出现，这一轮被强制结束，后面同一组的任务可以接着跑了。那台机器要是其实还活着，这件事可能已经做过一次，它之后交回来的结果会被丢掉。",
+  "kernel.decide.forcedNeverSeenWords":
+    "{worker} 从来没出现过，这一轮被强制结束，后面同一组的任务可以接着跑了。那台机器要是其实还活着，这件事可能已经做过一次，它之后交回来的结果会被丢掉。",
   "kernel.decide.notToThisChannel": "这张卡片没有交给这个通道",
 
   // ---- kernel/cron.ts ----
@@ -289,7 +296,7 @@ export const zhCN = {
   // `{prompt}` 在 HELP 和 INIT_USAGE 里是命令行上要原样打出来的那两个字，不是填进去的值：t() 填不到的
   // `{名字}` 原样留着，这一条就是靠这个。
   "cli.help":
-    "Agent 自动化中台\n\n  agent-autoloop init [--agent claude|codex] [--command '某个命令 {prompt}'] [--port 3350] [--no-service]\n                                    在这台电脑上装好：一个人一台电脑就够\n  agent-autoloop try                     用你的 Agent 跑一遍完整流程\n  agent-autoloop why <第几轮> [--json]  查看时间线；--json 输出原始事实\n  agent-autoloop conformance <地址> --config <测试凭据文件>\n                                    在测试中台上检查协议\n  agent-autoloop status [--json]         现在什么情况：谁在线、等你什么、在做什么、做过什么、花了多少\n                                     --json 输出 /v1/state 的原始结构，给脚本用\n  agent-autoloop answer <卡片> [序号] [--text 别的想法]\n                                    回答一张卡片；通知不用写序号\n  agent-autoloop resolve <卡片> <结果>   这件事不用决定了，写一句结果\n  agent-autoloop doctor                  查哪里没配好\n  agent-autoloop check [文件]            检查规则文件，不碰中台；不写文件就查 rules.json\n  agent-autoloop rules explain           按本机 rules.json 说明生效的规则、Agent、通道和下次定时\n  agent-autoloop emit <类型> [--dry-run] [--subject x] [--summary x] [--detail x] [--link x] [--id x] [--key 来源密钥]\n                                    发一条事件；--dry-run 只预演会派给谁，不连接中台\n  agent-autoloop tell <编号> [--task 定时任务名]\n                                    直接告诉你一件事，内容从标准输入读\n  agent-autoloop ask --task <定时任务名>\n                                    定时任务问你一件事：标准输入传回执那样的 ask；你答了，它的 Agent 在 cwd 接着做\n  agent-autoloop stop <第几轮>           停掉一轮\n  agent-autoloop key new <source|worker|channel|owner> <名字>\n                                    新建一把密钥（只显示这一次）\n  agent-autoloop key list                有哪些密钥\n  agent-autoloop key remove <种类> <名字>  立即收回一把密钥\n  agent-autoloop add <git 地址>           安装插件，不自动更新\n  agent-autoloop mcp                      用标准输入输出连接 MCP 客户端\n  agent-autoloop join <中台地址> --worker <名字> --key <密钥> [--no-service]\n                                    另一台电脑只接活时用\n  agent-autoloop backup [目录]           备份数据库、主密钥、配置、规则和 secrets.env；不填目录就放在 ~/.agent-autoloop/backups\n  agent-autoloop restore <目录> [--yes]  停掉中台后，用一次备份恢复本机数据\n  agent-autoloop update                  更新到最新发布的版本\n  agent-autoloop uninstall [--yes]       卸载程序并保留数据；--yes 跳过确认\n  agent-autoloop lang [zh-TW|zh-CN]      这个程序说哪种中文；不写就说现在说的是哪种\n  agent-autoloop --version               版本和当前提交\n  agent-autoloop help                    这份说明\n  agent-autoloop up                      启动（平时由系统服务调用）\n  agent-autoloop service install|remove  系统服务\n\n配置和数据在 {home}。规则在 {rules}，改了自动生效。",
+    "Agent 自动化中台\n\n  agent-autoloop init [--agent claude|codex] [--command '某个命令 {prompt}'] [--port 3350] [--no-service]\n                                    在这台电脑上装好：一个人一台电脑就够\n  agent-autoloop try                     用你的 Agent 跑一遍完整流程\n  agent-autoloop why <第几轮> [--json]  查看时间线；--json 输出原始事实\n  agent-autoloop conformance <地址> --config <测试凭据文件>\n                                    在测试中台上检查协议\n  agent-autoloop status [--json]         现在什么情况：谁在线、等你什么、在做什么、做过什么、花了多少\n                                     --json 输出 /v1/state 的原始结构，给脚本用\n  agent-autoloop answer <卡片> [序号] [--text 别的想法]\n                                    回答一张卡片；通知不用写序号\n  agent-autoloop resolve <卡片> <结果>   这件事不用决定了，写一句结果\n  agent-autoloop doctor                  查哪里没配好\n  agent-autoloop check [文件]            检查规则文件，不碰中台；不写文件就查 rules.json\n  agent-autoloop rules explain           按本机 rules.json 说明生效的规则、Agent、通道和下次定时\n  agent-autoloop emit <类型> [--dry-run] [--subject x] [--summary x] [--detail x] [--link x] [--id x] [--key 来源密钥]\n                                    发一条事件；--dry-run 只预演会派给谁，不连接中台\n  agent-autoloop tell <编号> [--task 定时任务名]\n                                    直接告诉你一件事，内容从标准输入读\n  agent-autoloop ask --task <定时任务名>\n                                    定时任务问你一件事：标准输入传回执那样的 ask；你答了，它的 Agent 在 cwd 接着做\n  agent-autoloop stop <第几轮> [--force]  停掉一轮\n  agent-autoloop key new <source|worker|channel|owner> <名字>\n                                    新建一把密钥（只显示这一次）\n  agent-autoloop key list                有哪些密钥\n  agent-autoloop key remove <种类> <名字>  立即收回一把密钥\n  agent-autoloop add <git 地址>           安装插件，不自动更新\n  agent-autoloop mcp                      用标准输入输出连接 MCP 客户端\n  agent-autoloop join <中台地址> --worker <名字> --key <密钥> [--no-service]\n                                    另一台电脑只接活时用\n  agent-autoloop backup [目录]           备份数据库、主密钥、配置、规则和 secrets.env；不填目录就放在 ~/.agent-autoloop/backups\n  agent-autoloop restore <目录> [--yes]  停掉中台后，用一次备份恢复本机数据\n  agent-autoloop update                  更新到最新发布的版本\n  agent-autoloop uninstall [--yes]       卸载程序并保留数据；--yes 跳过确认\n  agent-autoloop lang [zh-TW|zh-CN]      这个程序说哪种中文；不写就说现在说的是哪种\n  agent-autoloop --version               版本和当前提交\n  agent-autoloop help                    这份说明\n  agent-autoloop up                      启动（平时由系统服务调用）\n  agent-autoloop service install|remove  系统服务\n\n配置和数据在 {home}。规则在 {rules}，改了自动生效。",
   "cli.usage.init":
     "用法：agent-autoloop init [--agent claude|codex] [--command '某个命令 {prompt}'] [--port 3350] [--no-service] [--lang zh-TW|zh-CN]\n\n  --agent      只接这个 Agent：claude 或 codex。不写就接本机装好的全部\n  --command    改用别的命令行 Agent；{prompt} 会作为一个独立参数传进去\n  --port       中台监听的端口，默认 3350\n  --no-service 先不装系统服务，之后手动运行 agent-autoloop up\n  --lang       这个程序说哪种中文：zh-TW（默认）或 zh-CN",
   "cli.usage.try":
@@ -322,7 +329,8 @@ export const zhCN = {
   "cli.usage.resolve": "用法：agent-autoloop resolve <卡片> <结果>",
   "cli.usage.rules": "用法：agent-autoloop rules explain",
   "cli.usage.service": "用法：agent-autoloop service install|remove",
-  "cli.usage.stop": "用法：agent-autoloop stop <第几轮>",
+  "cli.usage.stop":
+    "用法：agent-autoloop stop <第几轮> [--force]\n\n--force 用在接单程序已经死掉、这一轮永远卡着不放、同一组后面全排不进去的时候。接单程序还在就用不到，中台会挡下来。",
   "cli.usage.tell": "用法：agent-autoloop tell <编号> [--task 定时任务名]，内容从标准输入读",
   "cli.usage.up": "用法：agent-autoloop up",
   "cli.usage.why": "用法：agent-autoloop why <第几轮> [--json]",
@@ -440,6 +448,7 @@ export const zhCN = {
   "cli.ask.duplicate": "同一件事还在等你回答，这次没再问。",
   "cli.ask.asked": "问了。",
   "cli.stop.told": "通知它停了。",
+  "cli.stop.forced": "强制结束了，同一组后面的任务可以接着跑。",
   "cli.add.driveOnly":
     "「{url}」只是一个盘符，不是一个地址：写全要装的那个仓库的路径或 URL（比如 {drive}:/path/to/plugin）。",
   "cli.add.badName": "插件名字「{name}」不能用：只能用小写字母、数字和 -，规则里的 use 也写这个名字",

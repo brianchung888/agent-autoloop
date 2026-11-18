@@ -56,7 +56,8 @@ export function hubClient(url: string, key: string) {
     removeKey: (kind: string, name: string) =>
       call("DELETE", `/v1/keys/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`),
     state: (before?: number) => call("GET", before === undefined ? "/v1/state" : `/v1/state?before=${before}`),
-    cancel: (run: number) => call("POST", `/v1/runs/${run}/cancel`, { body: {} }),
+    cancel: (run: number, force = false) =>
+      call("POST", `/v1/runs/${run}/cancel${force ? "?force=1" : ""}`, { body: {} }),
     resolve: (card: number, reason: string) => call("POST", `/v1/cards/${card}/resolve`, { body: { reason } }),
   };
 }

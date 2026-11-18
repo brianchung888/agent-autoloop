@@ -18,6 +18,7 @@ const edits: [string, string, string, string][] = [
     'run.state === "queued" &&\n    agents.includes(ruleNamed(draft, run.rule)?.to ?? "")',
     'run.state === "queued" &&\n    true',
   ],
+  ["force-freshness", "decide.ts", "draft.now - lastSign <= WORKER_FRESH", "false"],
   ["retry-delay", "decide.ts", "5 * MINUTE * 2 ** (attempts - 1)", "0 * MINUTE * 2 ** (attempts - 1)"],
   [
     "receipt-replay",

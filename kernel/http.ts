@@ -275,7 +275,11 @@ async function route(call: Call): Promise<Response> {
     requireKey(call, "owner");
     return json(services.why(runId));
   }
-  if (method === "POST" && action === "cancel") return ownerAct(call, "cancel", runId);
+  // `?force=1` and not a body: this door has never read one, and a caller sending none still gets the old
+  // behaviour. What it means is in kernel/decide.ts (forceStop).
+  if (method === "POST" && action === "cancel") {
+    return ownerAct(call, "cancel", runId, call.url.searchParams.get("force") === "1");
+  }
   if (method === "POST" && action === "started") {
     act(call, "started", runId, token, await readJson(call));
     return json({ ok: true });

@@ -427,3 +427,22 @@ test("there's no other page: what's going on is read through the doors", async (
   for (const path of ["/", "/index.html", "/app.js", "/style.css", "/../package.json"])
     assert.equal((await call(path)).status, 404, path);
 });
+
+test("强制停止走的是查询串：不带 body 的取消照旧，刚打过招呼的接单程序挡下来", async () => {
+  await call("/v1/events", { key: keys.app, body: note(70) });
+  const first = (await call("/v1/work?claim=c-70&wait=0", { key: keys.w1 })).json.job;
+  // 领活这一下就是打招呼，所以这台接单程序现在是新鲜的：强制停止得挡下来（409），那一轮不动。
+  const refused = await call(`/v1/runs/${first.run}/cancel?force=1`, { key: keys.owner, body: {} });
+  assert.equal(refused.status, 409);
+  assert.equal(one<{ state: string }>("SELECT state FROM runs WHERE id = ?", [first.run])!.state, "claimed");
+  // 这道门从来不读 body，加了 force 以后也不读：一个 body 都不送的调用方照旧拿到 200。
+  const plain = await call(`/v1/runs/${first.run}/cancel`, { key: keys.owner, method: "POST" });
+  assert.equal(plain.status, 200);
+  assert.equal(
+    one<{ cancel_at: string | null }>("SELECT cancel_at FROM runs WHERE id = ?", [first.run])!.cancel_at !== null,
+    true,
+  );
+  // force 只认 "1"：别的写法当没写，不会不小心强制掉。
+  assert.equal((await call(`/v1/runs/${first.run}/cancel?force=true`, { key: keys.owner, body: {} })).status, 200);
+  assert.equal(one<{ state: string }>("SELECT state FROM runs WHERE id = ?", [first.run])!.state, "claimed");
+});

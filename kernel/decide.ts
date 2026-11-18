@@ -327,6 +327,41 @@ const ruleGone = (draft: Draft, run: Row): [string, string] => [
   words(draft, "kernel.decide.ruleGoneWords", { rule: run.rule }),
 ];
 
+/**
+ * The owner's last word on a claimed run whose worker stopped coming. `sweep` only looks at the leases of a worker it
+ * has seen within WORKER_FRESH (:266), so a run held by a worker that is gone for good never becomes `unknown`; its
+ * group stays blocked (claimNext, :299-300) and plain `cancel` only writes `cancel_at`, which that worker will never
+ * come back to read. Before this, the only way out was editing the database by hand.
+ *
+ * It never happens on its own. A worker that cannot be reached may still be working — a laptop off the network, a
+ * container whose host went to sleep — so ending the run here can mean the same rule runs twice, and whatever that
+ * worker hands in afterwards is refused and dropped (worker/worker.ts:556-558). That is the owner's call to make
+ * knowingly, which is why it takes `--force` and nothing less. A worker that is still being seen is refused outright:
+ * it can hear a plain `stop`, so that is what it gets.
+ */
+function forceStop(draft: Draft, run: Row) {
+  const worker = workerOf(draft.view, run);
+  const seen = worker === undefined ? undefined : draft.view.get("seen", `worker:${worker}`);
+  const heard = seen ? Date.parse(seen.seen_at) : undefined;
+  // Two signs of life, and the later one counts. A worker only stamps `seen` when it says hello (heartbeat), so one
+  // that claimed a run a second ago and hasn't got round to its first hello has no stamp at all — going by the stamp
+  // alone would let `--force` kill a run that is perfectly well. The run's own `seen_at` is set as it is claimed and
+  // moved on by every hello after that, so it covers exactly that gap.
+  const lastSign = Math.max(heard ?? 0, Date.parse(run.seen_at));
+  const named = worker ?? words(draft, "kernel.decide.workerUnnamed");
+  if (draft.now - lastSign <= WORKER_FRESH) {
+    throw new Conflict(words(draft, "kernel.decide.workerStillThere", { worker: named }));
+  }
+  const said =
+    heard === undefined
+      ? words(draft, "kernel.decide.forcedNeverSeenWords", { worker: named })
+      : words(draft, "kernel.decide.forcedWords", {
+          worker: named,
+          minutes: Math.floor((draft.now - lastSign) / MINUTE),
+        });
+  stopRun(draft, run, "forced", words(draft, "kernel.decide.forced"), said);
+}
+
 /** A run that didn't get through waits to try again, and takes along whatever came in for the same thing meanwhile. */
 function retryLater(draft: Draft, run: Row, result: Result) {
   const { id } = run;
@@ -635,14 +670,17 @@ const HANDLERS: Record<string, (draft: Draft, ...args: any[]) => unknown> = {
     put(draft, "runs", id, { session: session ?? run.session, link: link ?? run.link, seen_at: draft.at });
   },
   finish,
-  cancel(draft, id) {
+  cancel(draft, id, force = false) {
     const run = draft.view.get("runs", id);
     if (!run) throw new NotFound(words(draft, "kernel.decide.noSuchRun"));
     if (run.state === "queued") {
       put(draft, "runs", id, { state: "cancelled", finished_at: draft.at });
       closeStopped(draft, id, words(draft, "kernel.decide.stopped"));
-    } else if (run.state === "claimed") put(draft, "runs", id, { cancel_at: draft.at });
-    else throw new InputError(words(draft, "kernel.decide.runOver"));
+    } else if (run.state === "claimed") {
+      // Told to stop is the worker's own business while it is still there; forcing it is the owner going round it.
+      if (force) forceStop(draft, run);
+      else put(draft, "runs", id, { cancel_at: draft.at });
+    } else throw new InputError(words(draft, "kernel.decide.runOver"));
   },
   resolve(draft, id, reason, by) {
     const card = draft.view.get("cards", id);

@@ -80,7 +80,7 @@ const TAKES: Record<string, { flags: string[]; usage: () => string }> = {
   rules: { flags: [], usage: () => t("cli.usage.rules") },
   service: { flags: [], usage: () => t("cli.usage.service") },
   status: { flags: ["json"], usage: () => t("cli.usage.status") },
-  stop: { flags: [], usage: () => t("cli.usage.stop") },
+  stop: { flags: ["force"], usage: () => t("cli.usage.stop") },
   tell: { flags: ["task"], usage: () => t("cli.usage.tell") },
   try: { flags: [], usage: () => t("cli.usage.try") },
   uninstall: { flags: ["yes"], usage: () => t("cli.usage.uninstall") },
@@ -751,9 +751,16 @@ async function checkConformance(args: string[]) {
 }
 
 async function stop(args: string[]) {
-  const id = runOf(args[0], t("cli.usage.stop"));
-  await ownerClient().cancel(id);
-  console.log(t("cli.stop.told"));
+  // Read the way `why` reads its own: the number is the first word that is not a flag, so `--force` can go either
+  // side of it. `--force` is for a run whose worker is gone for good and would hold its group for ever; the hub
+  // refuses it while the worker is still being seen (kernel/decide.ts: forceStop).
+  const id = runOf(
+    args.find((arg) => !arg.startsWith("--")),
+    t("cli.usage.stop"),
+  );
+  const force = args.includes("--force");
+  await ownerClient().cancel(id, force);
+  console.log(t(force ? "cli.stop.forced" : "cli.stop.told"));
 }
 
 function service(args: string[]) {

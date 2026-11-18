@@ -276,9 +276,13 @@ GET  /v1/state              Authorization: Bearer <本人的密钥>
 POST /v1/cards/56/answer    { "choice": 1 } 或 { "text": "别的想法" }
 POST /v1/cards/56/resolve   { "reason": "不用决定了，因为……" }
 POST /v1/runs/12/cancel     {}
+POST /v1/runs/12/cancel?force=1   {}   # 接单程序已经失联，直接把这一轮推到终态
 ```
 
-`agent-autoloop status`、`answer`、`resolve`、`stop` 就是这几个请求。`/v1/state` 一次给最近 60 轮，`?before=<nextBefore>` 翻更早的。
+`agent-autoloop status`、`answer`、`resolve`、`stop` 就是这几个请求。
+
+取消分两种。不带 `force` 时，排队中的这一轮当场记为 `cancelled`；已经领走的只写下「要停」，由领走它的接单程序下次来问的时候拿到，确认组内没有活进程后交 `outcome: "cancelled"`。带 `?force=1`（`agent-autoloop stop <第几轮> --force`）时，**已经领走的那一轮由中台直接记为 `cancelled`**，不等接单程序——前提是这台接单程序和这一轮都已经超过 2 分钟没有任何消息；还在的则回 409，让你用普通的停。这是给机器丢了、重建了、或者关机了的情形准备的：那一轮永远停在 `claimed`，同一组后面的全排不进去，而「要停」送不到一台不会再来的接单程序。强制停掉以后，那台接单程序要是其实还活着，它交回来的结果会被拒掉（4xx），同一条规则有可能跑过两次。所以这件事只在本人明确要求时发生，中台自己从不这么做。
+`/v1/state` 一次给最近 60 轮，`?before=<nextBefore>` 翻更早的。
 
 `/v1/state` 的 `spending.today`、`spending.week` 独立于分页，按规则时区的今天和过去 7 × 24 小时的完成时间汇总。每项含 `rounds`、`tokens`、`cost`、`missingTokens`、`missingCost`，后两项是没报对应用量的轮数；从未开始就取消的轮次不计入。
 
